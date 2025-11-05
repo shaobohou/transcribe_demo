@@ -114,8 +114,25 @@ class WebRTCVAD:
         if len(audio) != self.frame_size:
             return False
 
+        # Sanitize audio before conversion; replace non-finite values and clip to int16 range
+        clean_audio = np.nan_to_num(
+            np.asarray(audio, dtype=np.float32),
+            nan=0.0, posinf=0.0, neginf=0.0, copy=True
+        )
+
+        # Warn if clipping is needed (indicates potential audio configuration issues)
+        if np.any(np.abs(clean_audio) > 1.0):
+            import warnings
+            warnings.warn(
+                "Audio values exceeded [-1.0, 1.0] range, clipping applied. "
+                "This may indicate incorrect gain settings or audio driver issues.",
+                UserWarning,
+                stacklevel=2
+            )
+        np.clip(clean_audio, -1.0, 1.0, out=clean_audio)
+
         # Convert float32 [-1.0, 1.0] to int16 PCM
-        audio_int16 = (audio * 32768.0).astype(np.int16)
+        audio_int16 = (clean_audio * 32768.0).astype(np.int16)
 
         # Convert to bytes
         audio_bytes = struct.pack(f'{len(audio_int16)}h', *audio_int16)
