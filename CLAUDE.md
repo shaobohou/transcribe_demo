@@ -62,6 +62,13 @@ uv run pytest tests/test_vad.py        # WebRTC VAD tests
 uv run pytest -v
 ```
 
+### Git Hooks
+```bash
+git config core.hooksPath .githooks
+UV_CACHE_DIR=$(pwd)/.uv-cache uv sync --group dev
+```
+- Pre-commit hook runs `uv run python -m pytest` and blocks commits when tests fail.
+
 ## Architecture
 
 ### Core Components
