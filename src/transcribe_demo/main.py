@@ -95,7 +95,11 @@ class ChunkCollectorWithStitching:
         if inference_seconds is not None:
             # Whisper mode: show actual audio duration and inference time
             chunk_audio_duration = absolute_end - absolute_start
-            timing_suffix = f" | audio: {chunk_audio_duration:.2f}s | inference: {inference_seconds:.2f}s"
+            timing_suffix = (
+                f" | t={absolute_end:.2f}s"
+                f" | audio: {chunk_audio_duration:.2f}s"
+                f" | inference: {inference_seconds:.2f}s"
+            )
             label = f"[chunk {chunk_index:03d}{timing_suffix}]"
         else:
             # Realtime mode: show absolute timestamp from session start

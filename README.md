@@ -124,6 +124,7 @@ This approach minimizes transcription errors by chunking at natural pauses inste
 
 Each chunk displays:
 - Chunk number
+- Absolute timestamp from session start
 - Audio duration
 - Inference time (Whisper backend only)
 - Transcribed text

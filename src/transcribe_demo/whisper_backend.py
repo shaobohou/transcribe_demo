@@ -229,6 +229,9 @@ def run_whisper_transcriber(
             ssl._create_default_https_context = original_https_context
     fp16 = device == "cuda"
 
+    # Track wall-clock start of the transcription session for absolute timestamps
+    session_start_time = time.perf_counter()
+
     audio_queue: queue.Queue[np.ndarray] = queue.Queue()
     buffer = np.zeros(0, dtype=np.float32)
     lock = threading.Lock()
@@ -344,17 +347,21 @@ def run_whisper_transcriber(
                 inference_duration = time.perf_counter() - inference_start
                 text = result["text"]
 
+                # Compute absolute timestamps relative to session start
+                chunk_absolute_end = max(0.0, inference_start - session_start_time)
+                chunk_absolute_start = max(0.0, chunk_absolute_end - chunk_audio_duration)
+
                 if chunk_consumer is not None:
                     chunk_consumer(
                         chunk_index,
                         text,
-                        current_start,
-                        current_end,
+                        chunk_absolute_start,
+                        chunk_absolute_end,
                         inference_duration,
                     )
                 else:
                     print(
-                        f"[chunk {chunk_index:03d} | audio: {chunk_audio_duration:.2f}s | inference: {inference_duration:.2f}s] {text}",
+                        f"[chunk {chunk_index:03d} | t={chunk_absolute_end:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {inference_duration:.2f}s] {text}",
                         flush=True,
                     )
 
