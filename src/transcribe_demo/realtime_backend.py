@@ -53,13 +53,14 @@ def run_realtime_transcriber(
     chunk_duration: float,
     instructions: str,
     insecure_downloads: bool = False,
+    chunk_consumer: Optional[object] = None,
 ) -> None:
     audio_queue: queue.Queue[np.ndarray] = queue.Queue()
     stop_event = threading.Event()
     session_sample_rate = 24000
-    last_audio_send_time = 0.0
-    inference_start_times: Dict[str, float] = {}
     chunk_counter = 0
+    session_start_time = time.perf_counter()
+    cumulative_time = 0.0
 
     def callback(indata: np.ndarray, frames: int, time, status) -> None:
         if status:
@@ -81,7 +82,6 @@ def run_realtime_transcriber(
         ws: websockets.WebSocketClientProtocol,
         lock: asyncio.Lock,
     ) -> None:
-        nonlocal last_audio_send_time
         buffer = np.zeros(0, dtype=np.float32)
         chunk_size = max(int(sample_rate * chunk_duration), 1)
         while not stop_event.is_set():
@@ -114,14 +114,13 @@ def run_realtime_transcriber(
                 },
                 lock,
             )
-            last_audio_send_time = time.perf_counter()
             # Don't manually commit when using server_vad - the server handles it automatically
             buffer = buffer[chunk_size:]
 
     async def receiver(
         ws: websockets.WebSocketClientProtocol,
     ) -> None:
-        nonlocal chunk_counter
+        nonlocal chunk_counter, cumulative_time
         partials: Dict[str, str] = {}
         try:
             async for message in ws:
@@ -132,32 +131,40 @@ def run_realtime_transcriber(
                     delta = payload.get("delta") or ""
                     if not delta:
                         continue
-                    if item_id and item_id not in inference_start_times:
-                        inference_start_times[item_id] = last_audio_send_time or time.perf_counter()
                     if item_id:
                         partials[item_id] = partials.get(item_id, "") + delta
                 elif event_type == "conversation.item.input_audio_transcription.completed":
                     item_id = payload.get("item_id")
                     transcript = payload.get("transcript") or ""
                     had_partials = bool(item_id and partials.get(item_id))
-                    finish_time = time.perf_counter()
-                    if item_id:
-                        start_time = inference_start_times.pop(
-                            item_id,
-                            last_audio_send_time or finish_time,
-                        )
-                    else:
-                        start_time = last_audio_send_time or finish_time
-                    duration = finish_time - start_time
                     final_text = transcript if transcript else ""
                     if not final_text and had_partials and item_id:
                         final_text = partials.get(item_id, "")
                     final_text = final_text.strip()
-                    label = f"[chunk {chunk_counter:03d} | {duration:.2f}s]"
-                    if final_text:
-                        print(f"{label} {final_text}", flush=True)
+
+                    # Track absolute timestamp from session start
+                    chunk_start = cumulative_time
+                    chunk_end = time.perf_counter() - session_start_time
+                    cumulative_time = chunk_end
+
+                    if chunk_consumer:
+                        # For realtime mode: show absolute timestamps from session start
+                        # These represent when chunks completed, not actual audio duration
+                        chunk_consumer(
+                            chunk_index=chunk_counter,
+                            text=final_text,
+                            absolute_start=chunk_start,
+                            absolute_end=chunk_end,
+                            inference_seconds=None,  # Signals realtime mode (show timestamp)
+                        )
                     else:
-                        print(label, flush=True)
+                        # Fallback to old behavior if no consumer provided
+                        label = f"[chunk {chunk_counter:03d} | {chunk_end:.2f}s]"
+                        if final_text:
+                            print(f"{label} {final_text}", flush=True)
+                        else:
+                            print(label, flush=True)
+
                     chunk_counter += 1
                     if item_id:
                         partials.pop(item_id, None)

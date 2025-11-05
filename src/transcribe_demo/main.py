@@ -92,12 +92,15 @@ class ChunkCollectorWithStitching:
         # - Display both immediate (chunk N) and refined (chunk N-1) with different labels
 
         # Display the individual chunk
-        chunk_audio_duration = absolute_end - absolute_start
         if inference_seconds is not None:
+            # Whisper mode: show actual audio duration and inference time
+            chunk_audio_duration = absolute_end - absolute_start
             timing_suffix = f" | audio: {chunk_audio_duration:.2f}s | inference: {inference_seconds:.2f}s"
+            label = f"[chunk {chunk_index:03d}{timing_suffix}]"
         else:
-            timing_suffix = f" | audio: {chunk_audio_duration:.2f}s"
-        label = f"[chunk {chunk_index:03d}{timing_suffix}]"
+            # Realtime mode: show absolute timestamp from session start
+            timing_suffix = f" | t={absolute_end:.2f}s"
+            label = f"[chunk {chunk_index:03d}{timing_suffix}]"
         use_color = bool(getattr(self._stream, "isatty", lambda: False)())
 
         if use_color:
@@ -311,6 +314,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         raise RuntimeError(
             "OpenAI API key required for realtime transcription. Provide --api-key or set OPENAI_API_KEY."
         )
+    collector = ChunkCollectorWithStitching(sys.stdout)
     try:
         run_realtime_transcriber(
             api_key=api_key,
@@ -321,9 +325,22 @@ def main(argv: Optional[list[str]] = None) -> None:
             chunk_duration=REALTIME_CHUNK_DURATION,
             instructions=args.realtime_instructions,
             insecure_downloads=args.insecure_downloads,
+            chunk_consumer=collector,
         )
     except KeyboardInterrupt:
         pass
+    finally:
+        # Show final concatenated result
+        final = collector.get_final_stitched()
+        if final:
+            use_color = sys.stdout.isatty()
+            if use_color:
+                green = "\x1b[32m"
+                reset = "\x1b[0m"
+                bold = "\x1b[1m"
+                print(f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final}\n", file=sys.stdout)
+            else:
+                print(f"\n[FINAL CONCATENATED] {final}\n", file=sys.stdout)
 
 
 if __name__ == "__main__":
