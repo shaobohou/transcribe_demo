@@ -224,7 +224,8 @@ class TestVADEdgeCases:
         large_frame = np.full(frame_size, 100.0, dtype=np.float32)
 
         # Should clip and handle
-        result = vad.is_speech(large_frame)
+        with pytest.warns(UserWarning, match="Audio values exceeded"):
+            result = vad.is_speech(large_frame)
         assert isinstance(result, bool)
 
     def test_negative_values(self):
