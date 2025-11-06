@@ -12,7 +12,9 @@ Built with the `uv` Python project manager.
 - **GPU Acceleration**: Auto-detects CUDA or Apple Metal (MPS) for faster inference
 - **Intelligent Concatenation**: Cleans up punctuation at chunk boundaries for smooth transcription flow
 - **Dual Backend Support**: Choose between local Whisper or cloud-based Realtime API
-- **Flexible Configuration**: Fine-tune VAD sensitivity, chunk duration, and more
+- **Transcript Comparison**: Compares chunked vs. full-audio transcription with detailed diff output
+- **Flexible Configuration**: Fine-tune VAD sensitivity, chunk duration, capture limits, and more
+- **Safety Features**: Automatic capture duration limits, memory warnings, and cost confirmations
 
 ## Setup
 
@@ -103,6 +105,26 @@ uv run transcribe-demo --ca-cert /path/to/corp-ca.pem
 uv run transcribe-demo --insecure-downloads
 ```
 
+### Transcript Comparison & Capture Duration
+
+Control how long the session runs and whether to compare transcriptions:
+
+```bash
+# Set max capture duration (default: 120s)
+uv run transcribe-demo --max_capture_duration 300
+
+# Unlimited duration
+uv run transcribe-demo --max_capture_duration 0
+
+# Disable transcript comparison (saves memory and API costs)
+uv run transcribe-demo --nocompare_transcripts
+
+# Shorter session without comparison
+uv run transcribe-demo --max_capture_duration 60 --nocompare_transcripts
+```
+
+**Note**: When `--compare_transcripts` is enabled (default), the program captures audio for post-session comparison. For Realtime API, this doubles your API usage cost.
+
 ## How It Works
 
 ### VAD-Based Chunking
@@ -146,8 +168,11 @@ uv run pytest -v
 
 ## Architecture
 
-- **main.py**: Entry point and orchestration, chunk collection and stitching
+- **main.py**: Entry point and orchestration, chunk collection, stitching, and comparison
 - **whisper_backend.py**: Local Whisper transcription with WebRTC VAD
 - **realtime_backend.py**: OpenAI Realtime API integration via WebSocket
 
-See `CLAUDE.md` for detailed architecture documentation and development guidelines.
+## Development
+
+- See `CLAUDE.md` for detailed architecture documentation and development guidelines
+- See `REFACTORING.md` for refactoring opportunities and code quality improvement guidelines

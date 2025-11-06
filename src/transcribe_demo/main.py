@@ -1,12 +1,20 @@
 from __future__ import annotations
 
-import argparse
+import difflib
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional, TextIO
 
-from transcribe_demo.realtime_backend import run_realtime_transcriber
+from absl import app
+from absl import flags
+
+from transcribe_demo.realtime_backend import (
+    RealtimeTranscriptionResult,
+    run_realtime_transcriber,
+    transcribe_full_audio_realtime,
+)
 from transcribe_demo.whisper_backend import (
     TranscriptionChunk,
     run_whisper_transcriber,
@@ -14,6 +22,150 @@ from transcribe_demo.whisper_backend import (
 
 
 REALTIME_CHUNK_DURATION = 2.0
+
+FLAGS = flags.FLAGS
+
+# Backend configuration
+flags.DEFINE_enum(
+    "backend",
+    "whisper",
+    ["whisper", "realtime"],
+    "Transcription backend to use.",
+)
+
+# API configuration
+flags.DEFINE_string(
+    "api_key",
+    None,
+    "OpenAI API key for realtime transcription. Defaults to OPENAI_API_KEY.",
+)
+
+# Whisper model configuration
+flags.DEFINE_string(
+    "model",
+    "turbo",
+    "Whisper checkpoint to load (e.g., turbo, tiny.en, tiny, base.en, small).",
+)
+flags.DEFINE_enum(
+    "device",
+    "auto",
+    ["auto", "cpu", "cuda", "mps"],
+    "Device to run Whisper on. 'auto' prefers CUDA, then MPS, otherwise CPU.",
+)
+flags.DEFINE_boolean(
+    "require_gpu",
+    False,
+    "Exit immediately if CUDA is unavailable instead of falling back to CPU.",
+)
+
+# Audio configuration
+flags.DEFINE_integer(
+    "samplerate",
+    16000,
+    "Input sample rate expected by the model.",
+)
+flags.DEFINE_integer(
+    "channels",
+    1,
+    "Number of microphone input channels.",
+)
+
+# File configuration
+flags.DEFINE_string(
+    "temp_file",
+    None,
+    "Optional path to persist audio chunks for inspection.",
+)
+
+# SSL/Certificate configuration
+flags.DEFINE_string(
+    "ca_cert",
+    None,
+    "Custom certificate bundle to trust when downloading Whisper models.",
+)
+flags.DEFINE_boolean(
+    "insecure_downloads",
+    False,
+    "Disable SSL verification when downloading models (not recommended).",
+)
+
+# VAD configuration
+flags.DEFINE_integer(
+    "vad_aggressiveness",
+    2,
+    "WebRTC VAD aggressiveness level: 0=least aggressive, 3=most aggressive.",
+    lower_bound=0,
+    upper_bound=3,
+)
+flags.DEFINE_float(
+    "vad_min_silence_duration",
+    0.2,
+    "Minimum duration of silence (seconds) to trigger chunk split.",
+)
+flags.DEFINE_float(
+    "vad_min_speech_duration",
+    0.25,
+    "Minimum duration of speech (seconds) required before transcribing.",
+)
+flags.DEFINE_float(
+    "vad_speech_pad_duration",
+    0.2,
+    "Padding duration (seconds) added before speech to avoid cutting words.",
+)
+flags.DEFINE_float(
+    "max_chunk_duration",
+    60.0,
+    "Maximum chunk duration in seconds when using VAD.",
+)
+
+# Feature flags
+flags.DEFINE_boolean(
+    "refine_with_context",
+    False,
+    "[NOT YET IMPLEMENTED] Use 3-chunk sliding window to refine middle chunk transcription.",
+)
+
+# Realtime API configuration
+flags.DEFINE_string(
+    "realtime_model",
+    "gpt-realtime-mini",
+    "Realtime model to use with the OpenAI Realtime API.",
+)
+flags.DEFINE_string(
+    "realtime_endpoint",
+    "wss://api.openai.com/v1/realtime",
+    "Realtime websocket endpoint (advanced).",
+)
+flags.DEFINE_string(
+    "realtime_instructions",
+    (
+        "You are a high-accuracy transcription service. "
+        "Return a concise verbatim transcript of the most recent audio buffer. "
+        "Do not add commentary or speaker labels."
+    ),
+    "Instruction prompt sent to the realtime model.",
+)
+
+# Comparison and capture configuration
+flags.DEFINE_boolean(
+    "compare_transcripts",
+    True,
+    "Compare chunked transcription with full-audio transcription at session end. "
+    "Note: For Realtime API, this doubles API usage cost.",
+)
+flags.DEFINE_float(
+    "max_capture_duration",
+    120.0,
+    "Maximum duration (seconds) to run the transcription session. "
+    "Program will gracefully stop after this duration. Set to 0 for unlimited duration.",
+)
+
+# Validators
+flags.register_validator(
+    "max_capture_duration",
+    lambda value: value >= 0.0,
+    message="--max_capture_duration must be >= 0 (set to 0 for unlimited duration)",
+)
 
 
 class ChunkCollectorWithStitching:
@@ -147,131 +299,158 @@ class ChunkCollectorWithStitching:
         return " ".join(chunk for chunk in cleaned_chunks if chunk)
 
 
-def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Stream audio from the microphone and transcribe with Whisper or the OpenAI Realtime API."
-    )
-    parser.add_argument(
-        "--backend",
-        choices=("whisper", "realtime"),
-        default="whisper",
-        help="Transcription backend to use.",
-    )
-    parser.add_argument(
-        "--api-key",
-        default=None,
-        help="OpenAI API key for realtime transcription. Defaults to OPENAI_API_KEY.",
-    )
-    parser.add_argument(
-        "--model",
-        default="turbo",
-        help="Whisper checkpoint to load (e.g., turbo, tiny.en, tiny, base.en, small).",
-    )
-    parser.add_argument(
-        "--device",
-        choices=("auto", "cpu", "cuda", "mps"),
-        default="auto",
-        help="Device to run Whisper on. 'auto' prefers CUDA, then MPS, otherwise CPU.",
-    )
-    parser.add_argument(
-        "--samplerate",
-        type=int,
-        default=16000,
-        help="Input sample rate expected by the model.",
-    )
-    parser.add_argument(
-        "--channels",
-        type=int,
-        default=1,
-        help="Number of microphone input channels.",
-    )
-    parser.add_argument(
-        "--temp-file",
-        type=Path,
-        default=None,
-        help="Optional path to persist audio chunks for inspection.",
-    )
-    parser.add_argument(
-        "--ca-cert",
-        type=Path,
-        default=None,
-        help="Custom certificate bundle to trust when downloading Whisper models.",
-    )
-    parser.add_argument(
-        "--insecure-downloads",
-        action="store_true",
-        help="Disable SSL verification when downloading models (not recommended).",
-    )
-    parser.add_argument(
-        "--require-gpu",
-        action="store_true",
-        help="Exit immediately if CUDA is unavailable instead of falling back to CPU.",
-    )
-    parser.add_argument(
-        "--vad-aggressiveness",
-        type=int,
-        default=2,
-        choices=[0, 1, 2, 3],
-        help="WebRTC VAD aggressiveness level: 0=least aggressive, 3=most aggressive (default: 2).",
-    )
-    parser.add_argument(
-        "--vad-min-silence-duration",
-        type=float,
-        default=0.2,
-        help="Minimum duration of silence (seconds) to trigger chunk split (default: 0.2).",
-    )
-    parser.add_argument(
-        "--vad-min-speech-duration",
-        type=float,
-        default=0.25,
-        help="Minimum duration of speech (seconds) required before transcribing (default: 0.25).",
-    )
-    parser.add_argument(
-        "--vad-speech-pad-duration",
-        type=float,
-        default=0.2,
-        help="Padding duration (seconds) added before speech to avoid cutting words (default: 0.2).",
-    )
-    parser.add_argument(
-        "--max-chunk-duration",
-        type=float,
-        default=60.0,
-        help="Maximum chunk duration in seconds when using VAD (default: 60.0).",
-    )
-    parser.add_argument(
-        "--refine-with-context",
-        action="store_true",
-        help="[NOT YET IMPLEMENTED] Use 3-chunk sliding window to refine middle chunk transcription. "
-             "Improves accuracy with more context but adds 1-chunk latency and ~3x inference time. "
-             "Requires word timestamps (not available on MPS/Apple Metal).",
-    )
-    parser.add_argument(
-        "--realtime-model",
-        default="gpt-realtime-mini",
-        help="Realtime model to use with the OpenAI Realtime API.",
-    )
-    parser.add_argument(
-        "--realtime-endpoint",
-        default="wss://api.openai.com/v1/realtime",
-        help="Realtime websocket endpoint (advanced).",
-    )
-    parser.add_argument(
-        "--realtime-instructions",
-        default=(
-            "You are a high-accuracy transcription service. "
-            "Return a concise verbatim transcript of the most recent audio buffer. "
-            "Do not add commentary or speaker labels."
-        ),
-        help="Instruction prompt sent to the realtime model.",
-    )
-    return parser.parse_args(argv)
+def _normalize_whitespace(text: str) -> str:
+    return " ".join(text.split())
 
 
-def main(argv: Optional[list[str]] = None) -> None:
-    args = parse_args(argv)
+def print_transcription_summary(
+    stream: TextIO,
+    final_text: str,
+    full_audio_text: str,
+) -> None:
+    """Print stitched transcript, full-audio transcript, and comparison details."""
+    use_color = bool(getattr(stream, "isatty", lambda: False)())
+    final_clean = final_text.strip()
+    full_audio_clean = full_audio_text.strip()
 
+    bold = green = reset = ""
+    if use_color:
+        green = "\x1b[32m"
+        reset = "\x1b[0m"
+        bold = "\x1b[1m"
+
+    if final_clean:
+        if use_color:
+            print(f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final_clean}\n", file=stream)
+        else:
+            print(f"\n[FINAL CONCATENATED] {final_clean}\n", file=stream)
+
+    if full_audio_clean:
+        if use_color:
+            print(f"{bold}{green}[FULL AUDIO]{reset} {full_audio_clean}\n", file=stream)
+        else:
+            print(f"[FULL AUDIO] {full_audio_clean}\n", file=stream)
+
+    if not (final_clean and full_audio_clean):
+        return
+
+    stitched_tokens_norm = [norm for _, norm in _tokenize_with_original(final_clean)]
+    full_tokens_norm = [norm for _, norm in _tokenize_with_original(full_audio_clean)]
+    stitched_normalized = " ".join(stitched_tokens_norm)
+    full_normalized = " ".join(full_tokens_norm)
+    comparison_label = f"{bold}{green}[COMPARISON]{reset}" if use_color else "[COMPARISON]"
+
+    if stitched_normalized == full_normalized:
+        print(
+            f"{comparison_label} Stitched transcription matches full audio transcription.\n",
+            file=stream,
+        )
+        return
+
+    similarity = difflib.SequenceMatcher(None, stitched_tokens_norm, full_tokens_norm).ratio()
+    print(
+        f"{comparison_label} Difference detected (similarity {similarity:.2%}).",
+        file=stream,
+    )
+    diff_label = "\x1b[2;36m[DIFF]\x1b[0m" if use_color else "[DIFF]"
+    diff_snippets = _generate_diff_snippets(final_clean, full_audio_clean, use_color)
+    for snippet in diff_snippets:
+        print(
+            f"{diff_label} {snippet['tag']}:\n"
+            f"    stitched: {snippet['stitched']}\n"
+            f"    full:     {snippet['full']}",
+            file=stream,
+        )
+
+
+def _tokenize_with_original(text: str) -> list[tuple[str, str]]:
+    """Return (raw, normalized) tokens where normalized strips punctuation and lowercases."""
+    tokens: list[tuple[str, str]] = []
+    for raw in text.split():
+        normalized = re.sub(r"[^\w']+", "", raw).lower()
+        if not normalized:
+            continue
+        tokens.append((raw, normalized))
+    return tokens
+
+
+def _colorize_token(token: str, use_color: bool, color_code: str) -> str:
+    if use_color:
+        return f"\x1b[2;{color_code}m{token}\x1b[0m"
+    return f"[[{token}]]"
+
+
+def _format_diff_snippet(
+    tokens: list[tuple[str, str]],
+    diff_start: int,
+    diff_end: int,
+    use_color: bool,
+    color_code: str,
+) -> str:
+    if not tokens:
+        return _colorize_token("∅", use_color, color_code)
+
+    context = 3
+    window_end = max(diff_end, diff_start)
+    start = max(diff_start - context, 0)
+    end = min(window_end + context, len(tokens))
+    parts: list[str] = []
+
+    for idx in range(start, end):
+        raw = tokens[idx][0]
+        if diff_start <= idx < diff_end:
+            parts.append(_colorize_token(raw, use_color, color_code))
+        else:
+            parts.append(raw)
+
+    if diff_start == diff_end:
+        placeholder = _colorize_token("∅", use_color, color_code)
+        insert_at = diff_start - start
+        if insert_at < 0:
+            parts.insert(0, placeholder)
+        elif insert_at >= len(parts):
+            parts.append(placeholder)
+        else:
+            parts.insert(insert_at, placeholder)
+
+    snippet = " ".join(parts).strip()
+    if start > 0:
+        snippet = "... " + snippet
+    if end < len(tokens):
+        snippet = snippet + " ..."
+    return snippet or _colorize_token("∅", use_color, color_code)
+
+
+def _generate_diff_snippets(
+    stitched_text: str,
+    full_text: str,
+    use_color: bool,
+) -> list[dict[str, str]]:
+    stitched_tokens = _tokenize_with_original(stitched_text)
+    full_tokens = _tokenize_with_original(full_text)
+    stitched_norm = [norm for _, norm in stitched_tokens]
+    full_norm = [norm for _, norm in full_tokens]
+
+    matcher = difflib.SequenceMatcher(None, stitched_norm, full_norm)
+    snippets: list[dict[str, str]] = []
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        snippets.append(
+            {
+                "tag": tag,
+                "stitched": _format_diff_snippet(stitched_tokens, i1, i2, use_color, "33"),
+                "full": _format_diff_snippet(full_tokens, j1, j2, use_color, "36"),
+            }
+        )
+
+    return snippets
+
+
+def main(argv: list[str]) -> None:
     # Check for unimplemented features
-    if hasattr(args, 'refine_with_context') and args.refine_with_context:
+    if FLAGS.refine_with_context:
         print(
             "ERROR: --refine-with-context is not yet implemented.\n"
             "This feature will use a 3-chunk sliding window to refine transcriptions with more context.\n"
@@ -280,28 +459,139 @@ def main(argv: Optional[list[str]] = None) -> None:
         )
         sys.exit(1)
 
-    if args.backend == "whisper":
-        collector = ChunkCollectorWithStitching(sys.stdout)
+    # Warn about memory usage with unlimited duration and comparison enabled
+    if FLAGS.compare_transcripts and FLAGS.max_capture_duration == 0:
+        print(
+            "WARNING: Running with unlimited duration and comparison enabled will "
+            "continuously accumulate audio in memory.\n"
+            "Consider setting --max_capture_duration or use --nocompare_transcripts to reduce memory usage.\n",
+            file=sys.stderr,
+        )
+
+    # Confirm long capture durations with comparison enabled
+    if FLAGS.compare_transcripts and FLAGS.max_capture_duration > 300:  # > 5 minutes
+        duration_minutes = FLAGS.max_capture_duration / 60.0
+        print(
+            f"You have set a capture duration of {duration_minutes:.1f} minutes with comparison enabled.\n"
+            f"This will keep audio in memory for the entire session.",
+            file=sys.stderr,
+        )
+        if FLAGS.backend == "realtime":
+            print(
+                "Note: For Realtime API, this will also double your API usage cost.\n",
+                file=sys.stderr,
+            )
+
+        # Only prompt if stdin is available
         try:
-            run_whisper_transcriber(
-                model_name=args.model,
-                sample_rate=args.samplerate,
-                channels=args.channels,
-                temp_file=args.temp_file,
-                ca_cert=args.ca_cert,
-                insecure_downloads=args.insecure_downloads,
-                device_preference=args.device,
-                require_gpu=args.require_gpu,
+            response = input("Continue? [y/N]: ").strip().lower()
+            if response not in ("y", "yes"):
+                print("Cancelled.", file=sys.stderr)
+                sys.exit(0)
+        except (EOFError, OSError):
+            # stdin not available (e.g., running in background), proceed without confirmation
+            print("(Proceeding without confirmation - stdin not available)", file=sys.stderr)
+
+    if FLAGS.backend == "whisper":
+        collector = ChunkCollectorWithStitching(sys.stdout)
+        whisper_result = None
+        try:
+            whisper_result = run_whisper_transcriber(
+                model_name=FLAGS.model,
+                sample_rate=FLAGS.samplerate,
+                channels=FLAGS.channels,
+                temp_file=Path(FLAGS.temp_file) if FLAGS.temp_file else None,
+                ca_cert=Path(FLAGS.ca_cert) if FLAGS.ca_cert else None,
+                insecure_downloads=FLAGS.insecure_downloads,
+                device_preference=FLAGS.device,
+                require_gpu=FLAGS.require_gpu,
                 chunk_consumer=collector,
-                vad_aggressiveness=args.vad_aggressiveness,
-                vad_min_silence_duration=args.vad_min_silence_duration,
-                vad_min_speech_duration=args.vad_min_speech_duration,
-                vad_speech_pad_duration=args.vad_speech_pad_duration,
-                max_chunk_duration=args.max_chunk_duration,
+                vad_aggressiveness=FLAGS.vad_aggressiveness,
+                vad_min_silence_duration=FLAGS.vad_min_silence_duration,
+                vad_min_speech_duration=FLAGS.vad_min_speech_duration,
+                vad_speech_pad_duration=FLAGS.vad_speech_pad_duration,
+                max_chunk_duration=FLAGS.max_chunk_duration,
+                compare_transcripts=FLAGS.compare_transcripts,
+                max_capture_duration=FLAGS.max_capture_duration,
             )
         finally:
-            # Show final concatenated result
             final = collector.get_final_stitched()
+            if FLAGS.compare_transcripts:
+                full_audio_text = ""
+                try:
+                    full_audio_text = (
+                        whisper_result.full_audio_transcription
+                        if whisper_result and whisper_result.full_audio_transcription
+                        else ""
+                    )
+                except Exception as exc:
+                    print(
+                        f"WARNING: Unable to retrieve full audio transcription: {exc}",
+                        file=sys.stderr,
+                    )
+                print_transcription_summary(sys.stdout, final, full_audio_text)
+            else:
+                # Just show final concatenated result without comparison
+                if final:
+                    use_color = sys.stdout.isatty()
+                    if use_color:
+                        green = "\x1b[32m"
+                        reset = "\x1b[0m"
+                        bold = "\x1b[1m"
+                        print(f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final}\n", file=sys.stdout)
+                    else:
+                        print(f"\n[FINAL CONCATENATED] {final}\n", file=sys.stdout)
+        return
+
+    api_key = FLAGS.api_key or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "OpenAI API key required for realtime transcription. Provide --api-key or set OPENAI_API_KEY."
+        )
+    collector = ChunkCollectorWithStitching(sys.stdout)
+    realtime_result: Optional[RealtimeTranscriptionResult] = None
+    try:
+        realtime_result = run_realtime_transcriber(
+            api_key=api_key,
+            endpoint=FLAGS.realtime_endpoint,
+            model=FLAGS.realtime_model,
+            sample_rate=FLAGS.samplerate,
+            channels=FLAGS.channels,
+            chunk_duration=REALTIME_CHUNK_DURATION,
+            instructions=FLAGS.realtime_instructions,
+            insecure_downloads=FLAGS.insecure_downloads,
+            chunk_consumer=collector,
+            compare_transcripts=FLAGS.compare_transcripts,
+            max_capture_duration=FLAGS.max_capture_duration,
+        )
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Show final concatenated result
+        final = collector.get_final_stitched()
+        if FLAGS.compare_transcripts:
+            full_audio_text = ""
+            if realtime_result and realtime_result.full_audio.size > 0:
+                try:
+                    full_audio_text = transcribe_full_audio_realtime(
+                        realtime_result.full_audio,
+                        sample_rate=realtime_result.sample_rate,
+                        chunk_duration=REALTIME_CHUNK_DURATION,
+                        api_key=api_key,
+                        endpoint=FLAGS.realtime_endpoint,
+                        model=FLAGS.realtime_model,
+                        instructions=FLAGS.realtime_instructions,
+                        insecure_downloads=FLAGS.insecure_downloads,
+                    )
+                except Exception as exc:
+                    print(
+                        f"WARNING: Unable to transcribe full audio for comparison: {exc}",
+                        file=sys.stderr,
+                    )
+
+            print_transcription_summary(sys.stdout, final, full_audio_text)
+        else:
+            # Just show final concatenated result without comparison
             if final:
                 use_color = sys.stdout.isatty()
                 if use_color:
@@ -311,41 +601,12 @@ def main(argv: Optional[list[str]] = None) -> None:
                     print(f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final}\n", file=sys.stdout)
                 else:
                     print(f"\n[FINAL CONCATENATED] {final}\n", file=sys.stdout)
-        return
 
-    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "OpenAI API key required for realtime transcription. Provide --api-key or set OPENAI_API_KEY."
-        )
-    collector = ChunkCollectorWithStitching(sys.stdout)
-    try:
-        run_realtime_transcriber(
-            api_key=api_key,
-            endpoint=args.realtime_endpoint,
-            model=args.realtime_model,
-            sample_rate=args.samplerate,
-            channels=args.channels,
-            chunk_duration=REALTIME_CHUNK_DURATION,
-            instructions=args.realtime_instructions,
-            insecure_downloads=args.insecure_downloads,
-            chunk_consumer=collector,
-        )
-    except KeyboardInterrupt:
-        pass
-    finally:
-        # Show final concatenated result
-        final = collector.get_final_stitched()
-        if final:
-            use_color = sys.stdout.isatty()
-            if use_color:
-                green = "\x1b[32m"
-                reset = "\x1b[0m"
-                bold = "\x1b[1m"
-                print(f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final}\n", file=sys.stdout)
-            else:
-                print(f"\n[FINAL CONCATENATED] {final}\n", file=sys.stdout)
+
+def cli_main() -> None:
+    """Entry point for the CLI (called by pyproject.toml console_scripts)."""
+    app.run(main)
 
 
 if __name__ == "__main__":
-    main()
+    app.run(main)

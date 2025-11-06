@@ -9,7 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import numpy as np
 import sounddevice as sd
@@ -27,6 +27,92 @@ class TranscriptionChunk:
     end_time: float
     overlap_start: float  # Start of overlap region from previous chunk
     inference_seconds: float | None = None
+
+
+@dataclass
+class WhisperTranscriptionResult:
+    """Aggregate result returned after a Whisper transcription session."""
+    full_audio_transcription: str | None
+
+
+def _mps_available() -> bool:
+    mps_backend = getattr(torch.backends, "mps", None)
+    if not mps_backend or not hasattr(mps_backend, "is_available"):
+        return False
+    try:
+        return bool(mps_backend.is_available())
+    except Exception:
+        return False
+
+
+def load_whisper_model(
+    model_name: str,
+    device_preference: str,
+    require_gpu: bool,
+    ca_cert: Optional[Path],
+    insecure_downloads: bool,
+) -> Tuple[whisper.Whisper, str, bool]:
+    cuda_available = torch.cuda.is_available()
+    apple_mps_available = _mps_available()
+
+    if device_preference == "auto":
+        if cuda_available:
+            device = "cuda"
+        elif apple_mps_available:
+            device = "mps"
+        else:
+            device = "cpu"
+    elif device_preference == "cuda":
+        if not cuda_available:
+            raise RuntimeError("CUDA GPU requested (--device=cuda) but none is available.")
+        device = "cuda"
+    elif device_preference == "mps":
+        if not apple_mps_available:
+            raise RuntimeError("Apple Metal GPU requested (--device=mps) but none is available.")
+        device = "mps"
+    else:
+        device = "cpu"
+
+    if require_gpu and device not in {"cuda", "mps"}:
+        raise RuntimeError("GPU expected (--require-gpu supplied) but none is available.")
+
+    if device == "cuda":
+        print("Running transcription on CUDA GPU.", file=sys.stderr)
+    elif device == "mps":
+        print("Running transcription on Apple Metal (MPS) GPU.", file=sys.stderr)
+    else:
+        print(
+            "GPU not detected; running on CPU will be significantly slower.",
+            file=sys.stderr,
+        )
+
+    if ca_cert is not None:
+        if not ca_cert.exists():
+            raise FileNotFoundError(f"CA bundle not found: {ca_cert}")
+        os.environ["SSL_CERT_FILE"] = str(ca_cert)
+        os.environ["REQUESTS_CA_BUNDLE"] = str(ca_cert)
+
+    original_https_context = None
+    if insecure_downloads:
+        original_https_context = ssl._create_default_https_context
+        ssl._create_default_https_context = ssl._create_unverified_context
+
+    try:
+        preferred_models = {"tiny": "tiny.en", "base": "base.en"}
+        effective_model_name = preferred_models.get(model_name, model_name)
+        if effective_model_name != model_name:
+            print(
+                f"Using English-only checkpoint '{effective_model_name}' for faster decoding.",
+                file=sys.stderr,
+            )
+        print(f"Loading Whisper model: {effective_model_name}", file=sys.stderr)
+        model = whisper.load_model(effective_model_name, device=device)
+    finally:
+        if original_https_context is not None:
+            ssl._create_default_https_context = original_https_context
+
+    fp16 = device == "cuda"
+    return model, device, fp16
 
 
 # TODO: Add Silero VAD as alternative backend for better noise/music robustness
@@ -153,81 +239,22 @@ def run_whisper_transcriber(
     insecure_downloads: bool,
     device_preference: str,
     require_gpu: bool,
-    chunk_consumer: Optional[Callable[[int, str, float, float, list | None, float], None]] = None,
+    chunk_consumer: Optional[Callable[[int, str, float, float, float | None], None]] = None,
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,
     vad_speech_pad_duration: float = 0.2,
     max_chunk_duration: float = 60.0,
-) -> None:
-    def mps_available() -> bool:
-        mps_backend = getattr(torch.backends, "mps", None)
-        if not mps_backend or not hasattr(mps_backend, "is_available"):
-            return False
-        try:
-            return bool(mps_backend.is_available())
-        except Exception:
-            return False
-
-    cuda_available = torch.cuda.is_available()
-    apple_mps_available = mps_available()
-
-    if device_preference == "auto":
-        if cuda_available:
-            device = "cuda"
-        elif apple_mps_available:
-            device = "mps"
-        else:
-            device = "cpu"
-    elif device_preference == "cuda":
-        if not cuda_available:
-            raise RuntimeError("CUDA GPU requested (--device=cuda) but none is available.")
-        device = "cuda"
-    elif device_preference == "mps":
-        if not apple_mps_available:
-            raise RuntimeError("Apple Metal GPU requested (--device=mps) but none is available.")
-        device = "mps"
-    else:
-        device = "cpu"
-
-    if require_gpu and device not in {"cuda", "mps"}:
-        raise RuntimeError("GPU expected (--require-gpu supplied) but none is available.")
-
-    if device == "cuda":
-        print("Running transcription on CUDA GPU.", file=sys.stderr)
-    elif device == "mps":
-        print("Running transcription on Apple Metal (MPS) GPU.", file=sys.stderr)
-    else:
-        print(
-            "GPU not detected; running on CPU will be significantly slower.",
-            file=sys.stderr,
-        )
-
-    if ca_cert is not None:
-        if not ca_cert.exists():
-            raise FileNotFoundError(f"CA bundle not found: {ca_cert}")
-        os.environ["SSL_CERT_FILE"] = str(ca_cert)
-        os.environ["REQUESTS_CA_BUNDLE"] = str(ca_cert)
-
-    original_https_context = None
-    if insecure_downloads:
-        original_https_context = ssl._create_default_https_context
-        ssl._create_default_https_context = ssl._create_unverified_context
-
-    try:
-        preferred_models = {"tiny": "tiny.en", "base": "base.en"}
-        effective_model_name = preferred_models.get(model_name, model_name)
-        if effective_model_name != model_name:
-            print(
-                f"Using English-only checkpoint '{effective_model_name}' for faster decoding.",
-                file=sys.stderr,
-            )
-        print(f"Loading Whisper model: {effective_model_name}", file=sys.stderr)
-        model = whisper.load_model(effective_model_name, device=device)
-    finally:
-        if original_https_context is not None:
-            ssl._create_default_https_context = original_https_context
-    fp16 = device == "cuda"
+    compare_transcripts: bool = True,
+    max_capture_duration: float = 120.0,
+) -> WhisperTranscriptionResult:
+    model, device, fp16 = load_whisper_model(
+        model_name=model_name,
+        device_preference=device_preference,
+        require_gpu=require_gpu,
+        ca_cert=ca_cert,
+        insecure_downloads=insecure_downloads,
+    )
 
     # Track wall-clock start of the transcription session for absolute timestamps
     session_start_time = time.perf_counter()
@@ -235,6 +262,11 @@ def run_whisper_transcriber(
     audio_queue: queue.Queue[np.ndarray] = queue.Queue()
     buffer = np.zeros(0, dtype=np.float32)
     lock = threading.Lock()
+    full_audio_chunks: list[np.ndarray] = []
+    # Always track capture duration, but only collect full audio for comparison if enabled
+    max_capture_samples = int(sample_rate * max_capture_duration) if max_capture_duration > 0 else 0
+    total_samples_captured = 0
+    capture_limit_reached = threading.Event()
 
     # VAD configuration
     vad = WebRTCVAD(sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=vad_aggressiveness)
@@ -243,16 +275,31 @@ def run_whisper_transcriber(
     silence_frames_threshold = int(sample_rate * vad_min_silence_duration)
     min_speech_frames = int(sample_rate * vad_min_speech_duration)
     speech_pad_samples = int(sample_rate * vad_speech_pad_duration)
-    print(f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, aggressiveness: {vad_aggressiveness}, min_speech: {vad_min_speech_duration}s, pad: {vad_speech_pad_duration}s)", file=sys.stderr)
+
+    if max_capture_samples > 0:
+        print(
+            f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, aggressiveness: {vad_aggressiveness}, "
+            f"min_speech: {vad_min_speech_duration}s, pad: {vad_speech_pad_duration}s, max_capture: {max_capture_duration}s)",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, aggressiveness: {vad_aggressiveness}, "
+            f"min_speech: {vad_min_speech_duration}s, pad: {vad_speech_pad_duration}s)",
+            file=sys.stderr,
+        )
 
     def callback(indata: np.ndarray, frames: int, time, status) -> None:
+        nonlocal total_samples_captured
         if status:
             print(f"InputStream status: {status}", file=sys.stderr)
+        if capture_limit_reached.is_set():
+            return
         # Copy to avoid referencing the sounddevice ring buffer.
         audio_queue.put(indata.copy())
 
     def worker(stop_event: threading.Event) -> None:
-        nonlocal buffer
+        nonlocal buffer, total_samples_captured
         chunk_index = 0
         next_chunk_start = 0.0
         silence_frames = 0
@@ -270,6 +317,31 @@ def run_whisper_transcriber(
             mono = chunk.mean(axis=1).astype(np.float32, copy=False)
 
             with lock:
+                # Always track total samples captured (for duration limit)
+                total_samples_captured += len(mono)
+
+                # Check if capture duration limit reached
+                if max_capture_samples > 0 and total_samples_captured >= max_capture_samples:
+                    if not capture_limit_reached.is_set():
+                        capture_limit_reached.set()
+                        duration_captured = total_samples_captured / sample_rate
+                        print(
+                            f"\nCapture duration limit reached ({duration_captured:.1f}s). "
+                            f"Finishing current chunk and stopping gracefully...",
+                            file=sys.stderr,
+                        )
+                        # Don't set stop_event yet - let current chunk finish
+
+                # Preserve full-session audio for post-run transcription comparison (if enabled)
+                if compare_transcripts:
+                    full_audio_chunks.append(mono.copy())
+                    # Trim to max_capture_duration by removing oldest chunks
+                    if max_capture_samples > 0:
+                        total_samples = sum(len(c) for c in full_audio_chunks)
+                        while total_samples > max_capture_samples and len(full_audio_chunks) > 1:
+                            removed = full_audio_chunks.pop(0)
+                            total_samples -= len(removed)
+
                 buffer = np.concatenate((buffer, mono))
                 speech_pad_buffer = np.concatenate((speech_pad_buffer, mono))
 
@@ -378,6 +450,12 @@ def run_whisper_transcriber(
 
                 chunk_index += 1
 
+                # After chunk completes, check if capture limit was reached and stop gracefully
+                if capture_limit_reached.is_set():
+                    print("Current chunk finished. Stopping transcription...", file=sys.stderr)
+                    stop_event.set()
+                    break
+
     stop_event = threading.Event()
     thread = threading.Thread(target=worker, args=(stop_event,), daemon=True)
     thread.start()
@@ -402,3 +480,68 @@ def run_whisper_transcriber(
             with lock:
                 if temp_file.exists():
                     temp_file.unlink()
+
+    full_audio_transcription: str | None = None
+    if compare_transcripts and full_audio_chunks:
+        full_audio = np.concatenate(full_audio_chunks)
+        if full_audio.size:
+            full_audio_result = model.transcribe(
+                full_audio,
+                fp16=fp16,
+                temperature=0.0,
+                beam_size=1,
+                best_of=1,
+                language="en",
+            )
+            full_audio_transcription = full_audio_result["text"]
+
+    return WhisperTranscriptionResult(full_audio_transcription=full_audio_transcription)
+
+
+def transcribe_full_audio(
+    audio: np.ndarray,
+    sample_rate: int,
+    model_name: str,
+    device_preference: str,
+    require_gpu: bool,
+    ca_cert: Optional[Path],
+    insecure_downloads: bool,
+) -> str:
+    """
+    Run a single transcription pass over the provided audio buffer.
+
+    Args:
+        audio: Mono float32 audio samples.
+        sample_rate: Sample rate of the provided audio (Hz).
+        model_name: Whisper checkpoint name (e.g., turbo, small.en).
+        device_preference: Preferred device to run on (auto/cpu/cuda/mps).
+        require_gpu: If True, raise when GPU unavailable.
+        ca_cert: Optional custom CA bundle for downloads.
+        insecure_downloads: Disable SSL verification for downloads when True.
+
+    Returns:
+        Full transcription text (may be empty when no audio).
+    """
+    if audio.size == 0:
+        return ""
+
+    # Whisper handles resampling internally; sample_rate retained for interface symmetry.
+    _ = sample_rate
+
+    model, _, fp16 = load_whisper_model(
+        model_name=model_name,
+        device_preference=device_preference,
+        require_gpu=require_gpu,
+        ca_cert=ca_cert,
+        insecure_downloads=insecure_downloads,
+    )
+
+    result = model.transcribe(
+        audio,
+        fp16=fp16,
+        temperature=0.0,
+        beam_size=1,
+        best_of=1,
+        language="en",
+    )
+    return result["text"]

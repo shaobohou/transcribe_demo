@@ -5,6 +5,7 @@ description = "Real-time transcription with Whisper using sounddevice and torch.
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "absl-py>=2.3.1",
     "numpy",
     "openai-whisper",
     "sounddevice",
@@ -14,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-transcribe-demo = "transcribe_demo.main:main"
+transcribe-demo = "transcribe_demo.main:cli_main"
 
 [build-system]
 requires = ["hatchling"]

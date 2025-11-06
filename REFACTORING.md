@@ -140,7 +140,72 @@ After successful refactoring:
 
 ## Priority 1: High Impact Refactoring
 
-### 1.1 Extract Terminal Color Formatter (main.py)
+### 1.1 Extract Duplicate Realtime Session Configuration (realtime_backend.py)
+
+**Issue**: Identical OpenAI Realtime API session configuration appears twice (20+ lines duplicated).
+
+**Locations**:
+- `realtime_backend.py:97-119` (in `transcribe_full_audio_realtime`)
+- `realtime_backend.py:417-439` (in `run_realtime_transcriber`)
+
+**Current Code**:
+```python
+await send_json(ws, {
+    "type": "session.update",
+    "session": {
+        "modalities": ["text"],
+        "instructions": instructions,
+        "input_audio_format": "pcm16",
+        "input_audio_transcription": {"model": "whisper-1"},
+        "turn_detection": {
+            "type": "server_vad",
+            "threshold": 0.3,
+            "prefix_padding_ms": 200,
+            "silence_duration_ms": 300,
+        },
+        "temperature": 0.6,
+        "max_response_output_tokens": 4096,
+    },
+}, lock)
+```
+
+**Proposed Solution**:
+```python
+def _create_session_config(instructions: str) -> dict:
+    """Create OpenAI Realtime API session configuration."""
+    return {
+        "type": "session.update",
+        "session": {
+            "modalities": ["text"],
+            "instructions": instructions,
+            "input_audio_format": "pcm16",
+            "input_audio_transcription": {"model": "whisper-1"},
+            "turn_detection": {
+                "type": "server_vad",
+                "threshold": 0.3,
+                "prefix_padding_ms": 200,
+                "silence_duration_ms": 300,
+            },
+            "temperature": 0.6,
+            "max_response_output_tokens": 4096,
+        },
+    }
+
+# Usage:
+await send_json(ws, _create_session_config(instructions), lock)
+```
+
+**Benefits**:
+- Single source of truth for API configuration
+- Easier to modify session settings
+- Reduces 20+ lines of duplication
+- Consistent behavior between full audio and streaming
+
+**Priority**: Quick win - 10 minutes, saves 20 lines
+
+---
+
+### 1.2 Extract Terminal Color Formatter (main.py)
 
 **Issue**: ANSI color codes are hardcoded and duplicated in multiple locations.
 
@@ -437,11 +502,88 @@ def create_websocket_ssl_context(insecure: bool = False) -> Optional[ssl.SSLCont
 
 ## Priority 2: Function Decomposition
 
-### 2.1 Decompose `run_whisper_transcriber()` (whisper_backend.py)
+### 2.1 Break Down 200-Line `worker()` Function (whisper_backend.py)
 
-**Issue**: Function is 258 lines with multiple responsibilities.
+**Issue**: The worker function is ~200 lines long with multiple responsibilities, making it the most complex function in the codebase.
 
-**Location**: `whisper_backend.py:147-405`
+**Location**: `whisper_backend.py:300-500` (nested inside `run_whisper_transcriber`)
+
+**Responsibilities**:
+- Audio queue processing
+- VAD frame processing
+- Buffer management
+- Speech/silence detection logic
+- Chunk transcription triggering
+- Punctuation cleanup
+- Output formatting
+
+**Proposed Solution**:
+```python
+class WhisperTranscriptionWorker:
+    """Manages VAD-based audio chunking and transcription."""
+
+    def __init__(self, model, sample_rate, vad_config, ...):
+        self.model = model
+        self.sample_rate = sample_rate
+        self.vad = WebRTCVAD(sample_rate, ...)
+        self.buffer = np.zeros(0, dtype=np.float32)
+        self.chunk_index = 0
+        # ... initialize all state
+
+    def process_audio_chunk(self, mono: np.ndarray) -> None:
+        """Process incoming audio and update buffers."""
+        # Check capture limit
+        # Update buffers
+        # Process VAD frames
+        # ~30 lines
+
+    def should_transcribe(self) -> bool:
+        """Determine if buffer is ready for transcription."""
+        # Check min/max chunk size
+        # Check VAD silence threshold
+        # ~15 lines
+
+    def transcribe_buffer(self) -> TranscriptionChunk:
+        """Transcribe the current audio buffer."""
+        # Run Whisper inference
+        # Calculate timestamps
+        # ~30 lines
+
+    def run(self, audio_queue, stop_event) -> None:
+        """Main worker loop."""
+        while not stop_event.is_set():
+            mono = self._get_audio(audio_queue)
+            if mono is None:
+                continue
+
+            self.process_audio_chunk(mono)
+
+            if self.should_transcribe():
+                chunk = self.transcribe_buffer()
+                self.output_chunk(chunk)
+
+            if self.capture_limit_reached():
+                break
+```
+
+**Benefits**:
+- Each method has single responsibility
+- Testable components (can test VAD logic independently)
+- Clearer control flow
+- Easier to add features (e.g., different chunking strategies)
+- Reduced cyclomatic complexity
+
+**Priority**: High impact - 4-6 hours, improves maintainability significantly
+
+**Status**: Most impactful refactoring opportunity
+
+---
+
+### 2.2 Decompose `run_whisper_transcriber()` (whisper_backend.py)
+
+**Issue**: Function is ~250 lines with multiple responsibilities.
+
+**Location**: `whisper_backend.py:233-490`
 
 **Responsibilities**:
 1. Device detection and setup
@@ -704,11 +846,79 @@ class ChunkCollectorWithStitching:
 
 ---
 
-### 2.3 Decompose `run_realtime_transcriber()` (realtime_backend.py)
+### 2.3 Extract Transcript Comparison Logic to Separate Module (main.py)
 
-**Issue**: Function is 200 lines with 3 nested async functions.
+**Issue**: main.py contains 150+ lines of transcript comparison logic that could be its own module.
 
-**Location**: `realtime_backend.py:47-247`
+**Location**: `main.py:294-448`
+
+**Functions to Extract**:
+- `_normalize_whitespace()` - 2 lines
+- `print_transcription_summary()` - 65 lines
+- `_tokenize_with_original()` - 13 lines
+- `_colorize_token()` - 4 lines
+- `_format_diff_snippet()` - 40 lines
+- `_generate_diff_snippets()` - 15 lines
+
+**Proposed Solution**:
+```python
+# Create new file: src/transcribe_demo/comparison.py
+
+class TranscriptComparator:
+    """Compares and displays differences between transcripts."""
+
+    def __init__(self, use_color: bool = True):
+        self.use_color = use_color
+
+    def compare(self, stitched: str, full_audio: str) -> ComparisonResult:
+        """
+        Compare two transcripts and return structured result.
+
+        Returns:
+            ComparisonResult with similarity score and diff details
+        """
+        stitched_tokens = self._tokenize(stitched)
+        full_tokens = self._tokenize(full_audio)
+
+        matcher = difflib.SequenceMatcher(None, stitched_tokens, full_tokens)
+        similarity = matcher.ratio()
+
+        return ComparisonResult(
+            similarity=similarity,
+            diffs=self._generate_diffs(matcher, stitched, full_audio),
+        )
+
+    def print_summary(
+        self,
+        stream: TextIO,
+        stitched: str,
+        full_audio: str,
+    ) -> None:
+        """Print formatted comparison to stream."""
+        # Format and print transcripts
+        # Show similarity and diffs
+
+# Usage in main.py:
+comparator = TranscriptComparator(use_color=sys.stdout.isatty())
+comparator.print_summary(sys.stdout, final, full_audio_text)
+```
+
+**Benefits**:
+- Cleaner main.py (150 lines moved)
+- Reusable comparison logic
+- Easier to test diff algorithms
+- Could add other comparison methods (WER, CER, etc.)
+- Clear separation of concerns
+
+**Priority**: Medium impact - 2-3 hours
+
+---
+
+### 2.4 Decompose `run_realtime_transcriber()` (realtime_backend.py)
+
+**Issue**: Function is ~200 lines with 3 nested async functions.
+
+**Location**: `realtime_backend.py:193-410`
 
 **Proposed Solution**:
 ```python
@@ -871,15 +1081,20 @@ class TranscriptReceiver:
 
 ### 3.1 Extract Magic Numbers to Named Constants
 
-**Issue**: Magic numbers scattered throughout the code make intent unclear.
+**Issue**: Magic numbers scattered throughout the code make intent unclear and harder to configure.
 
-**Examples**:
-- `main.py:125`: `(chunk_index + 1) % 3 == 0` - concatenation frequency
-- `main.py:16`: `REALTIME_CHUNK_DURATION = 2.0` - good! (already done)
-- `whisper_backend.py:241`: `2.0` - minimum chunk duration
-- `whisper_backend.py:277`: `30` - VAD frame duration
-- `realtime_backend.py:60`: `24000` - session sample rate
-- `realtime_backend.py:103`: `100ms` - minimum audio (in comment)
+**Current Examples**:
+- `realtime_backend.py:209,76`: `24000` - Realtime session sample rate (duplicated)
+- `realtime_backend.py:110,430`: `0.3` - VAD threshold (duplicated in session config)
+- `realtime_backend.py:112,432`: `300` - Silence duration ms (duplicated)
+- `realtime_backend.py:111,431`: `200` - Prefix padding ms (duplicated)
+- `realtime_backend.py:114,434`: `0.6` - Temperature (duplicated)
+- `realtime_backend.py:115,435`: `4096` - Max tokens (duplicated)
+- `realtime_backend.py:276,275`: `0.1` - Async poll interval (many occurrences)
+- `whisper_backend.py:272`: `2.0` - Minimum chunk duration
+- `whisper_backend.py:271`: `30` - VAD frame duration ms
+- `main.py:183,217`: `300` - 5 minutes in seconds (for confirmation prompt)
+- `main.py:183`: `120` - Default capture duration
 
 **Proposed Solution**:
 ```python
@@ -905,7 +1120,17 @@ CONCATENATION_DISPLAY_FREQUENCY = 3  # Show every N chunks
 
 # Realtime API
 REALTIME_CHUNK_DURATION = 2.0
-REALTIME_MIN_AUDIO_MS = 100
+REALTIME_SESSION_SAMPLE_RATE = 24000
+REALTIME_VAD_THRESHOLD = 0.3
+REALTIME_VAD_PREFIX_PADDING_MS = 200
+REALTIME_VAD_SILENCE_DURATION_MS = 300
+REALTIME_TEMPERATURE = 0.6
+REALTIME_MAX_TOKENS = 4096
+ASYNC_POLL_INTERVAL = 0.1  # seconds
+
+# User interaction
+CAPTURE_DURATION_CONFIRMATION_THRESHOLD = 300  # 5 minutes
+DEFAULT_CAPTURE_DURATION = 120  # 2 minutes
 
 # Device preferences
 DEVICE_PREFERENCE_ORDER = ["cuda", "mps", "cpu"]
