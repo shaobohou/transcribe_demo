@@ -188,21 +188,7 @@ When modifying VAD logic, ensure all tests pass and consider adding test cases f
 
 ## Code Quality and Refactoring
 
-**See REFACTORING.md** for detailed refactoring opportunities, workflow guidelines, and common cleanup patterns.
-
-**When to update REFACTORING.md:**
-- You identify code duplication or repetitive patterns
-- Functions become too long or complex (>200 lines, multiple responsibilities)
-- You discover missing abstractions or useful utility classes
-- Test coverage gaps are identified
-- You notice magic numbers that should be named constants
-- You implement a refactoring and want to remove it from the list
-
-**Quick reference:**
-- Follow the "boy scout rule" - leave code better than you found it
-- Add to REFACTORING.md when under tight deadlines instead of refactoring immediately
-- Test first, refactor incrementally, commit frequently
-- Update this file (CLAUDE.md) if refactoring changes architecture
+**See REFACTORING.md** for refactoring opportunities, guidelines on when/how to refactor, and common cleanup patterns. Update it when you identify code quality issues or complete refactorings.
 
 ## Future Improvements
 
