@@ -259,7 +259,7 @@ def run_whisper_transcriber(
     # Track wall-clock start of the transcription session for absolute timestamps
     session_start_time = time.perf_counter()
 
-    audio_queue: queue.Queue[np.ndarray] = queue.Queue()
+    audio_queue: queue.Queue[Optional[np.ndarray]] = queue.Queue()
     buffer = np.zeros(0, dtype=np.float32)
     lock = threading.Lock()
     full_audio_chunks: list[np.ndarray] = []
@@ -267,6 +267,7 @@ def run_whisper_transcriber(
     max_capture_samples = int(sample_rate * max_capture_duration) if max_capture_duration > 0 else 0
     total_samples_captured = 0
     capture_limit_reached = threading.Event()
+    stop_event = threading.Event()
 
     # VAD configuration
     vad = WebRTCVAD(sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=vad_aggressiveness)
@@ -293,7 +294,7 @@ def run_whisper_transcriber(
         nonlocal total_samples_captured
         if status:
             print(f"InputStream status: {status}", file=sys.stderr)
-        if capture_limit_reached.is_set():
+        if stop_event.is_set() or capture_limit_reached.is_set():
             return
         # Copy to avoid referencing the sounddevice ring buffer.
         audio_queue.put(indata.copy())
@@ -314,7 +315,12 @@ def run_whisper_transcriber(
                 continue
 
             # Reduce to mono when multiple channels are present.
-            mono = chunk.mean(axis=1).astype(np.float32, copy=False)
+            force_transcribe_now = False
+            if chunk is None:
+                force_transcribe_now = True
+                mono = np.zeros(0, dtype=np.float32)
+            else:
+                mono = chunk.mean(axis=1).astype(np.float32, copy=False)
 
             with lock:
                 # Always track total samples captured (for duration limit)
@@ -331,6 +337,7 @@ def run_whisper_transcriber(
                             file=sys.stderr,
                         )
                         # Don't set stop_event yet - let current chunk finish
+                        audio_queue.put(None)
 
                 # Preserve full-session audio for post-run transcription comparison (if enabled)
                 if compare_transcripts:
@@ -364,6 +371,7 @@ def run_whisper_transcriber(
 
                 # Determine if we should transcribe
                 should_transcribe = False
+                force_flush = force_transcribe_now
                 max_duration_exceeded = False
                 if buffer.size >= min_chunk_size and speech_frames >= min_speech_frames:
                     if silence_frames >= silence_frames_threshold:
@@ -371,6 +379,15 @@ def run_whisper_transcriber(
                     elif buffer.size >= max_chunk_size:
                         should_transcribe = True
                         max_duration_exceeded = True
+
+                if capture_limit_reached.is_set():
+                    if buffer.size >= min_chunk_size or (buffer.size > 0 and (audio_queue.empty() or force_transcribe_now)):
+                        should_transcribe = True
+                        force_flush = True
+
+                if force_transcribe_now:
+                    should_transcribe = True
+                    force_flush = True
 
                 if not should_transcribe:
                     continue
@@ -390,7 +407,13 @@ def run_whisper_transcriber(
                         window = np.concatenate((padding, window))
 
                 if len(window) < min_chunk_size:
-                    continue
+                    if not force_flush:
+                        continue
+                    # Allow final partial chunk; avoid empty buffers
+                    if len(window) == 0:
+                        if capture_limit_reached.is_set():
+                            stop_event.set()
+                        continue
 
                 current_start = next_chunk_start
                 current_end = next_chunk_start + len(window) / float(sample_rate)
@@ -456,9 +479,25 @@ def run_whisper_transcriber(
                     stop_event.set()
                     break
 
-    stop_event = threading.Event()
     thread = threading.Thread(target=worker, args=(stop_event,), daemon=True)
     thread.start()
+
+    input_thread: Optional[threading.Thread] = None
+
+    def _wait_for_enter() -> None:
+        """Block until the user presses Enter, then request shutdown."""
+        try:
+            input("Press Enter to stop...\n")
+        except (EOFError, OSError):
+            # stdin unavailable (e.g., running in background); rely on capture limit or Ctrl+C
+            return
+        stop_event.set()
+
+    if sys.stdin is not None and sys.stdin.isatty():
+        input_thread = threading.Thread(target=_wait_for_enter, name="stdin-watcher", daemon=True)
+        input_thread.start()
+    else:
+        print("stdin is not interactive; press Ctrl+C to stop recording.", file=sys.stderr)
 
     try:
         with sd.InputStream(
@@ -467,12 +506,8 @@ def run_whisper_transcriber(
             samplerate=sample_rate,
             dtype="float32",
         ):
-            try:
-                input("Press Enter to stop...\n")
-            except (EOFError, OSError):
-                # If stdin is not available (e.g., running in background), just wait
-                while not stop_event.is_set():
-                    time.sleep(0.1)
+            while not stop_event.is_set():
+                time.sleep(0.1)
     finally:
         stop_event.set()
         thread.join(timeout=1.0)

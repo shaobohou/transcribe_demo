@@ -203,7 +203,7 @@ def run_realtime_transcriber(
     compare_transcripts: bool = True,
     max_capture_duration: float = 120.0,
 ) -> RealtimeTranscriptionResult:
-    audio_queue: queue.Queue[np.ndarray] = queue.Queue()
+    audio_queue: queue.Queue[Optional[np.ndarray]] = queue.Queue()
     stop_event = threading.Event()
     capture_limit_reached = threading.Event()
     session_sample_rate = 24000
@@ -213,6 +213,7 @@ def run_realtime_transcriber(
     full_audio_chunks: list[np.ndarray] = []
     full_audio_lock = threading.Lock()
     chunk_texts: list[str] = []
+    sender_finished_flag = threading.Event()
     # Always track capture duration, but only collect full audio for comparison if enabled
     max_capture_samples = int(sample_rate * max_capture_duration) if max_capture_duration > 0 else 0
     total_samples_captured = 0
@@ -247,6 +248,9 @@ def run_realtime_transcriber(
                         f"Finishing current transcriptions and stopping gracefully...",
                         file=sys.stderr,
                     )
+                    audio_queue.put(None)
+                    if not stop_event.is_set():
+                        stop_event.set()
 
             # Preserve full-session audio for post-run transcription comparison (if enabled)
             if compare_transcripts:
@@ -258,82 +262,92 @@ def run_realtime_transcriber(
                         removed = full_audio_chunks.pop(0)
                         total_samples -= len(removed)
 
-    async def wait_for_stop() -> None:
-        """Wait for either user input or capture limit, whichever comes first."""
-
-        async def wait_for_input() -> None:
-            """Wait for user to press Enter."""
-            try:
-                await asyncio.to_thread(input, "Press Enter to stop...\n")
-            except (EOFError, OSError):
-                # stdin not available (e.g., background execution)
-                # Wait indefinitely - capture limit will stop us
-                await asyncio.Event().wait()
-
-        async def wait_for_capture_limit() -> None:
-            """Wait for capture duration limit to be reached."""
-            while not capture_limit_reached.is_set():
-                await asyncio.sleep(0.1)
-            print("Stopping due to capture duration limit.", file=sys.stderr)
-
-        # Create tasks for both conditions
-        input_task = asyncio.create_task(wait_for_input())
-        limit_task = asyncio.create_task(wait_for_capture_limit())
-
-        # Wait for whichever completes first
-        done, pending = await asyncio.wait(
-            [input_task, limit_task],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-
-        # Cancel the task that didn't finish
-        for task in pending:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-        stop_event.set()
-
     async def audio_sender(
         ws: websockets.WebSocketClientProtocol,
         lock: asyncio.Lock,
     ) -> None:
         buffer = np.zeros(0, dtype=np.float32)
         chunk_size = max(int(sample_rate * chunk_duration), 1)
-        while not stop_event.is_set():
-            if buffer.size < chunk_size:
-                try:
-                    chunk = await asyncio.to_thread(audio_queue.get, True, 0.1)
-                except queue.Empty:
-                    if stop_event.is_set():
+        sentinel_received = False
+        try:
+            while True:
+                force_flush = False
+                got_item = False
+                item: Optional[np.ndarray] = None
+
+                if not sentinel_received and buffer.size < chunk_size:
+                    try:
+                        timeout = 0.1 if not stop_event.is_set() else 0.01
+                        item = await asyncio.to_thread(audio_queue.get, True, timeout)
+                        got_item = True
+                    except queue.Empty:
+                        got_item = False
+
+                if got_item:
+                    if item is None:
+                        sentinel_received = True
+                        force_flush = True
+                    else:
+                        chunk = item
+                        if chunk.ndim > 1:
+                            chunk = chunk.mean(axis=1)
+                        buffer = np.concatenate((buffer, chunk.astype(np.float32, copy=False)))
+                else:
+                    if stop_event.is_set() or capture_limit_reached.is_set():
+                        force_flush = buffer.size > 0 or sentinel_received
+                    elif buffer.size < chunk_size:
+                        await asyncio.sleep(0.05)
+                        continue
+
+                if buffer.size == 0:
+                    if sentinel_received or stop_event.is_set() or capture_limit_reached.is_set():
                         break
                     continue
-                if chunk.ndim > 1:
-                    chunk = chunk.mean(axis=1)
-                buffer = np.concatenate((buffer, chunk.astype(np.float32, copy=False)))
-                continue
 
-            window = buffer[:chunk_size]
-            resampled = resample_audio(window, sample_rate, session_sample_rate)
+                send_count = buffer.size if force_flush or buffer.size < chunk_size else chunk_size
+                if send_count == 0:
+                    if sentinel_received or stop_event.is_set() or capture_limit_reached.is_set():
+                        break
+                    continue
 
-            # Only send if we have enough audio (at least 100ms as required by API)
-            if len(resampled) == 0:
-                buffer = buffer[chunk_size:]
-                continue
+                window = buffer[:send_count]
+                buffer = buffer[send_count:]
 
-            pcm_payload = base64.b64encode(float_to_pcm16(resampled)).decode("ascii")
-            await send_json(
-                ws,
-                {
-                    "type": "input_audio_buffer.append",
-                    "audio": pcm_payload,
-                },
-                lock,
-            )
-            # Don't manually commit when using server_vad - the server handles it automatically
-            buffer = buffer[chunk_size:]
+                resampled = resample_audio(window, sample_rate, session_sample_rate)
+                if len(resampled) == 0:
+                    if force_flush and buffer.size == 0:
+                        break
+                    continue
+
+                pcm_payload = base64.b64encode(float_to_pcm16(resampled)).decode("ascii")
+                await send_json(
+                    ws,
+                    {
+                        "type": "input_audio_buffer.append",
+                        "audio": pcm_payload,
+                    },
+                    lock,
+                )
+
+                if force_flush and buffer.size == 0:
+                    break
+
+            if buffer.size > 0:
+                resampled = resample_audio(buffer, sample_rate, session_sample_rate)
+                if len(resampled) > 0:
+                    pcm_payload = base64.b64encode(float_to_pcm16(resampled)).decode("ascii")
+                    await send_json(
+                        ws,
+                        {
+                            "type": "input_audio_buffer.append",
+                            "audio": pcm_payload,
+                        },
+                        lock,
+                    )
+
+            await send_json(ws, {"type": "input_audio_buffer.commit"}, lock)
+        finally:
+            sender_finished_flag.set()
 
     async def receiver(
         ws: websockets.WebSocketClientProtocol,
@@ -414,6 +428,17 @@ def run_realtime_transcriber(
             ssl_context.verify_mode = ssl.CERT_NONE
 
         async with websockets.connect(uri, additional_headers=headers, max_size=None, ssl=ssl_context) as ws:
+            async def monitor_stop() -> None:
+                await asyncio.to_thread(stop_event.wait)
+                if not sender_finished_flag.is_set():
+                    await asyncio.to_thread(sender_finished_flag.wait)
+                # Give the server a brief window to deliver trailing transcripts.
+                await asyncio.sleep(0.5)
+                try:
+                    await ws.close(code=1000, reason="capture limit reached")
+                except Exception:
+                    pass
+
             await send_json(
                 ws,
                 {
@@ -440,19 +465,34 @@ def run_realtime_transcriber(
             tasks = [
                 asyncio.create_task(audio_sender(ws, lock)),
                 asyncio.create_task(receiver(ws)),
-                asyncio.create_task(wait_for_stop()),
+                asyncio.create_task(monitor_stop()),
             ]
-            done, pending = await asyncio.wait(
-                tasks,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            try:
+                await asyncio.gather(*tasks)
+            finally:
+                stop_event.set()
+                try:
+                    audio_queue.put_nowait(None)
+                except queue.Full:
+                    pass
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    if sys.stdin is not None and sys.stdin.isatty():
+        def _stdin_listener() -> None:
+            try:
+                input("Press Enter to stop...\n")
+            except (EOFError, OSError):
+                return
+            print("\nStopping due to user request.", file=sys.stderr)
             stop_event.set()
-            for task in pending:
-                task.cancel()
-            await asyncio.gather(*pending, return_exceptions=True)
-            for task in done:
-                if task.exception():
-                    raise task.exception()
+            audio_queue.put(None)
+
+        threading.Thread(target=_stdin_listener, name="stdin-listener", daemon=True).start()
+    else:
+        print("stdin is not interactive; press Ctrl+C to stop recording.", file=sys.stderr)
 
     with sd.InputStream(
         callback=callback,

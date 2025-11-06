@@ -102,33 +102,6 @@ UV_CACHE_DIR=$(pwd)/.uv-cache uv sync --group dev
 
 **Key insight:** By using VAD to detect natural speech pauses, chunks don't have overlapping audio. This eliminates the need for complex overlap resolution algorithms and reduces transcription errors at chunk boundaries. Automatic punctuation cleanup ensures smooth concatenation even when VAD splits occur mid-sentence.
 
-### Future Feature: Sliding Window Refinement (NOT YET IMPLEMENTED)
-
-**Concept**: Use a 3-chunk sliding window to refine the middle chunk with more context.
-
-**How it would work:**
-1. Store raw audio buffers for the last 3 chunks
-2. When chunk N arrives, concatenate audio from chunks N-2, N-1, N
-3. Re-transcribe the 3-chunk window with Whisper
-4. Use word-level timestamps to extract refined text for chunk N-1 (middle chunk)
-5. Display refined version of chunk N-1 after chunk N processing
-
-**Benefits:**
-- Better context reduces boundary transcription errors
-- Improved accuracy for phrases that span chunk boundaries
-- More natural linguistic flow across chunks
-
-**Trade-offs:**
-- Adds 1-chunk latency (chunk N-1 displayed after N arrives)
-- Requires ~3x inference time per chunk
-- Needs word timestamps (feature not currently implemented)
-- Requires additional memory to store raw audio buffers
-
-**Status:**
-- CLI flag added: `--refine-with-context` (currently shows error if used)
-- Implementation TODO documented in `main.py` (lines 71-95)
-- Requires modifications to `whisper_backend.py` to pass raw audio buffers
-
 ### Audio Processing Flow
 
 **VAD-based chunking:**
@@ -189,40 +162,3 @@ When modifying VAD logic, ensure all tests pass and consider adding test cases f
 ## Code Quality and Refactoring
 
 **See REFACTORING.md** for refactoring opportunities, guidelines on when/how to refactor, and common cleanup patterns. Update it when you identify code quality issues or complete refactorings.
-
-## Future Improvements
-
-### TODO: Silero VAD Backend for Background Noise/Music Robustness
-
-**Problem**: WebRTC VAD can only distinguish silence vs voice, causing false positives with background music/noise.
-
-**Solution**: Add Silero VAD as alternative backend that can distinguish voice vs music vs noise vs silence.
-
-**Benefits**:
-- 10-30x more accurate with background noise/music
-- Probabilistic scores (adjustable threshold 0.0-1.0, recommend 0.7-0.9 for noisy environments)
-- Deep learning-based vs WebRTC's simple GMM
-- Processing: <1ms per 30ms chunk (real-time capable)
-- Supports any sample rate (WebRTC limited to 8k/16k/32k/48k)
-
-**Implementation Path**:
-1. Add dependency: `uv add silero-vad torch`
-2. Create `SileroVAD` class in `whisper_backend.py` (see TODO comment at line 32)
-3. Add CLI arguments: `--vad-backend {webrtc,silero}` and `--vad-threshold FLOAT`
-4. Update `run_whisper_transcriber()` to instantiate appropriate VAD class based on backend choice
-
-**Additional Noise Robustness Improvements**:
-- Add `initial_prompt` to Whisper: "Ignore background music and noise. Transcribe only clear human speech."
-- Set `condition_on_previous_text=False` to prevent hallucination loops with noise
-
-**Usage Example**:
-```bash
-# For noisy environments with background music
-uv run transcribe-demo --vad-backend silero --vad-threshold 0.8
-```
-
-**Location**: Detailed implementation in `whisper_backend.py:32-80`
-
-**References**:
-- https://github.com/snakers4/silero-vad
-- Research showing Silero VAD's superior performance with music/noise
