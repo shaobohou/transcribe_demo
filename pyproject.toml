@@ -9,6 +9,7 @@ dependencies = [
     "numpy",
     "openai-whisper",
     "sounddevice",
+    "soundfile>=0.12.0",
     "torch",
     "webrtcvad>=2.0.10",
     "websockets",
