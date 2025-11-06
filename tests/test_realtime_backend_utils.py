@@ -35,9 +35,11 @@ def test_run_async_falls_back_to_manual_loop(monkeypatch):
         coro.close()
         raise RuntimeError("loop running")
 
-    def new_loop_wrapper():
+    loop_holder: dict[str, asyncio.AbstractEventLoop] = {}
+
+    def new_loop_wrapper() -> asyncio.AbstractEventLoop:
         loop = original_new_loop()
-        new_loop_wrapper.loop = loop
+        loop_holder["loop"] = loop
         return loop
 
     monkeypatch.setattr(realtime_backend.asyncio, "run", failing_run)
@@ -45,7 +47,7 @@ def test_run_async_falls_back_to_manual_loop(monkeypatch):
 
     result = realtime_backend._run_async(lambda: coro())
     assert result == "ok"
-    assert hasattr(new_loop_wrapper, "loop")
+    assert "loop" in loop_holder
 
 
 class FakeWebSocket:

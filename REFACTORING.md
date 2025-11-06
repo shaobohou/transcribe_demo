@@ -994,7 +994,7 @@ class TranscriptReceiver:
         self.chunk_counter = 0
         self.session_start_time = time.perf_counter()
         self.cumulative_time = 0.0
-        self.partials: Dict[str, str] = {}
+        self.partials: dict[str, str] = {}
 
     async def run(
         self,

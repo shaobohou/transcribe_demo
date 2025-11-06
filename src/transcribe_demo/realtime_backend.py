@@ -10,14 +10,27 @@ import ssl
 import sys
 import threading
 import time
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from typing import Any, Callable, Coroutine, Dict, Optional, List
+from typing import Any, Protocol
 
 import numpy as np
 import websockets
 
 from transcribe_demo.audio_capture import AudioCaptureManager
 from transcribe_demo.session_logger import SessionLogger
+
+
+class ChunkConsumer(Protocol):
+    def __call__(
+        self,
+        *,
+        chunk_index: int,
+        text: str,
+        absolute_start: float,
+        absolute_end: float,
+        inference_seconds: float | None,
+    ) -> None: ...
 
 
 def float_to_pcm16(audio: np.ndarray) -> bytes:
@@ -45,9 +58,9 @@ class RealtimeTranscriptionResult:
 
     full_audio: np.ndarray
     sample_rate: int
-    chunks: List[str] | None = None
+    chunks: list[str] | None = None
     capture_duration: float = 0.0
-    metadata: dict = None
+    metadata: dict[str, Any] | None = None
 
 
 def _run_async(coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
@@ -90,23 +103,23 @@ def transcribe_full_audio_realtime(
             ("Authorization", f"Bearer {api_key}"),
             ("OpenAI-Beta", "realtime=v1"),
         ]
-        ssl_context: Optional[ssl.SSLContext] = None
+        ssl_context: ssl.SSLContext | None = None
         if insecure_downloads:
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
         lock = asyncio.Lock()
-        partials: Dict[str, str] = {}
+        partials: dict[str, str] = {}
         completed: list[str] = []
         processed_items: set[str] = set()
 
         language_value = (language or "").strip()
-        transcription_config: Dict[str, object] = {"model": "whisper-1"}
+        transcription_config: dict[str, object] = {"model": "whisper-1"}
         if language_value and language_value.lower() != "auto":
             transcription_config["language"] = language_value
 
-        async def send_json(payload: Dict[str, object]) -> None:
+        async def send_json(payload: dict[str, object]) -> None:
             message = json.dumps(payload)
             async with lock:
                 await ws.send(message)
@@ -195,11 +208,11 @@ def run_realtime_transcriber(
     chunk_duration: float,
     instructions: str,
     insecure_downloads: bool = False,
-    chunk_consumer: Optional[object] = None,
+    chunk_consumer: ChunkConsumer | None = None,
     compare_transcripts: bool = True,
     max_capture_duration: float = 120.0,
     language: str = "en",
-    session_logger: Optional[SessionLogger] = None,
+    session_logger: SessionLogger | None = None,
     min_log_duration: float = 0.0,
 ) -> RealtimeTranscriptionResult:
     # Initialize audio capture manager
@@ -230,20 +243,20 @@ def run_realtime_transcriber(
                 ("OpenAI-Beta", "realtime=v1"),
             ]
 
-            ssl_context: Optional[ssl.SSLContext] = None
+            ssl_context: ssl.SSLContext | None = None
             if insecure_downloads:
                 ssl_context = ssl.create_default_context()
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
 
-            transcription_config: Dict[str, object] = {"model": "whisper-1"}
+            transcription_config: dict[str, object] = {"model": "whisper-1"}
             if language_value and language_value.lower() != "auto":
                 transcription_config["language"] = language_value
 
             lock = asyncio.Lock()
-            partials: Dict[str, str] = {}
+            partials: dict[str, str] = {}
 
-            async def send_json(payload: Dict[str, object]) -> None:
+            async def send_json(payload: dict[str, object]) -> None:
                 message = json.dumps(payload)
                 async with lock:
                     await ws.send(message)
@@ -285,7 +298,7 @@ def run_realtime_transcriber(
                                 # Get audio from queue
                                 force_flush = False
                                 got_item = False
-                                item: Optional[np.ndarray] = None
+                                item: np.ndarray | None = None
 
                                 if not sentinel_received and buffer.size < chunk_size:
                                     try:
@@ -464,8 +477,9 @@ def run_realtime_transcriber(
 
                     # Check for exceptions in completed tasks
                     for task in done:
-                        if task.exception():
-                            raise task.exception()
+                        exception = task.exception()
+                        if exception is not None:
+                            raise exception
 
                     # Close websocket gracefully
                     try:

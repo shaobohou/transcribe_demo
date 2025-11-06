@@ -5,7 +5,6 @@ from __future__ import annotations
 import queue
 import sys
 import threading
-from typing import Optional
 
 import numpy as np
 import sounddevice as sd
@@ -42,7 +41,7 @@ class AudioCaptureManager:
         self.collect_full_audio = collect_full_audio
 
         # Queue for passing audio chunks to worker threads
-        self.audio_queue: queue.Queue[Optional[np.ndarray]] = queue.Queue()
+        self.audio_queue: queue.Queue[np.ndarray | None] = queue.Queue()
 
         # Synchronization primitives
         self.stop_event = threading.Event()
@@ -55,8 +54,8 @@ class AudioCaptureManager:
         self._max_capture_samples = int(sample_rate * max_capture_duration) if max_capture_duration > 0 else 0
 
         # Input stream reference
-        self._stream: Optional[sd.InputStream] = None
-        self._stdin_thread: Optional[threading.Thread] = None
+        self._stream: sd.InputStream | None = None
+        self._stdin_thread: threading.Thread | None = None
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time, status) -> None:
         """Audio callback invoked by sounddevice for each audio chunk."""

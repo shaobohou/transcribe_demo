@@ -5,7 +5,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import TextIO
 
 from absl import app
 from absl import flags
@@ -217,7 +217,7 @@ class ChunkCollectorWithStitching:
         text: str,
         absolute_start: float,
         absolute_end: float,
-        inference_seconds: Optional[float] = None,
+        inference_seconds: float | None = None,
     ) -> None:
         if not text:
             return
@@ -273,6 +273,10 @@ class ChunkCollectorWithStitching:
             label = f"[chunk {chunk_index:03d}{timing_suffix}]"
         use_color = bool(getattr(self._stream, "isatty", lambda: False)())
 
+        cyan = ""
+        green = ""
+        reset = ""
+        bold = ""
         if use_color:
             cyan = "\x1b[36m"
             green = "\x1b[32m"
@@ -327,7 +331,9 @@ def print_transcription_summary(
     final_clean = final_text.strip()
     complete_audio_clean = complete_audio_text.strip()
 
-    bold = green = reset = ""
+    bold = ""
+    green = ""
+    reset = ""
     if use_color:
         green = "\x1b[32m"
         reset = "\x1b[0m"
@@ -596,7 +602,8 @@ def main(argv: list[str]) -> None:
             "OpenAI API key required for realtime transcription. Provide --api-key or set OPENAI_API_KEY."
         )
     collector = ChunkCollectorWithStitching(sys.stdout)
-    realtime_result: Optional[RealtimeTranscriptionResult] = None
+    realtime_result: RealtimeTranscriptionResult | None = None
+    full_audio_transcription: str | None = None
     try:
         realtime_result = run_realtime_transcriber(
             api_key=api_key,
@@ -623,7 +630,6 @@ def main(argv: list[str]) -> None:
         # Finalize session logging with both transcriptions
         if realtime_result is not None:
             # Get full audio transcription for comparison if enabled
-            full_audio_transcription = None
             if FLAGS.compare_transcripts and realtime_result.full_audio.size > 0:
                 try:
                     full_audio_transcription = transcribe_full_audio_realtime(
@@ -659,6 +665,9 @@ def main(argv: list[str]) -> None:
             # Just show final stitched result without comparison
             if final:
                 use_color = sys.stdout.isatty()
+                green = ""
+                reset = ""
+                bold = ""
                 if use_color:
                     green = "\x1b[32m"
                     reset = "\x1b[0m"

@@ -9,7 +9,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -38,7 +38,7 @@ class WhisperTranscriptionResult:
 
     full_audio_transcription: str | None
     capture_duration: float = 0.0
-    metadata: dict = None
+    metadata: dict[str, Any] | None = None
 
 
 def _mps_available() -> bool:
@@ -55,9 +55,9 @@ def load_whisper_model(
     model_name: str,
     device_preference: str,
     require_gpu: bool,
-    ca_cert: Optional[Path],
+    ca_cert: Path | None,
     insecure_downloads: bool,
-) -> Tuple[whisper.Whisper, str, bool]:
+) -> tuple[whisper.Whisper, str, bool]:
     cuda_available = torch.cuda.is_available()
     apple_mps_available = _mps_available()
 
@@ -245,12 +245,12 @@ def run_whisper_transcriber(
     model_name: str,
     sample_rate: int,
     channels: int,
-    temp_file: Optional[Path],
-    ca_cert: Optional[Path],
+    temp_file: Path | None,
+    ca_cert: Path | None,
     insecure_downloads: bool,
     device_preference: str,
     require_gpu: bool,
-    chunk_consumer: Optional[Callable[[int, str, float, float, float | None], None]] = None,
+    chunk_consumer: Callable[[int, str, float, float, float | None], None] | None = None,
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,
@@ -259,7 +259,7 @@ def run_whisper_transcriber(
     compare_transcripts: bool = True,
     max_capture_duration: float = 120.0,
     language: str = "en",
-    session_logger: Optional[SessionLogger] = None,
+    session_logger: SessionLogger | None = None,
     min_log_duration: float = 0.0,
 ) -> WhisperTranscriptionResult:
     model, device, fp16 = load_whisper_model(
@@ -459,7 +459,7 @@ def run_whisper_transcriber(
                 chunk_index, window, chunk_audio_duration = item
 
                 inference_start = time.perf_counter()
-                result = await asyncio.to_thread(
+                result: dict[str, Any] = await asyncio.to_thread(
                     model.transcribe,
                     window,
                     fp16=fp16,
@@ -469,7 +469,13 @@ def run_whisper_transcriber(
                     language=normalized_language,
                 )
                 inference_duration = time.perf_counter() - inference_start
-                text = result["text"]
+                raw_text = result.get("text", "")
+                if isinstance(raw_text, str):
+                    text = raw_text
+                elif isinstance(raw_text, list):
+                    text = " ".join(str(part) for part in raw_text)
+                else:
+                    text = str(raw_text)
 
                 # Compute absolute timestamps relative to session start (approximate real-time)
                 chunk_absolute_end = max(0.0, inference_start - session_start_time)
@@ -535,7 +541,7 @@ def run_whisper_transcriber(
     full_audio_transcription: str | None = None
     full_audio = audio_capture.get_full_audio()
     if compare_transcripts and full_audio.size:
-        full_audio_result = model.transcribe(
+        full_audio_result: dict[str, Any] = model.transcribe(
             full_audio,
             fp16=fp16,
             temperature=0.0,
@@ -543,7 +549,13 @@ def run_whisper_transcriber(
             best_of=1,
             language=normalized_language,
         )
-        full_audio_transcription = full_audio_result["text"]
+        full_audio_raw = full_audio_result.get("text", "")
+        if isinstance(full_audio_raw, str):
+            full_audio_transcription = full_audio_raw
+        elif isinstance(full_audio_raw, list):
+            full_audio_transcription = " ".join(str(part) for part in full_audio_raw)
+        else:
+            full_audio_transcription = str(full_audio_raw)
 
     # Save full audio for session logging (finalization happens in main.py with stitched transcription)
     if session_logger is not None:
@@ -571,7 +583,7 @@ def transcribe_full_audio(
     model_name: str,
     device_preference: str,
     require_gpu: bool,
-    ca_cert: Optional[Path],
+    ca_cert: Path | None,
     insecure_downloads: bool,
     language: str = "en",
 ) -> str:
@@ -608,7 +620,7 @@ def transcribe_full_audio(
     if language and language.lower() != "auto":
         normalized_language = language
 
-    result = model.transcribe(
+    result: dict[str, Any] = model.transcribe(
         audio,
         fp16=fp16,
         temperature=0.0,
@@ -616,4 +628,9 @@ def transcribe_full_audio(
         best_of=1,
         language=normalized_language,
     )
-    return result["text"]
+    raw_text = result.get("text", "")
+    if isinstance(raw_text, str):
+        return raw_text
+    if isinstance(raw_text, list):
+        return " ".join(str(part) for part in raw_text)
+    return str(raw_text)

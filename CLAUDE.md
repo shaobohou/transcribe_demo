@@ -58,6 +58,9 @@ Realtime backend has fixed 2.0s chunks - NOT configurable.
 
 **YOU MUST** run tests before commits - pre-commit hook enforces this.
 When modifying VAD logic, add test cases to `tests/test_vad.py`.
+Always run `uv run pyright` to confirm the type checker is clean before submitting changes.
+Use PEP 585 generics (`list[str]`, `dict[str, int]`) instead of `typing.List`/`typing.Dict`, and prefer union syntax (`str | None`) over `typing.Optional`.
+Treat linting and formatting as mandatory test steps; keep `uv run ruff check` (and any repo-specific formatters) passing before submitting changes.
 
 ## Related Files
 

@@ -9,7 +9,7 @@ import wave
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -23,8 +23,8 @@ class ChunkMetadata:
     start_time: float
     end_time: float
     duration: float
-    inference_seconds: Optional[float] = None
-    audio_filename: Optional[str] = None
+    inference_seconds: float | None = None
+    audio_filename: str | None = None
 
 
 @dataclass
@@ -40,22 +40,22 @@ class SessionMetadata:
     total_chunks: int
 
     # Backend-specific parameters
-    model: Optional[str] = None
-    device: Optional[str] = None
-    language: Optional[str] = None
-    vad_aggressiveness: Optional[int] = None
-    vad_min_silence_duration: Optional[float] = None
-    vad_min_speech_duration: Optional[float] = None
-    vad_speech_pad_duration: Optional[float] = None
-    max_chunk_duration: Optional[float] = None
+    model: str | None = None
+    device: str | None = None
+    language: str | None = None
+    vad_aggressiveness: int | None = None
+    vad_min_silence_duration: float | None = None
+    vad_min_speech_duration: float | None = None
+    vad_speech_pad_duration: float | None = None
+    max_chunk_duration: float | None = None
 
     # Realtime-specific parameters
-    realtime_endpoint: Optional[str] = None
-    realtime_instructions: Optional[str] = None
+    realtime_endpoint: str | None = None
+    realtime_instructions: str | None = None
 
     # Complete audio transcription
-    full_audio_transcription: Optional[str] = None
-    stitched_transcription: Optional[str] = None
+    full_audio_transcription: str | None = None
+    stitched_transcription: str | None = None
 
 
 class SessionLogger:
@@ -80,7 +80,7 @@ class SessionLogger:
         channels: int,
         backend: str,
         save_chunk_audio: bool = False,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ):
         """
         Initialize the session logger.
@@ -122,7 +122,7 @@ class SessionLogger:
 
         # Storage for chunks and metadata
         self.chunks: list[ChunkMetadata] = []
-        self.session_metadata: Optional[SessionMetadata] = None
+        self.session_metadata: SessionMetadata | None = None
 
         print(f"Session logging to: {self.session_dir}", file=sys.stderr)
 
@@ -132,8 +132,8 @@ class SessionLogger:
         text: str,
         start_time: float,
         end_time: float,
-        inference_seconds: Optional[float] = None,
-        audio: Optional[np.ndarray] = None,
+        inference_seconds: float | None = None,
+        audio: np.ndarray | None = None,
     ) -> None:
         """
         Log a transcription chunk.
@@ -186,9 +186,9 @@ class SessionLogger:
     def finalize(
         self,
         capture_duration: float,
-        full_audio_transcription: Optional[str] = None,
-        stitched_transcription: Optional[str] = None,
-        extra_metadata: Optional[dict[str, Any]] = None,
+        full_audio_transcription: str | None = None,
+        stitched_transcription: str | None = None,
+        extra_metadata: dict[str, Any] | None = None,
         min_duration: float = 0.0,
     ) -> None:
         """

@@ -32,7 +32,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
     frame_size = 320  # 20ms at 16kHz
 
     chunk_texts: list[str] = []
-    fake_ws_holder: dict[str, object] = {}
+    fake_ws_holder: dict[str, FakeWebSocket] = {}
 
     # Monkeypatch AudioCaptureManager to feed test data
     class FakeAudioCaptureManager:
