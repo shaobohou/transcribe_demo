@@ -4,7 +4,6 @@ import wave
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 from transcribe_demo import whisper_backend
 
@@ -52,7 +51,7 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
 
         def __enter__(self):
             for start in range(0, len(audio), frame_size):
-                frame = audio[start:start + frame_size]
+                frame = audio[start : start + frame_size]
                 if not frame.size:
                     continue
                 self.callback(frame.reshape(-1, 1), len(frame), None, None)

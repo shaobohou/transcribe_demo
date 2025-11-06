@@ -194,7 +194,7 @@ class ChunkCollectorWithStitching:
         text = text.strip()
         if not is_final_chunk and text:
             # Strip trailing commas and periods, but not question marks or exclamation points
-            while text and text[-1] in '.,':
+            while text and text[-1] in ".,":
                 text = text[:-1].rstrip()
         return text
 
@@ -251,9 +251,7 @@ class ChunkCollectorWithStitching:
             # Whisper mode: show actual audio duration and inference time
             chunk_audio_duration = absolute_end - absolute_start
             timing_suffix = (
-                f" | t={absolute_end:.2f}s"
-                f" | audio: {chunk_audio_duration:.2f}s"
-                f" | inference: {inference_seconds:.2f}s"
+                f" | t={absolute_end:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {inference_seconds:.2f}s"
             )
             label = f"[chunk {chunk_index:03d}{timing_suffix}]"
         else:
@@ -288,7 +286,7 @@ class ChunkCollectorWithStitching:
             if use_color:
                 stitched_label = f"\n{bold}{green}[STITCHED]{reset}"
             else:
-                stitched_label = f"\n[STITCHED]"
+                stitched_label = "\n[STITCHED]"
             self._stream.write(f"{stitched_label} {stitched_text}\n\n")
             self._stream.flush()
 
@@ -330,7 +328,10 @@ def print_transcription_summary(
 
     if complete_audio_clean:
         if use_color:
-            print(f"{bold}{green}[COMPLETE AUDIO]{reset} {complete_audio_clean}\n", file=stream)
+            print(
+                f"{bold}{green}[COMPLETE AUDIO]{reset} {complete_audio_clean}\n",
+                file=stream,
+            )
         else:
             print(f"[COMPLETE AUDIO] {complete_audio_clean}\n", file=stream)
 
@@ -359,9 +360,7 @@ def print_transcription_summary(
     diff_snippets = _generate_diff_snippets(final_clean, complete_audio_clean, use_color)
     for snippet in diff_snippets:
         print(
-            f"{diff_label} {snippet['tag']}:\n"
-            f"    stitched: {snippet['stitched']}\n"
-            f"    complete: {snippet['complete']}",
+            f"{diff_label} {snippet['tag']}:\n    stitched: {snippet['stitched']}\n    complete: {snippet['complete']}",
             file=stream,
         )
 
@@ -458,7 +457,7 @@ def main(argv: list[str]) -> None:
             "ERROR: --refine-with-context is not yet implemented.\n"
             "This feature will use a 3-chunk sliding window to refine transcriptions with more context.\n"
             "See TODO comments in main.py for implementation details.",
-            file=sys.stderr
+            file=sys.stderr,
         )
         sys.exit(1)
 
@@ -493,7 +492,10 @@ def main(argv: list[str]) -> None:
                 sys.exit(0)
         except (EOFError, OSError):
             # stdin not available (e.g., running in background), proceed without confirmation
-            print("(Proceeding without confirmation - stdin not available)", file=sys.stderr)
+            print(
+                "(Proceeding without confirmation - stdin not available)",
+                file=sys.stderr,
+            )
 
     language_pref = (FLAGS.language or "").strip()
 
@@ -544,7 +546,10 @@ def main(argv: list[str]) -> None:
                         green = "\x1b[32m"
                         reset = "\x1b[0m"
                         bold = "\x1b[1m"
-                        print(f"\n{bold}{green}[FINAL STITCHED]{reset} {final}\n", file=sys.stdout)
+                        print(
+                            f"\n{bold}{green}[FINAL STITCHED]{reset} {final}\n",
+                            file=sys.stdout,
+                        )
                     else:
                         print(f"\n[FINAL STITCHED] {final}\n", file=sys.stdout)
         return
@@ -606,7 +611,10 @@ def main(argv: list[str]) -> None:
                     green = "\x1b[32m"
                     reset = "\x1b[0m"
                     bold = "\x1b[1m"
-                    print(f"\n{bold}{green}[FINAL STITCHED]{reset} {final}\n", file=sys.stdout)
+                    print(
+                        f"\n{bold}{green}[FINAL STITCHED]{reset} {final}\n",
+                        file=sys.stdout,
+                    )
                 else:
                     print(f"\n[FINAL STITCHED] {final}\n", file=sys.stdout)
 

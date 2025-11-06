@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import queue as queue_module
 import wave
@@ -49,7 +48,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
 
         def __enter__(self):
             for start in range(0, len(audio), frame_size):
-                chunk = audio[start:start + frame_size]
+                chunk = audio[start : start + frame_size]
                 if not chunk.size:
                     continue
                 indata = chunk.astype(np.float32).reshape(-1, 1)
@@ -65,7 +64,9 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
 
     monkeypatch.setattr(realtime_backend.sd, "InputStream", FakeInputStream)
 
-    async def fast_sleep(_duration: float) -> None:  # pragma: no cover - trivial awaitable
+    async def fast_sleep(
+        _duration: float,
+    ) -> None:  # pragma: no cover - trivial awaitable
         return None
 
     monkeypatch.setattr(realtime_backend.asyncio, "sleep", fast_sleep)

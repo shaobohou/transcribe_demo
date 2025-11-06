@@ -12,5 +12,23 @@ if [ -z "${UV_CACHE_DIR:-}" ]; then
     export UV_CACHE_DIR="$repo_cache"
 fi
 
+staged_python_files=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+
+if [ -n "$staged_python_files" ]; then
+    echo "pre-commit hook: formatting staged Python files with ruff"
+    uv run ruff format $staged_python_files
+
+    echo "pre-commit hook: linting staged Python files with ruff (auto-fix enabled)"
+    uv run ruff check $staged_python_files --fix
+
+    git add $staged_python_files
+
+    echo "pre-commit hook: verifying staged Python files after fixes"
+    uv run ruff format --check $staged_python_files
+    uv run ruff check $staged_python_files
+else
+    echo "pre-commit hook: no staged Python files detected; skipping ruff steps"
+fi
+
 echo "pre-commit hook: running uv run python -m pytest"
 uv run python -m pytest

@@ -170,9 +170,7 @@ def test_main_whisper_flow_prints_summary(monkeypatch):
             self.calls = []
 
         def __call__(self, chunk_index, text, absolute_start, absolute_end, inference_seconds):
-            self.calls.append(
-                (chunk_index, text, absolute_start, absolute_end, inference_seconds)
-            )
+            self.calls.append((chunk_index, text, absolute_start, absolute_end, inference_seconds))
             self.stream.write(f"[fake {chunk_index}] {text}\n")
 
         def get_final_stitched(self):

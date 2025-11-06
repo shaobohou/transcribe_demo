@@ -2,7 +2,6 @@ import asyncio
 import json
 
 import numpy as np
-import pytest
 
 from transcribe_demo import realtime_backend
 
@@ -120,6 +119,7 @@ def test_transcribe_full_audio_realtime_collects_chunks(monkeypatch):
         def __await__(self):
             async def inner():
                 return self.ws
+
             return inner().__await__()
 
         async def __aenter__(self):
@@ -133,7 +133,11 @@ def test_transcribe_full_audio_realtime_collects_chunks(monkeypatch):
             await ws.send(json.dumps(payload))
 
     monkeypatch.setattr(realtime_backend, "send_json", fake_send_json)
-    monkeypatch.setattr(realtime_backend.websockets, "connect", lambda *args, **kwargs: FakeConnect(fake_ws))
+    monkeypatch.setattr(
+        realtime_backend.websockets,
+        "connect",
+        lambda *args, **kwargs: FakeConnect(fake_ws),
+    )
 
     transcript = realtime_backend.transcribe_full_audio_realtime(
         audio=audio,

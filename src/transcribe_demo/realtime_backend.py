@@ -38,6 +38,7 @@ def resample_audio(audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarra
 @dataclass
 class RealtimeTranscriptionResult:
     """Aggregate data returned after a realtime transcription session."""
+
     full_audio: np.ndarray
     sample_rate: int
     chunks: List[str] | None = None
@@ -119,7 +120,7 @@ def transcribe_full_audio_realtime(
             cursor = 0
             total_samples = audio.size
             while cursor < total_samples:
-                window = audio[cursor: cursor + chunk_size]
+                window = audio[cursor : cursor + chunk_size]
                 cursor += chunk_size
                 resampled = resample_audio(window, sample_rate, session_sample_rate)
                 if resampled.size == 0:
@@ -428,6 +429,7 @@ def run_realtime_transcriber(
             ssl_context.verify_mode = ssl.CERT_NONE
 
         async with websockets.connect(uri, additional_headers=headers, max_size=None, ssl=ssl_context) as ws:
+
             async def monitor_stop() -> None:
                 await asyncio.to_thread(stop_event.wait)
                 if not sender_finished_flag.is_set():
@@ -483,6 +485,7 @@ def run_realtime_transcriber(
                 await asyncio.gather(*tasks, return_exceptions=True)
 
     if sys.stdin is not None and sys.stdin.isatty():
+
         def _stdin_listener() -> None:
             try:
                 input("Press Enter to stop...\n")

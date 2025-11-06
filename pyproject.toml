@@ -28,6 +28,7 @@ package = true
 dev = [
     "pytest>=8.4.2",
     "pytest-cov>=4.1.0",
+    "ruff>=0.5.5",
 ]
 
 [tool.pytest.ini_options]
@@ -37,3 +38,6 @@ filterwarnings = [
 markers = [
     "integration: marks tests that exercise higher-level audio flows",
 ]
+
+[tool.ruff]
+line-length = 120

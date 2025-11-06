@@ -20,15 +20,18 @@ class DummyModel:
 
 
 def test_transcribe_full_audio_returns_empty_for_no_samples():
-    assert whisper_backend.transcribe_full_audio(
-        audio=np.zeros(0, dtype=np.float32),
-        sample_rate=16000,
-        model_name="tiny",
-        device_preference="auto",
-        require_gpu=False,
-        ca_cert=None,
-        insecure_downloads=False,
-    ) == ""
+    assert (
+        whisper_backend.transcribe_full_audio(
+            audio=np.zeros(0, dtype=np.float32),
+            sample_rate=16000,
+            model_name="tiny",
+            device_preference="auto",
+            require_gpu=False,
+            ca_cert=None,
+            insecure_downloads=False,
+        )
+        == ""
+    )
 
 
 def test_transcribe_full_audio_invokes_model(monkeypatch):

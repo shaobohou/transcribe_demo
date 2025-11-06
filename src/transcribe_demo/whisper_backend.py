@@ -21,6 +21,7 @@ import whisper
 @dataclass
 class TranscriptionChunk:
     """Stores a transcription chunk with its timing information."""
+
     index: int
     text: str
     start_time: float
@@ -32,6 +33,7 @@ class TranscriptionChunk:
 @dataclass
 class WhisperTranscriptionResult:
     """Aggregate result returned after a Whisper transcription session."""
+
     full_audio_transcription: str | None
 
 
@@ -165,6 +167,7 @@ def load_whisper_model(
 # - https://github.com/snakers4/silero-vad
 # - https://github.com/snakers4/silero-vad/blob/master/examples/pyaudio-streaming/
 
+
 class WebRTCVAD:
     """WebRTC VAD wrapper for speech detection."""
 
@@ -203,17 +206,21 @@ class WebRTCVAD:
         # Sanitize audio before conversion; replace non-finite values and clip to int16 range
         clean_audio = np.nan_to_num(
             np.asarray(audio, dtype=np.float32),
-            nan=0.0, posinf=0.0, neginf=0.0, copy=True
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+            copy=True,
         )
 
         # Warn if clipping is needed (indicates potential audio configuration issues)
         if np.any(np.abs(clean_audio) > 1.0):
             import warnings
+
             warnings.warn(
                 "Audio values exceeded [-1.0, 1.0] range, clipping applied. "
                 "This may indicate incorrect gain settings or audio driver issues.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
         np.clip(clean_audio, -1.0, 1.0, out=clean_audio)
 
@@ -221,7 +228,7 @@ class WebRTCVAD:
         audio_int16 = (clean_audio * 32768.0).astype(np.int16)
 
         # Convert to bytes
-        audio_bytes = struct.pack(f'{len(audio_int16)}h', *audio_int16)
+        audio_bytes = struct.pack(f"{len(audio_int16)}h", *audio_int16)
 
         # Run VAD
         try:
@@ -361,8 +368,8 @@ def run_whisper_transcriber(
 
                 # Process complete VAD frames
                 while len(vad_frame_buffer) >= vad.frame_size:
-                    frame = vad_frame_buffer[:vad.frame_size]
-                    vad_frame_buffer = vad_frame_buffer[vad.frame_size:]
+                    frame = vad_frame_buffer[: vad.frame_size]
+                    vad_frame_buffer = vad_frame_buffer[vad.frame_size :]
 
                     # Check if frame contains speech
                     if vad.is_speech(frame):
@@ -385,7 +392,9 @@ def run_whisper_transcriber(
                         max_duration_exceeded = True
 
                 if capture_limit_reached.is_set():
-                    if buffer.size >= min_chunk_size or (buffer.size > 0 and (audio_queue.empty() or force_transcribe_now)):
+                    if buffer.size >= min_chunk_size or (
+                        buffer.size > 0 and (audio_queue.empty() or force_transcribe_now)
+                    ):
                         should_transcribe = True
                         force_flush = True
 
@@ -406,7 +415,7 @@ def run_whisper_transcriber(
                 # Add speech padding from the circular buffer
                 if len(speech_pad_buffer) > speech_pad_samples:
                     pad_start_idx = max(0, len(speech_pad_buffer) - len(window) - speech_pad_samples)
-                    padding = speech_pad_buffer[pad_start_idx:len(speech_pad_buffer) - len(window)]
+                    padding = speech_pad_buffer[pad_start_idx : len(speech_pad_buffer) - len(window)]
                     if len(padding) > 0:
                         window = np.concatenate((padding, window))
 
@@ -479,7 +488,10 @@ def run_whisper_transcriber(
 
                 # After chunk completes, check if capture limit was reached and stop gracefully
                 if capture_limit_reached.is_set():
-                    print("Current chunk finished. Stopping transcription...", file=sys.stderr)
+                    print(
+                        "Current chunk finished. Stopping transcription...",
+                        file=sys.stderr,
+                    )
                     stop_event.set()
                     break
 
