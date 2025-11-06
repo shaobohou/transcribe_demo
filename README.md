@@ -10,7 +10,7 @@ Built with the `uv` Python project manager.
 
 - **Smart Voice Activity Detection (VAD)**: Automatically detects natural speech pauses using WebRTC VAD for intelligent chunking
 - **GPU Acceleration**: Auto-detects CUDA or Apple Metal (MPS) for faster inference
-- **Intelligent Concatenation**: Cleans up punctuation at chunk boundaries for smooth transcription flow
+- **Intelligent Stitching**: Cleans up punctuation at chunk boundaries for smooth transcription flow
 - **Dual Backend Support**: Choose between local Whisper or cloud-based Realtime API
 - **Transcript Comparison**: Compares chunked vs. full-audio transcription with detailed diff output
 - **Flexible Configuration**: Fine-tune VAD sensitivity, chunk duration, capture limits, and more
@@ -153,7 +153,7 @@ The Whisper backend uses WebRTC Voice Activity Detection (VAD) to intelligently 
    - Continuous silence is detected (default 0.2s), OR
    - Maximum chunk duration is reached (default 60s)
 4. Whisper transcribes each chunk using the `--language` setting (English by default)
-5. Chunks are intelligently concatenated with automatic punctuation cleanup at boundaries
+5. Chunks are intelligently stitched with automatic punctuation cleanup at boundaries
 
 This approach minimizes transcription errors by chunking at natural pauses instead of arbitrary time intervals.
 
@@ -166,7 +166,7 @@ Each chunk displays:
 - Inference time (Whisper backend only)
 - Transcribed text
 
-Concatenated results are shown every 3 chunks and at the end of the session.
+Stitched results are shown every 3 chunks and at the end of the session.
 
 ## Testing
 

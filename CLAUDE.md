@@ -90,17 +90,17 @@ UV_CACHE_DIR=$(pwd)/.uv-cache uv sync --group dev
 - Uses server-side VAD (voice activity detection) for automatic speech segmentation
 - Handles audio resampling from input rate to 24kHz (required by API)
 
-### Transcription Concatenation
+### Transcript Stitching
 
 **VAD-based chunking:**
-- **Simple concatenation**: Chunks split at natural speech pauses have no audio overlap
+- **Simple stitching**: Chunks split at natural speech pauses have no audio overlap
 - **Punctuation cleanup**: Trailing commas and periods are stripped from intermediate chunks (but kept on the final chunk)
   - Whisper adds punctuation as if each chunk is complete, but VAD can split mid-sentence
   - Question marks and exclamation points are preserved as they're more intentional
-- Chunks are joined with spaces and labeled as `[CONCATENATED]` in output
+- Chunks are joined with spaces and labeled as `[STITCHED]` in output
 - Minimizes transcription errors at boundaries by chunking at natural speech pauses
 
-**Key insight:** By using VAD to detect natural speech pauses, chunks don't have overlapping audio. This eliminates the need for complex overlap resolution algorithms and reduces transcription errors at chunk boundaries. Automatic punctuation cleanup ensures smooth concatenation even when VAD splits occur mid-sentence.
+**Key insight:** By using VAD to detect natural speech pauses, chunks don't have overlapping audio. This eliminates the need for complex overlap resolution algorithms and reduces transcription errors at chunk boundaries. Automatic punctuation cleanup ensures smooth stitching even when VAD splits occur mid-sentence.
 
 ### Audio Processing Flow
 
@@ -115,8 +115,8 @@ UV_CACHE_DIR=$(pwd)/.uv-cache uv sync --group dev
 5. **Speech Padding**: Adds 0.2s padding before speech segments to avoid cutting word beginnings (configurable with `--vad-speech-pad-duration`)
 6. **Transcription**: Whisper runs inference with `language="en"` to prevent foreign language hallucinations
 7. **Display**: Chunks shown with both audio duration and inference time (e.g., `audio: 5.23s | inference: 2.15s`)
-8. **Punctuation Cleanup**: Trailing commas and periods are stripped from intermediate chunks before concatenation
-9. **Concatenation**: Simple joining of cleaned chunks with spaces (no overlap to resolve)
+8. **Punctuation Cleanup**: Trailing commas and periods are stripped from intermediate chunks before stitching
+9. **Stitching**: Simple joining of cleaned chunks with spaces (no overlap to resolve)
 
 ### Device Selection Logic
 

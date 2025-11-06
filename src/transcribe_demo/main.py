@@ -174,7 +174,7 @@ flags.register_validator(
 class ChunkCollectorWithStitching:
     """
     Collects transcription chunks and displays them.
-    With VAD-based chunking, chunks are simply concatenated (no overlap).
+    With VAD-based chunking, chunks are simply stitched (no overlap).
     """
 
     def __init__(self, stream: TextIO) -> None:
@@ -185,7 +185,7 @@ class ChunkCollectorWithStitching:
     @staticmethod
     def _clean_chunk_text(text: str, is_final_chunk: bool = False) -> str:
         """
-        Clean trailing punctuation from chunk text for better concatenation.
+        Clean trailing punctuation from chunk text for better stitching.
 
         Whisper adds punctuation as if each chunk is a complete sentence,
         but VAD splits can occur mid-sentence. We strip trailing commas and
@@ -223,8 +223,8 @@ class ChunkCollectorWithStitching:
         # TODO: Sliding window refinement feature (--refine-with-context)
         # When enabled, use a 3-chunk sliding window to refine the middle chunk:
         # 1. Store raw audio buffers for the last 3 chunks
-        # 2. When chunk N arrives, concatenate audio from chunks N-2, N-1, N
-        # 3. Re-transcribe the concatenated audio with Whisper
+        # 2. When chunk N arrives, stitch audio from chunks N-2, N-1, N
+        # 3. Re-transcribe the stitched audio with Whisper
         # 4. Use word-level timestamps to extract refined text for chunk N-1 (middle)
         # 5. Display refined version of chunk N-1 after chunk N processing
         #
@@ -276,24 +276,24 @@ class ChunkCollectorWithStitching:
         self._stream.flush()
         self._last_time = max(self._last_time, absolute_end)
 
-        # Show concatenated result every few chunks
+        # Show stitched result every few chunks
         if (chunk_index + 1) % 3 == 0:
             # Clean trailing punctuation from all chunks except the last one
             cleaned_chunks = [
                 self._clean_chunk_text(c.text, is_final_chunk=(i == len(self._chunks) - 1))
                 for i, c in enumerate(self._chunks)
             ]
-            concatenated = " ".join(chunk for chunk in cleaned_chunks if chunk)
+            stitched_text = " ".join(chunk for chunk in cleaned_chunks if chunk)
 
             if use_color:
-                concat_label = f"\n{bold}{green}[CONCATENATED]{reset}"
+                stitched_label = f"\n{bold}{green}[STITCHED]{reset}"
             else:
-                concat_label = f"\n[CONCATENATED]"
-            self._stream.write(f"{concat_label} {concatenated}\n\n")
+                stitched_label = f"\n[STITCHED]"
+            self._stream.write(f"{stitched_label} {stitched_text}\n\n")
             self._stream.flush()
 
     def get_final_stitched(self) -> str:
-        """Get the final concatenated transcription of all chunks."""
+        """Get the final stitched transcription of all chunks."""
         # Clean trailing punctuation from all chunks except the last one
         cleaned_chunks = [
             self._clean_chunk_text(c.text, is_final_chunk=(i == len(self._chunks) - 1))
@@ -324,9 +324,9 @@ def print_transcription_summary(
 
     if final_clean:
         if use_color:
-            print(f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final_clean}\n", file=stream)
+            print(f"\n{bold}{green}[FINAL STITCHED]{reset} {final_clean}\n", file=stream)
         else:
-            print(f"\n[FINAL CONCATENATED] {final_clean}\n", file=stream)
+            print(f"\n[FINAL STITCHED] {final_clean}\n", file=stream)
 
     if full_audio_clean:
         if use_color:
@@ -537,16 +537,16 @@ def main(argv: list[str]) -> None:
                     )
                 print_transcription_summary(sys.stdout, final, full_audio_text)
             else:
-                # Just show final concatenated result without comparison
+                # Just show final stitched result without comparison
                 if final:
                     use_color = sys.stdout.isatty()
                     if use_color:
                         green = "\x1b[32m"
                         reset = "\x1b[0m"
                         bold = "\x1b[1m"
-                        print(f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final}\n", file=sys.stdout)
+                        print(f"\n{bold}{green}[FINAL STITCHED]{reset} {final}\n", file=sys.stdout)
                     else:
-                        print(f"\n[FINAL CONCATENATED] {final}\n", file=sys.stdout)
+                        print(f"\n[FINAL STITCHED] {final}\n", file=sys.stdout)
         return
 
     api_key = FLAGS.api_key or os.getenv("OPENAI_API_KEY")
@@ -574,7 +574,7 @@ def main(argv: list[str]) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        # Show final concatenated result
+        # Show final stitched result
         final = collector.get_final_stitched()
         if FLAGS.compare_transcripts:
             full_audio_text = ""
@@ -599,16 +599,16 @@ def main(argv: list[str]) -> None:
 
             print_transcription_summary(sys.stdout, final, full_audio_text)
         else:
-            # Just show final concatenated result without comparison
+            # Just show final stitched result without comparison
             if final:
                 use_color = sys.stdout.isatty()
                 if use_color:
                     green = "\x1b[32m"
                     reset = "\x1b[0m"
                     bold = "\x1b[1m"
-                    print(f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final}\n", file=sys.stdout)
+                    print(f"\n{bold}{green}[FINAL STITCHED]{reset} {final}\n", file=sys.stdout)
                 else:
-                    print(f"\n[FINAL CONCATENATED] {final}\n", file=sys.stdout)
+                    print(f"\n[FINAL STITCHED] {final}\n", file=sys.stdout)
 
 
 def cli_main() -> None:

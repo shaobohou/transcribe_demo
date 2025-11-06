@@ -247,7 +247,7 @@ class TerminalFormatter:
     def format_chunk_label(self, label: str) -> str:
         return self.format_label(label, 'cyan', bold=True)
 
-    def format_concat_label(self, label: str) -> str:
+    def format_stitched_label(self, label: str) -> str:
         return self.format_label(label, 'green', bold=True)
 ```
 
@@ -341,7 +341,7 @@ def _check_mps_available() -> bool:
 
 ### 1.3 Extract Duplicated Final Result Display (main.py)
 
-**Issue**: Final concatenated result printing is duplicated identically in two places.
+**Issue**: Final stitched result printing is duplicated identically in two places.
 
 **Locations**:
 - `main.py:303-313` (whisper backend)
@@ -353,7 +353,7 @@ def _print_final_result(
     collector: ChunkCollectorWithStitching,
     stream: TextIO = sys.stdout
 ) -> None:
-    """Print the final concatenated transcription."""
+    """Print the final stitched transcription."""
     final = collector.get_final_stitched()
     if not final:
         return
@@ -363,9 +363,9 @@ def _print_final_result(
         green = "\x1b[32m"
         reset = "\x1b[0m"
         bold = "\x1b[1m"
-        label = f"\n{bold}{green}[FINAL CONCATENATED]{reset}"
+        label = f"\n{bold}{green}[FINAL STITCHED]{reset}"
     else:
-        label = "\n[FINAL CONCATENATED]"
+        label = "\n[FINAL STITCHED]"
 
     print(f"{label} {final}\n", file=stream)
 
@@ -380,13 +380,13 @@ def _print_final_result(
     collector: ChunkCollectorWithStitching,
     stream: TextIO = sys.stdout
 ) -> None:
-    """Print the final concatenated transcription."""
+    """Print the final stitched transcription."""
     final = collector.get_final_stitched()
     if not final:
         return
 
     formatter = TerminalFormatter(getattr(stream, "isatty", lambda: False)())
-    label = formatter.format_concat_label("[FINAL CONCATENATED]")
+    label = formatter.format_stitched_label("[FINAL STITCHED]")
     print(f"\n{label} {final}\n", file=stream)
 ```
 
@@ -755,7 +755,7 @@ class ChunkCollectorWithStitching:
         self._formatter = TerminalFormatter(
             use_color=getattr(stream, "isatty", lambda: False)()
         )
-        self._concat_frequency = 3  # Show concatenated every N chunks
+        self._stitch_frequency = 3  # Show stitched every N chunks
 
     def __call__(
         self,
@@ -775,8 +775,8 @@ class ChunkCollectorWithStitching:
 
         self._display_chunk(chunk)
 
-        if self._should_show_concatenated(chunk_index):
-            self._display_concatenated()
+        if self._should_show_stitched(chunk_index):
+            self._display_stitched()
 
     def _create_chunk(
         self, index: int, text: str, start: float, end: float, inference: Optional[float]
@@ -821,20 +821,20 @@ class ChunkCollectorWithStitching:
         self._stream.flush()
         self._last_time = max(self._last_time, chunk.end_time)
 
-    def _should_show_concatenated(self, chunk_index: int) -> bool:
-        """Check if we should display concatenated result."""
-        return (chunk_index + 1) % self._concat_frequency == 0
+    def _should_show_stitched(self, chunk_index: int) -> bool:
+        """Check if we should display stitched result."""
+        return (chunk_index + 1) % self._stitch_frequency == 0
 
-    def _display_concatenated(self) -> None:
-        """Display concatenated result of all chunks so far."""
+    def _display_stitched(self) -> None:
+        """Display stitched result of all chunks so far."""
         cleaned_chunks = [
             self._clean_chunk_text(c.text, is_final_chunk=(i == len(self._chunks) - 1))
             for i, c in enumerate(self._chunks)
         ]
-        concatenated = " ".join(chunk for chunk in cleaned_chunks if chunk)
+        stitched = " ".join(chunk for chunk in cleaned_chunks if chunk)
 
-        label = self._formatter.format_concat_label("[CONCATENATED]")
-        self._stream.write(f"\n{label} {concatenated}\n\n")
+        label = self._formatter.format_stitched_label("[STITCHED]")
+        self._stream.write(f"\n{label} {stitched}\n\n")
         self._stream.flush()
 ```
 
@@ -1523,7 +1523,7 @@ uv run transcribe-demo --vad-backend silero --vad-threshold 0.8
 
 **How it would work:**
 1. Store raw audio buffers for the last 3 chunks
-2. When chunk N arrives, concatenate audio from chunks N-2, N-1, N
+2. When chunk N arrives, stitch audio from chunks N-2, N-1, N
 3. Re-transcribe the 3-chunk window with Whisper
 4. Use word-level timestamps to extract refined text for chunk N-1 (middle chunk)
 5. Display refined version of chunk N-1 after chunk N processing
