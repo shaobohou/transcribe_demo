@@ -28,15 +28,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Sync dependencies
-        uses: nick-fields/retry@v3
-        with:
-          max_attempts: 3
-          timeout_minutes: 30
-          command: uv sync --all-extras --dev
+        run: uv sync --all-extras --dev
 
       - name: Run tests
-        uses: nick-fields/retry@v3
-        with:
-          max_attempts: 3
-          timeout_minutes: 30
-          command: uv run pytest
+        run: uv run pytest
