@@ -125,6 +125,21 @@ uv run transcribe-demo --max_capture_duration 60 --nocompare_transcripts
 
 **Note**: When `--compare_transcripts` is enabled (default), the program captures audio for post-session comparison. For Realtime API, this doubles your API usage cost.
 
+### Language Control
+
+Force a specific language or fall back to automatic detection:
+
+```bash
+# Default: English transcription
+uv run transcribe-demo --language en
+
+# Auto-detect spoken language
+uv run transcribe-demo --language auto
+
+# Force Spanish transcription
+uv run transcribe-demo --language es
+```
+
 ## How It Works
 
 ### VAD-Based Chunking
@@ -137,7 +152,7 @@ The Whisper backend uses WebRTC Voice Activity Detection (VAD) to intelligently 
    - Minimum speech duration is reached (default 0.25s), AND
    - Continuous silence is detected (default 0.2s), OR
    - Maximum chunk duration is reached (default 60s)
-4. Whisper transcribes each chunk with `language="en"` to prevent foreign language hallucinations
+4. Whisper transcribes each chunk using the `--language` setting (English by default)
 5. Chunks are intelligently concatenated with automatic punctuation cleanup at boundaries
 
 This approach minimizes transcription errors by chunking at natural pauses instead of arbitrary time intervals.

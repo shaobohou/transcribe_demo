@@ -247,6 +247,7 @@ def run_whisper_transcriber(
     max_chunk_duration: float = 60.0,
     compare_transcripts: bool = True,
     max_capture_duration: float = 120.0,
+    language: str = "en",
 ) -> WhisperTranscriptionResult:
     model, device, fp16 = load_whisper_model(
         model_name=model_name,
@@ -255,6 +256,9 @@ def run_whisper_transcriber(
         ca_cert=ca_cert,
         insecure_downloads=insecure_downloads,
     )
+    normalized_language = None
+    if language and language.lower() != "auto":
+        normalized_language = language
 
     # Track wall-clock start of the transcription session for absolute timestamps
     session_start_time = time.perf_counter()
@@ -437,7 +441,7 @@ def run_whisper_transcriber(
                     temperature=0.0,
                     beam_size=1,
                     best_of=1,
-                    language="en",  # Force English to prevent hallucinations in other languages
+                    language=normalized_language,
                 )
                 inference_duration = time.perf_counter() - inference_start
                 text = result["text"]
@@ -484,6 +488,10 @@ def run_whisper_transcriber(
 
     input_thread: Optional[threading.Thread] = None
 
+    # TODO: Add audio_queue.put(None) to ensure immediate shutdown
+    # This function currently only sets the stop_event, which can lead to a
+    # delay in shutdown if the worker thread is blocked on audio_queue.get().
+    # Adding audio_queue.put(None) will wake up the worker immediately.
     def _wait_for_enter() -> None:
         """Block until the user presses Enter, then request shutdown."""
         try:
@@ -526,7 +534,7 @@ def run_whisper_transcriber(
                 temperature=0.0,
                 beam_size=1,
                 best_of=1,
-                language="en",
+                language=normalized_language,
             )
             full_audio_transcription = full_audio_result["text"]
 
@@ -541,6 +549,7 @@ def transcribe_full_audio(
     require_gpu: bool,
     ca_cert: Optional[Path],
     insecure_downloads: bool,
+    language: str = "en",
 ) -> str:
     """
     Run a single transcription pass over the provided audio buffer.
@@ -571,12 +580,16 @@ def transcribe_full_audio(
         insecure_downloads=insecure_downloads,
     )
 
+    normalized_language = None
+    if language and language.lower() != "auto":
+        normalized_language = language
+
     result = model.transcribe(
         audio,
         fp16=fp16,
         temperature=0.0,
         beam_size=1,
         best_of=1,
-        language="en",
+        language=normalized_language,
     )
     return result["text"]

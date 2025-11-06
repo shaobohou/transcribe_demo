@@ -15,10 +15,7 @@ from transcribe_demo.realtime_backend import (
     run_realtime_transcriber,
     transcribe_full_audio_realtime,
 )
-from transcribe_demo.whisper_backend import (
-    TranscriptionChunk,
-    run_whisper_transcriber,
-)
+from transcribe_demo.whisper_backend import TranscriptionChunk, run_whisper_transcriber
 
 
 REALTIME_CHUNK_DURATION = 2.0
@@ -56,6 +53,12 @@ flags.DEFINE_boolean(
     "require_gpu",
     False,
     "Exit immediately if CUDA is unavailable instead of falling back to CPU.",
+)
+
+flags.DEFINE_string(
+    "language",
+    "en",
+    "Preferred language code for transcription (e.g., en, es). Use 'auto' to let the model detect.",
 )
 
 # Audio configuration
@@ -492,6 +495,8 @@ def main(argv: list[str]) -> None:
             # stdin not available (e.g., running in background), proceed without confirmation
             print("(Proceeding without confirmation - stdin not available)", file=sys.stderr)
 
+    language_pref = (FLAGS.language or "").strip()
+
     if FLAGS.backend == "whisper":
         collector = ChunkCollectorWithStitching(sys.stdout)
         whisper_result = None
@@ -513,6 +518,7 @@ def main(argv: list[str]) -> None:
                 max_chunk_duration=FLAGS.max_chunk_duration,
                 compare_transcripts=FLAGS.compare_transcripts,
                 max_capture_duration=FLAGS.max_capture_duration,
+                language=language_pref,
             )
         finally:
             final = collector.get_final_stitched()
@@ -563,6 +569,7 @@ def main(argv: list[str]) -> None:
             chunk_consumer=collector,
             compare_transcripts=FLAGS.compare_transcripts,
             max_capture_duration=FLAGS.max_capture_duration,
+            language=language_pref,
         )
     except KeyboardInterrupt:
         pass
@@ -582,6 +589,7 @@ def main(argv: list[str]) -> None:
                         model=FLAGS.realtime_model,
                         instructions=FLAGS.realtime_instructions,
                         insecure_downloads=FLAGS.insecure_downloads,
+                        language=language_pref,
                     )
                 except Exception as exc:
                     print(

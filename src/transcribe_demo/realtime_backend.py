@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Coroutine, Dict, Optional, List
+from typing import Any, Callable, Coroutine, Dict, Optional, List
 
 import numpy as np
 import sounddevice as sd
@@ -43,13 +43,13 @@ class RealtimeTranscriptionResult:
     chunks: List[str] | None = None
 
 
-def _run_async(coro: Coroutine[Any, Any, str]) -> str:
+def _run_async(coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
     try:
-        return asyncio.run(coro)
+        return asyncio.run(coro_factory())
     except RuntimeError:
         loop = asyncio.new_event_loop()
         try:
-            return loop.run_until_complete(coro)
+            return loop.run_until_complete(coro_factory())
         finally:
             loop.close()
 
@@ -63,6 +63,7 @@ def transcribe_full_audio_realtime(
     model: str,
     instructions: str,
     insecure_downloads: bool = False,
+    language: str = "en",
 ) -> str:
     """
     Transcribe the entire audio buffer using the realtime backend.
@@ -93,6 +94,11 @@ def transcribe_full_audio_realtime(
         completed: list[str] = []
         processed_items: set[str] = set()
 
+        language_value = (language or "").strip()
+        transcription_config: Dict[str, object] = {"model": "whisper-1"}
+        if language_value and language_value.lower() != "auto":
+            transcription_config["language"] = language_value
+
         async with websockets.connect(uri, additional_headers=headers, max_size=None, ssl=ssl_context) as ws:
             await send_json(
                 ws,
@@ -102,15 +108,7 @@ def transcribe_full_audio_realtime(
                         "modalities": ["text"],
                         "instructions": instructions,
                         "input_audio_format": "pcm16",
-                        "input_audio_transcription": {
-                            "model": "whisper-1",
-                        },
-                        "turn_detection": {
-                            "type": "server_vad",
-                            "threshold": 0.3,
-                            "prefix_padding_ms": 200,
-                            "silence_duration_ms": 300,
-                        },
+                        "input_audio_transcription": transcription_config,
                         "temperature": 0.6,
                         "max_response_output_tokens": 4096,
                     },
@@ -177,7 +175,7 @@ def transcribe_full_audio_realtime(
             await ws.close()
         return " ".join(completed).strip()
 
-    return _run_async(_transcribe())
+    return _run_async(_transcribe)
 
 
 async def send_json(
@@ -202,6 +200,7 @@ def run_realtime_transcriber(
     chunk_consumer: Optional[object] = None,
     compare_transcripts: bool = True,
     max_capture_duration: float = 120.0,
+    language: str = "en",
 ) -> RealtimeTranscriptionResult:
     audio_queue: queue.Queue[Optional[np.ndarray]] = queue.Queue()
     stop_event = threading.Event()
@@ -217,6 +216,7 @@ def run_realtime_transcriber(
     # Always track capture duration, but only collect full audio for comparison if enabled
     max_capture_samples = int(sample_rate * max_capture_duration) if max_capture_duration > 0 else 0
     total_samples_captured = 0
+    language_value = (language or "").strip()
 
     def callback(indata: np.ndarray, frames: int, time, status) -> None:
         nonlocal total_samples_captured
@@ -439,6 +439,10 @@ def run_realtime_transcriber(
                 except Exception:
                     pass
 
+            transcription_config: Dict[str, object] = {"model": "whisper-1"}
+            if language_value and language_value.lower() != "auto":
+                transcription_config["language"] = language_value
+
             await send_json(
                 ws,
                 {
@@ -447,9 +451,7 @@ def run_realtime_transcriber(
                         "modalities": ["text"],
                         "instructions": instructions,
                         "input_audio_format": "pcm16",
-                        "input_audio_transcription": {
-                            "model": "whisper-1",
-                        },
+                        "input_audio_transcription": transcription_config,
                         "turn_detection": {
                             "type": "server_vad",
                             "threshold": 0.3,
