@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import importlib
 from types import ModuleType
+
+__all__ = ["get_sounddevice"]
 
 _SOUNDDEVICE_MODULE: ModuleType | None = None
 
@@ -19,7 +22,7 @@ def get_sounddevice() -> ModuleType:
         return _SOUNDDEVICE_MODULE
 
     try:
-        import sounddevice as sd  # pylint: disable=import-outside-toplevel
+        sd = importlib.import_module("sounddevice")
     except (ImportError, OSError) as exc:  # pragma: no cover - depends on host
         raise RuntimeError(
             "sounddevice/PortAudio is required for microphone capture. "
