@@ -10,24 +10,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
-from types import ModuleType
 
 import numpy as np
 import torch
 import webrtcvad
 import whisper
 
-
-_SOUNDDEVICE_MODULE: ModuleType | None = None
-
-
-def _get_sounddevice() -> ModuleType:
-    global _SOUNDDEVICE_MODULE
-    if _SOUNDDEVICE_MODULE is None:
-        import sounddevice as sd  # pylint: disable=import-outside-toplevel
-
-        _SOUNDDEVICE_MODULE = sd
-    return _SOUNDDEVICE_MODULE
+from transcribe_demo._sounddevice import get_sounddevice
 
 
 @dataclass
@@ -395,7 +384,7 @@ def run_whisper_transcriber(
     thread.start()
 
     try:
-        sd = _get_sounddevice()
+        sd = get_sounddevice()
         with sd.InputStream(
             callback=callback,
             channels=channels,
