@@ -14,6 +14,150 @@ The codebase is functional and well-documented, but several areas could benefit 
 
 ---
 
+## When to Refactor
+
+Understanding when to refactor versus when to document for later is crucial for maintaining momentum while improving code quality.
+
+### DO Refactor When:
+
+- **Adding new features** that would benefit from cleaner code structure
+- **Fixing bugs** in areas with technical debt
+- **You have time allocated** for code quality improvements
+- **Tests exist** to prevent regressions
+- **Following the "boy scout rule"** - leave code better than you found it
+- **The change is small** and low-risk
+
+### DON'T Refactor When:
+
+- **Under tight deadlines** - add to this document instead
+- **Code rarely changes** and works correctly
+- **Without tests** or a clear plan
+- **During active feature development** - coordinate with team to avoid conflicts
+- **The scope is unclear** - document and discuss first
+
+### When in Doubt:
+
+If unsure whether to refactor now or later, add it to this document with details. You can always come back to it when the timing is better.
+
+---
+
+## Refactoring Workflow
+
+Follow this process to refactor safely and effectively:
+
+### 1. Identify
+
+When you spot a refactoring opportunity, document it in this file with:
+
+- **Clear description** of the problem
+- **Location** (file and line numbers)
+- **Proposed solution** with code examples
+- **Benefits and rationale** for the change
+- **Priority level** (quick win vs. large refactoring)
+
+### 2. Prioritize
+
+Focus your refactoring efforts on:
+
+- **Quick wins** - Low effort, high impact changes
+- **Code you're already modifying** - Opportunistic improvements
+- **Areas blocking new features** - Remove impediments
+- **High-churn files** with technical debt - Reduce future friction
+
+### 3. Test First
+
+Before refactoring:
+
+- **Ensure existing tests pass** - Establish baseline
+- **Add tests if coverage is insufficient** - Safety net for changes
+- **Document expected behavior** - Clarify what should remain unchanged
+
+### 4. Refactor Incrementally
+
+Make small, focused changes:
+
+- **One function/class at a time** - Manageable scope
+- **Keep existing tests passing** - Continuous validation
+- **Commit frequently** with clear messages - Easy rollback if needed
+- **Update documentation** as you go - Keep docs in sync
+
+### 5. Clean Up
+
+After successful refactoring:
+
+- **Remove the item from this document** - Mark as complete
+- **Update CLAUDE.md** if architecture changed - Keep high-level docs current
+- **Add new tests** for extracted components - Ensure new code is tested
+
+---
+
+## Common Cleanup Patterns
+
+Watch for these patterns when working in the codebase:
+
+### Code Duplication
+
+**Signs:**
+- Repeated logic across multiple files or functions
+- Similar classes with overlapping functionality
+- Duplicated constants or configuration values
+
+**Solutions:**
+- Extract to shared function/class
+- Create base class or use composition
+- Move to constants.py or config module
+
+### Long Functions
+
+**Signs:**
+- Functions >100 lines should be evaluated
+- Functions >200 lines definitely need decomposition
+- Multiple responsibilities in one function
+- Deeply nested functions (>3 levels)
+
+**Solutions:**
+- Apply Single Responsibility Principle
+- Extract to methods or standalone functions
+- Create helper classes to encapsulate related logic
+
+### Configuration Issues
+
+**Signs:**
+- Magic numbers scattered throughout code
+- Many function parameters (>5)
+- Hardcoded values that vary by context
+
+**Solutions:**
+- Extract to named constants
+- Create configuration dataclasses
+- Move to config files or CLI arguments
+
+### Testing Gaps
+
+**Signs:**
+- Repeated test setup across test files
+- Missing test coverage for critical paths
+- Hard-to-test code (global state, tight coupling)
+
+**Solutions:**
+- Extract to fixtures (conftest.py)
+- Add tests to REFACTORING.md testing section
+- Refactor for testability (dependency injection, smaller functions)
+
+### Error Handling
+
+**Signs:**
+- Generic error messages without context
+- Silent failures (caught exceptions not logged)
+- Using print() instead of logging
+
+**Solutions:**
+- Add context and suggestions to error messages
+- Add logging or explicit error handling
+- Use proper logging framework with levels
+
+---
+
 ## Priority 1: High Impact Refactoring
 
 ### 1.1 Extract Terminal Color Formatter (main.py)

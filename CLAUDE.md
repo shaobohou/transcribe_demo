@@ -188,9 +188,9 @@ When modifying VAD logic, ensure all tests pass and consider adding test cases f
 
 ## Code Quality and Refactoring
 
-**REFACTORING.md** - Refactoring opportunities and code cleanup tasks
+**See REFACTORING.md** for detailed refactoring opportunities, workflow guidelines, and common cleanup patterns.
 
-This document tracks opportunities to improve code maintainability, readability, and testability without changing functionality. It should be updated whenever:
+**When to update REFACTORING.md:**
 - You identify code duplication or repetitive patterns
 - Functions become too long or complex (>200 lines, multiple responsibilities)
 - You discover missing abstractions or useful utility classes
@@ -198,83 +198,11 @@ This document tracks opportunities to improve code maintainability, readability,
 - You notice magic numbers that should be named constants
 - You implement a refactoring and want to remove it from the list
 
-### When to Refactor
-
-**DO refactor when:**
-- Adding new features that would benefit from cleaner code structure
-- Fixing bugs in areas with technical debt
-- You have time allocated for code quality improvements
-- Tests exist to prevent regressions
-- Following the "boy scout rule" (leave code better than you found it)
-
-**DON'T refactor when:**
-- Under tight deadlines (add to REFACTORING.md instead)
-- Code rarely changes and works correctly
-- Without tests or a clear plan
-- During active feature development (coordinate with team)
-
-### Refactoring Workflow
-
-1. **Identify** - Note the issue in REFACTORING.md with:
-   - Clear description of the problem
-   - Location (file and line numbers)
-   - Proposed solution with code examples
-   - Benefits and rationale
-   - Priority level (quick win vs. large refactoring)
-
-2. **Prioritize** - Focus on:
-   - Quick wins (low effort, high impact)
-   - Code you're already modifying
-   - Areas blocking new features
-   - High-churn files with technical debt
-
-3. **Test First** - Before refactoring:
-   - Ensure existing tests pass
-   - Add tests if coverage is insufficient
-   - Document expected behavior
-
-4. **Refactor Incrementally** - Make small, focused changes:
-   - One function/class at a time
-   - Keep existing tests passing
-   - Commit frequently with clear messages
-   - Update documentation as you go
-
-5. **Clean Up** - After successful refactoring:
-   - Remove the item from REFACTORING.md
-   - Update CLAUDE.md if architecture changed
-   - Add new tests for extracted components
-
-### Common Cleanup Tasks
-
-When working in the codebase, watch for these patterns:
-
-**Code Duplication:**
-- Repeated logic → Extract to shared function/class
-- Similar classes → Create base class or composition
-- Duplicated constants → Move to constants.py or config
-
-**Long Functions:**
-- >100 lines → Consider breaking up
-- >200 lines → Definitely needs decomposition
-- Multiple responsibilities → Single Responsibility Principle
-- Nested functions → Extract to methods or standalone functions
-
-**Configuration:**
-- Magic numbers → Named constants
-- Many function parameters (>5) → Configuration dataclass
-- Hardcoded values → Move to config or CLI arguments
-
-**Testing:**
-- Repeated test setup → Extract to fixtures (conftest.py)
-- Missing test coverage → Add to REFACTORING.md testing section
-- Hard-to-test code → Usually indicates poor separation of concerns
-
-**Error Handling:**
-- Generic error messages → Add context and suggestions
-- Silent failures → Add logging or explicit error handling
-- print() statements → Use proper logging framework
-
-See REFACTORING.md for specific opportunities and detailed examples.
+**Quick reference:**
+- Follow the "boy scout rule" - leave code better than you found it
+- Add to REFACTORING.md when under tight deadlines instead of refactoring immediately
+- Test first, refactor incrementally, commit frequently
+- Update this file (CLAUDE.md) if refactoring changes architecture
 
 ## Future Improvements
 
