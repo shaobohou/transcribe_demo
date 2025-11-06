@@ -203,63 +203,27 @@ await send_json(ws, _create_session_config(instructions), lock)
 
 **Priority**: Quick win - 10 minutes, saves 20 lines
 
----
+### 1.2 Centralize Terminal Output Formatting (main.py)
 
-### 1.2 Extract Terminal Color Formatter (main.py)
-
-**Issue**: ANSI color codes are hardcoded and duplicated in multiple locations.
+**Issue**: ANSI color handling and final-result printing are hand-written in several places, leading to duplicated code and inconsistent styling.
 
 **Locations**:
-- `main.py:111-114` (ChunkCollectorWithStitching.__call__)
-- `main.py:308-310` (main function - whisper backend)
-- `main.py:342-344` (main function - realtime backend)
-
-**Current Code Pattern**:
-```python
-if use_color:
-    cyan = "\x1b[36m"
-    green = "\x1b[32m"
-    reset = "\x1b[0m"
-    bold = "\x1b[1m"
-    label_colored = f"{bold}{cyan}{label}{reset}"
-```
+- `main.py`: chunk labels, stitched banners, final summary for both backends
+- `ChunkCollectorWithStitching`: label formatting and `[STITCHED]` announcements
 
 **Proposed Solution**:
-```python
-class TerminalFormatter:
-    """Handles terminal formatting with ANSI color codes."""
-
-    def __init__(self, use_color: bool = True):
-        self.use_color = use_color
-        self._colors = {
-            'cyan': '\x1b[36m',
-            'green': '\x1b[32m',
-            'reset': '\x1b[0m',
-            'bold': '\x1b[1m',
-        }
-
-    def format_label(self, text: str, color: str, bold: bool = True) -> str:
-        if not self.use_color:
-            return text
-        style = self._colors['bold'] if bold else ''
-        return f"{style}{self._colors[color]}{text}{self._colors['reset']}"
-
-    def format_chunk_label(self, label: str) -> str:
-        return self.format_label(label, 'cyan', bold=True)
-
-    def format_stitched_label(self, label: str) -> str:
-        return self.format_label(label, 'green', bold=True)
-```
+1. Introduce a `TerminalFormatter` class that encapsulates color usage (`format_chunk_label`, `format_stitched_label`, `format_warning`, etc.).
+2. Provide a helper `_print_final_result()` that reuses the formatter and avoids duplicating the final banner logic in the whisper and realtime branches.
 
 **Benefits**:
-- Eliminates code duplication
-- Centralizes color management
-- Easy to add new colors or styles
-- Testable in isolation
+- Consistent output styling across the CLI.
+- One place to adjust color codes or fall back to plain text.
+- Simplifies unit testing of presentation logic.
+- Eliminates two large blocks of duplicate `print(..., file=sys.stdout)` code.
 
 ---
 
-### 1.2 Extract Device Selection Logic (whisper_backend.py)
+### 1.3 Extract Device Selection Logic (whisper_backend.py)
 
 **Issue**: Device detection and selection logic (32 lines) is embedded in `run_whisper_transcriber()`.
 
@@ -337,67 +301,57 @@ def _check_mps_available() -> bool:
 - Reusable in other contexts
 - More readable main function
 
----
+### 1.4 Unify Transcription Session Harness
 
-### 1.3 Extract Duplicated Final Result Display (main.py)
+**Issue**: `whisper_backend.py` and `realtime_backend.py` each reimplement the same lifecycle:
 
-**Issue**: Final stitched result printing is duplicated identically in two places.
+- Queue + event wiring for `sounddevice.InputStream`
+- Capture-duration enforcement and warning logs
+- Full-audio accumulation when `--compare_transcripts` is set
+- Final stitched output and optional comparison transcription
 
-**Locations**:
-- `main.py:303-313` (whisper backend)
-- `main.py:337-347` (realtime backend)
+The backends only diverge when actually producing text (Whisper VAD loop vs. realtime websocket).
 
-**Proposed Solution**:
+**Opportunity**: Introduce a `TranscriberSession` abstraction that encapsulates the shared harness and lets each backend plug in strategy-specific behavior.
+
 ```python
-def _print_final_result(
-    collector: ChunkCollectorWithStitching,
-    stream: TextIO = sys.stdout
-) -> None:
-    """Print the final stitched transcription."""
-    final = collector.get_final_stitched()
-    if not final:
-        return
+class Backend(Protocol):
+    def prepare(self, settings: SessionSettings) -> None: ...
+    def start_capture(self, handler: CaptureHandler) -> ContextManager: ...
+    def process_frame(self, frame: np.ndarray) -> None: ...
+    def finalize(self) -> BackendResult: ...
 
-    use_color = getattr(stream, "isatty", lambda: False)()
-    if use_color:
-        green = "\x1b[32m"
-        reset = "\x1b[0m"
-        bold = "\x1b[1m"
-        label = f"\n{bold}{green}[FINAL STITCHED]{reset}"
-    else:
-        label = "\n[FINAL STITCHED]"
+class TranscriberSession:
+    def __init__(self, backend: Backend, settings: SessionSettings):
+        self._backend = backend
+        self._settings = settings
+        # queue, stop events, full_audio_chunks, etc.
 
-    print(f"{label} {final}\n", file=stream)
-
-# Usage in main():
-finally:
-    _print_final_result(collector)
-```
-
-**Even Better**: Use the TerminalFormatter from 1.1:
-```python
-def _print_final_result(
-    collector: ChunkCollectorWithStitching,
-    stream: TextIO = sys.stdout
-) -> None:
-    """Print the final stitched transcription."""
-    final = collector.get_final_stitched()
-    if not final:
-        return
-
-    formatter = TerminalFormatter(getattr(stream, "isatty", lambda: False)())
-    label = formatter.format_stitched_label("[FINAL STITCHED]")
-    print(f"\n{label} {final}\n", file=stream)
+    def run(self) -> SessionResult:
+        self._backend.prepare(self._settings)
+        with self._backend.start_capture(self._handle_frame):
+            self._loop_until_stop()
+        stitched = self._collector.get_final_stitched()
+        comparison = self._maybe_compare_full_audio()
+        return SessionResult(stitched=stitched, comparison=comparison, chunks=self._collector.chunks)
 ```
 
 **Benefits**:
-- DRY principle
-- Single point of maintenance
-- Consistent formatting
+- DRY: shared capture-limit warnings, queue plumbing, and comparison logic live in one place.
+- Easier to add new backends (Silero, third-party APIs) without copy/paste.
+- Simplifies testing: session harness can be unit-tested once with fake backends; integration tests focus on backend-specific code paths.
 
----
+**Implementation Sketch**:
+1. Extract shared data structures (`SessionSettings`, `SessionMetrics`, `ChunkInfo`) into a new module (e.g., `transcribe_demo/session.py`).
+2. Refactor whisper and realtime backends to implement the `Backend` protocol, delegating chunk emission to the shared session.
+3. Update `main.py` to construct `TranscriberSession` with the selected backend and reuse the existing `ChunkCollectorWithStitching`.
+4. Move post-run printing (`print_transcription_summary`) into session or a helper so both backends use identical output paths.
 
-### 1.4 Extract SSL Context Configuration (Both Backends)
+**Risks**:
+- Need to ensure backend-specific threading/async concerns are handled cleanly (session should accommodate both patterns).
+- Must preserve existing stderr warnings and log messages; consider injecting hooks so the session can surface backend-specific notices.
+
+### 1.5 Extract SSL Context Configuration (Both Backends)
 
 **Issue**: SSL context setup is duplicated in both backends.
 
@@ -1276,69 +1230,15 @@ def test_speech_detection(vad_16khz, speech_like_frame):
 
 ---
 
-### 4.2 Add Unit Tests for Missing Components
+### 4.2 Add Unit Tests for Remaining Gaps
 
-**Missing Test Coverage**:
-- `ChunkCollectorWithStitching` (main.py)
-- `_clean_chunk_text()` method
-- Device selection logic
-- SSL configuration
-- Audio resampling (`resample_audio` in realtime_backend.py)
-- PCM conversion (`float_to_pcm16` in realtime_backend.py)
+Recent work added coverage for `ChunkCollectorWithStitching` (`tests/test_main_utils.py`) and the PCM conversion helper (`tests/test_realtime_backend_clipping.py`). Outstanding areas that still lack focused tests:
 
-**Proposed Tests**:
-```python
-# test_chunk_collector.py
-def test_clean_chunk_text_removes_trailing_comma():
-    text = "Hello, world,"
-    cleaned = ChunkCollectorWithStitching._clean_chunk_text(text, is_final_chunk=False)
-    assert cleaned == "Hello, world"
+- **Device selection / GPU fallbacks**: cover `_mps_available` failure modes and `--require-gpu` behaviour.
+- **SSL context helpers** (once extracted per §1.5).
+- **`resample_audio` edge cases**: extremely short input, downsampling, and value range preservation.
 
-def test_clean_chunk_text_keeps_question_mark():
-    text = "How are you?"
-    cleaned = ChunkCollectorWithStitching._clean_chunk_text(text, is_final_chunk=False)
-    assert cleaned == "How are you?"
-
-def test_clean_chunk_text_preserves_final_punctuation():
-    text = "Final sentence."
-    cleaned = ChunkCollectorWithStitching._clean_chunk_text(text, is_final_chunk=True)
-    assert cleaned == "Final sentence."
-
-
-# test_device_selection.py
-def test_device_config_auto_prefers_cuda(monkeypatch):
-    """Test that auto mode prefers CUDA when available."""
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    config = DeviceConfig.detect_device("auto")
-    assert config.device == "cuda"
-    assert config.requires_fp16 is True
-
-def test_device_config_require_gpu_raises_on_cpu_only(monkeypatch):
-    """Test that require_gpu raises when no GPU available."""
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    with pytest.raises(RuntimeError, match="GPU required"):
-        DeviceConfig.detect_device("auto", require_gpu=True)
-
-
-# test_audio_utils.py
-def test_resample_audio_upsampling():
-    """Test upsampling from 8kHz to 16kHz."""
-    audio_8k = np.array([0.0, 0.5, 1.0, 0.5], dtype=np.float32)
-    resampled = resample_audio(audio_8k, from_rate=8000, to_rate=16000)
-    assert len(resampled) == 8
-    assert resampled.dtype == np.float32
-
-def test_float_to_pcm16_clipping():
-    """Test that values outside [-1, 1] are clipped."""
-    audio = np.array([-2.0, -1.0, 0.0, 1.0, 2.0], dtype=np.float32)
-    pcm = float_to_pcm16(audio)
-    assert len(pcm) == 10  # 5 samples * 2 bytes each
-```
-
-**Benefits**:
-- Catch regressions early
-- Document expected behavior
-- Enable refactoring with confidence
+Targeted tests for these helpers will make future refactors safer without duplicating existing coverage.
 
 ---
 

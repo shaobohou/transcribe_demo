@@ -99,11 +99,11 @@ def test_print_transcription_summary_reports_differences():
 
     written = stream.getvalue()
     assert "[FINAL STITCHED] hello world" in written
-    assert "[FULL AUDIO] hello brave world" in written
+    assert "[COMPLETE AUDIO] hello brave world" in written
     assert "[COMPARISON] Difference detected" in written
-    # Diff snippets should include stitched/full lines
+    # Diff snippets should include stitched/complete lines
     assert "stitched:" in written
-    assert "full:" in written
+    assert "complete:" in written
 
 
 def test_print_transcription_summary_identical_texts(capsys):
@@ -111,7 +111,7 @@ def test_print_transcription_summary_identical_texts(capsys):
     print_transcription_summary(stream, " same ", "same")
 
     written = stream.getvalue()
-    assert "matches full audio transcription" in written
+    assert "matches complete audio transcription" in written
 
 
 def test_tokenize_with_original_strips_punctuation():
@@ -180,7 +180,7 @@ def test_main_whisper_flow_prints_summary(monkeypatch):
 
     class DummyResult:
         def __init__(self):
-            self.full_audio_transcription = "full audio text"
+            self.full_audio_transcription = "complete audio text"
 
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -205,7 +205,7 @@ def test_main_whisper_flow_prints_summary(monkeypatch):
 
     output = stdout.getvalue()
     assert "[FINAL STITCHED] stitched text" in output
-    assert "[FULL AUDIO] full audio text" in output
+    assert "[COMPLETE AUDIO] complete audio text" in output
 
 
 def test_main_realtime_flow_without_comparison(monkeypatch):

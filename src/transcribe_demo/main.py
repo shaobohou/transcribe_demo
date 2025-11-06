@@ -309,12 +309,12 @@ def _normalize_whitespace(text: str) -> str:
 def print_transcription_summary(
     stream: TextIO,
     final_text: str,
-    full_audio_text: str,
+    complete_audio_text: str,
 ) -> None:
-    """Print stitched transcript, full-audio transcript, and comparison details."""
+    """Print stitched transcript, complete-audio transcript, and comparison details."""
     use_color = bool(getattr(stream, "isatty", lambda: False)())
     final_clean = final_text.strip()
-    full_audio_clean = full_audio_text.strip()
+    complete_audio_clean = complete_audio_text.strip()
 
     bold = green = reset = ""
     if use_color:
@@ -328,40 +328,40 @@ def print_transcription_summary(
         else:
             print(f"\n[FINAL STITCHED] {final_clean}\n", file=stream)
 
-    if full_audio_clean:
+    if complete_audio_clean:
         if use_color:
-            print(f"{bold}{green}[FULL AUDIO]{reset} {full_audio_clean}\n", file=stream)
+            print(f"{bold}{green}[COMPLETE AUDIO]{reset} {complete_audio_clean}\n", file=stream)
         else:
-            print(f"[FULL AUDIO] {full_audio_clean}\n", file=stream)
+            print(f"[COMPLETE AUDIO] {complete_audio_clean}\n", file=stream)
 
-    if not (final_clean and full_audio_clean):
+    if not (final_clean and complete_audio_clean):
         return
 
     stitched_tokens_norm = [norm for _, norm in _tokenize_with_original(final_clean)]
-    full_tokens_norm = [norm for _, norm in _tokenize_with_original(full_audio_clean)]
+    complete_tokens_norm = [norm for _, norm in _tokenize_with_original(complete_audio_clean)]
     stitched_normalized = " ".join(stitched_tokens_norm)
-    full_normalized = " ".join(full_tokens_norm)
+    complete_normalized = " ".join(complete_tokens_norm)
     comparison_label = f"{bold}{green}[COMPARISON]{reset}" if use_color else "[COMPARISON]"
 
-    if stitched_normalized == full_normalized:
+    if stitched_normalized == complete_normalized:
         print(
-            f"{comparison_label} Stitched transcription matches full audio transcription.\n",
+            f"{comparison_label} Stitched transcription matches complete audio transcription.\n",
             file=stream,
         )
         return
 
-    similarity = difflib.SequenceMatcher(None, stitched_tokens_norm, full_tokens_norm).ratio()
+    similarity = difflib.SequenceMatcher(None, stitched_tokens_norm, complete_tokens_norm).ratio()
     print(
         f"{comparison_label} Difference detected (similarity {similarity:.2%}).",
         file=stream,
     )
     diff_label = "\x1b[2;36m[DIFF]\x1b[0m" if use_color else "[DIFF]"
-    diff_snippets = _generate_diff_snippets(final_clean, full_audio_clean, use_color)
+    diff_snippets = _generate_diff_snippets(final_clean, complete_audio_clean, use_color)
     for snippet in diff_snippets:
         print(
             f"{diff_label} {snippet['tag']}:\n"
             f"    stitched: {snippet['stitched']}\n"
-            f"    full:     {snippet['full']}",
+            f"    complete: {snippet['complete']}",
             file=stream,
         )
 
@@ -426,15 +426,15 @@ def _format_diff_snippet(
 
 def _generate_diff_snippets(
     stitched_text: str,
-    full_text: str,
+    complete_text: str,
     use_color: bool,
 ) -> list[dict[str, str]]:
     stitched_tokens = _tokenize_with_original(stitched_text)
-    full_tokens = _tokenize_with_original(full_text)
+    complete_tokens = _tokenize_with_original(complete_text)
     stitched_norm = [norm for _, norm in stitched_tokens]
-    full_norm = [norm for _, norm in full_tokens]
+    complete_norm = [norm for _, norm in complete_tokens]
 
-    matcher = difflib.SequenceMatcher(None, stitched_norm, full_norm)
+    matcher = difflib.SequenceMatcher(None, stitched_norm, complete_norm)
     snippets: list[dict[str, str]] = []
 
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
@@ -444,7 +444,7 @@ def _generate_diff_snippets(
             {
                 "tag": tag,
                 "stitched": _format_diff_snippet(stitched_tokens, i1, i2, use_color, "33"),
-                "full": _format_diff_snippet(full_tokens, j1, j2, use_color, "36"),
+                "complete": _format_diff_snippet(complete_tokens, j1, j2, use_color, "36"),
             }
         )
 
@@ -523,9 +523,9 @@ def main(argv: list[str]) -> None:
         finally:
             final = collector.get_final_stitched()
             if FLAGS.compare_transcripts:
-                full_audio_text = ""
+                complete_audio_text = ""
                 try:
-                    full_audio_text = (
+                    complete_audio_text = (
                         whisper_result.full_audio_transcription
                         if whisper_result and whisper_result.full_audio_transcription
                         else ""
@@ -535,7 +535,7 @@ def main(argv: list[str]) -> None:
                         f"WARNING: Unable to retrieve full audio transcription: {exc}",
                         file=sys.stderr,
                     )
-                print_transcription_summary(sys.stdout, final, full_audio_text)
+                print_transcription_summary(sys.stdout, final, complete_audio_text)
             else:
                 # Just show final stitched result without comparison
                 if final:
@@ -577,10 +577,10 @@ def main(argv: list[str]) -> None:
         # Show final stitched result
         final = collector.get_final_stitched()
         if FLAGS.compare_transcripts:
-            full_audio_text = ""
+            complete_audio_text = ""
             if realtime_result and realtime_result.full_audio.size > 0:
                 try:
-                    full_audio_text = transcribe_full_audio_realtime(
+                    complete_audio_text = transcribe_full_audio_realtime(
                         realtime_result.full_audio,
                         sample_rate=realtime_result.sample_rate,
                         chunk_duration=REALTIME_CHUNK_DURATION,
@@ -597,7 +597,7 @@ def main(argv: list[str]) -> None:
                         file=sys.stderr,
                     )
 
-            print_transcription_summary(sys.stdout, final, full_audio_text)
+            print_transcription_summary(sys.stdout, final, complete_audio_text)
         else:
             # Just show final stitched result without comparison
             if final:
