@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Changes to command-line arguments
 - New test files or testing approaches
 - Updates to key design decisions
+- Refactoring opportunities or code cleanup tasks (update REFACTORING.md)
 
 ## Project Overview
 
@@ -184,6 +185,10 @@ Both backends support:
 - **Edge case handling**: Ensures robust error handling for malformed audio input
 
 When modifying VAD logic, ensure all tests pass and consider adding test cases for new scenarios.
+
+## Code Quality and Refactoring
+
+**See REFACTORING.md** for refactoring opportunities, guidelines on when/how to refactor, and common cleanup patterns. Update it when you identify code quality issues or complete refactorings.
 
 ## Future Improvements
 
