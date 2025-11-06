@@ -39,7 +39,7 @@ def test_get_sounddevice_missing_dependency(monkeypatch: pytest.MonkeyPatch) -> 
     def _raise_import_error(*args, **kwargs):  # noqa: D401
         raise OSError("PortAudio library not found")
 
-    monkeypatch.setitem(sys.modules, "sounddevice", None, raising=False)
+    monkeypatch.setitem(sys.modules, "sounddevice", None)
     monkeypatch.setattr(importlib, "import_module", _raise_import_error)
 
     with pytest.raises(RuntimeError, match="PortAudio"):

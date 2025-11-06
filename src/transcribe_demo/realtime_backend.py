@@ -8,10 +8,12 @@ import ssl
 import sys
 import threading
 import time
-from typing import Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 import websockets
+
+WebSocketClientProtocol = Any
 
 from transcribe_demo.sound_device import get_sounddevice
 
@@ -32,11 +34,13 @@ def resample_audio(audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarra
         return np.zeros(0, dtype=np.float32)
     source_positions = np.linspace(0, audio.size - 1, audio.size, dtype=np.float32)
     target_positions = np.linspace(0, audio.size - 1, target_length, dtype=np.float32)
-    return np.interp(target_positions, source_positions, audio).astype(np.float32, copy=False)
+    return np.interp(target_positions, source_positions, audio).astype(
+        np.float32, copy=False
+    )
 
 
 async def send_json(
-    ws: websockets.WebSocketClientProtocol,
+    ws: WebSocketClientProtocol,
     payload: Dict[str, object],
     lock: asyncio.Lock,
 ) -> None:
@@ -54,7 +58,7 @@ def run_realtime_transcriber(
     chunk_duration: float,
     instructions: str,
     insecure_downloads: bool = False,
-    chunk_consumer: Optional[object] = None,
+    chunk_consumer: Optional[Callable[..., None]] = None,
 ) -> None:
     audio_queue: queue.Queue[np.ndarray] = queue.Queue()
     stop_event = threading.Event()
@@ -80,7 +84,7 @@ def run_realtime_transcriber(
         stop_event.set()
 
     async def audio_sender(
-        ws: websockets.WebSocketClientProtocol,
+        ws: WebSocketClientProtocol,
         lock: asyncio.Lock,
     ) -> None:
         buffer = np.zeros(0, dtype=np.float32)
@@ -119,7 +123,7 @@ def run_realtime_transcriber(
             buffer = buffer[chunk_size:]
 
     async def receiver(
-        ws: websockets.WebSocketClientProtocol,
+        ws: WebSocketClientProtocol,
     ) -> None:
         nonlocal chunk_counter, cumulative_time
         partials: Dict[str, str] = {}
@@ -134,7 +138,10 @@ def run_realtime_transcriber(
                         continue
                     if item_id:
                         partials[item_id] = partials.get(item_id, "") + delta
-                elif event_type == "conversation.item.input_audio_transcription.completed":
+                elif (
+                    event_type
+                    == "conversation.item.input_audio_transcription.completed"
+                ):
                     item_id = payload.get("item_id")
                     transcript = payload.get("transcript") or ""
                     had_partials = bool(item_id and partials.get(item_id))
@@ -170,7 +177,9 @@ def run_realtime_transcriber(
                     if item_id:
                         partials.pop(item_id, None)
                 elif event_type == "error":
-                    message_text = payload.get("error") or payload.get("message") or payload
+                    message_text = (
+                        payload.get("error") or payload.get("message") or payload
+                    )
                     print(f"\nRealtime error: {message_text}", file=sys.stderr)
                 elif event_type == "error.session":
                     message_text = payload.get("message") or payload
@@ -194,7 +203,9 @@ def run_realtime_transcriber(
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
-        async with websockets.connect(uri, additional_headers=headers, max_size=None, ssl=ssl_context) as ws:
+        async with websockets.connect(
+            uri, additional_headers=headers, max_size=None, ssl=ssl_context
+        ) as ws:
             await send_json(
                 ws,
                 {
@@ -232,8 +243,9 @@ def run_realtime_transcriber(
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
             for task in done:
-                if task.exception():
-                    raise task.exception()
+                exc = task.exception()
+                if exc is not None:
+                    raise exc
 
     sd = get_sounddevice()
     with sd.InputStream(

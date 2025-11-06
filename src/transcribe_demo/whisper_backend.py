@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 import queue
 import ssl
@@ -9,19 +10,22 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
 import numpy as np
-import torch
 import webrtcvad
-import whisper
 
 from transcribe_demo.sound_device import get_sounddevice
+
+if TYPE_CHECKING:  # pragma: no cover - imported lazily at runtime
+    import torch  # noqa: F401
+    import whisper  # noqa: F401
 
 
 @dataclass
 class TranscriptionChunk:
     """Stores a transcription chunk with its timing information."""
+
     index: int
     text: str
     start_time: float
@@ -80,10 +84,13 @@ class TranscriptionChunk:
 # - https://github.com/snakers4/silero-vad
 # - https://github.com/snakers4/silero-vad/blob/master/examples/pyaudio-streaming/
 
+
 class WebRTCVAD:
     """WebRTC VAD wrapper for speech detection."""
 
-    def __init__(self, sample_rate: int, frame_duration_ms: int = 30, aggressiveness: int = 2):
+    def __init__(
+        self, sample_rate: int, frame_duration_ms: int = 30, aggressiveness: int = 2
+    ):
         """
         Initialize WebRTC VAD.
 
@@ -93,9 +100,13 @@ class WebRTCVAD:
             aggressiveness: VAD aggressiveness (0-3, higher = more aggressive filtering)
         """
         if sample_rate not in (8000, 16000, 32000, 48000):
-            raise ValueError(f"Sample rate must be 8000, 16000, 32000, or 48000 Hz, got {sample_rate}")
+            raise ValueError(
+                f"Sample rate must be 8000, 16000, 32000, or 48000 Hz, got {sample_rate}"
+            )
         if frame_duration_ms not in (10, 20, 30):
-            raise ValueError(f"Frame duration must be 10, 20, or 30 ms, got {frame_duration_ms}")
+            raise ValueError(
+                f"Frame duration must be 10, 20, or 30 ms, got {frame_duration_ms}"
+            )
 
         self.sample_rate = sample_rate
         self.frame_duration_ms = frame_duration_ms
@@ -118,17 +129,21 @@ class WebRTCVAD:
         # Sanitize audio before conversion; replace non-finite values and clip to int16 range
         clean_audio = np.nan_to_num(
             np.asarray(audio, dtype=np.float32),
-            nan=0.0, posinf=0.0, neginf=0.0, copy=True
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+            copy=True,
         )
 
         # Warn if clipping is needed (indicates potential audio configuration issues)
         if np.any(np.abs(clean_audio) > 1.0):
             import warnings
+
             warnings.warn(
                 "Audio values exceeded [-1.0, 1.0] range, clipping applied. "
                 "This may indicate incorrect gain settings or audio driver issues.",
                 UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
         np.clip(clean_audio, -1.0, 1.0, out=clean_audio)
 
@@ -136,7 +151,7 @@ class WebRTCVAD:
         audio_int16 = (clean_audio * 32768.0).astype(np.int16)
 
         # Convert to bytes
-        audio_bytes = struct.pack(f'{len(audio_int16)}h', *audio_int16)
+        audio_bytes = struct.pack(f"{len(audio_int16)}h", *audio_int16)
 
         # Run VAD
         try:
@@ -154,13 +169,22 @@ def run_whisper_transcriber(
     insecure_downloads: bool,
     device_preference: str,
     require_gpu: bool,
-    chunk_consumer: Optional[Callable[[int, str, float, float, list | None, float], None]] = None,
+    chunk_consumer: Optional[Callable[..., None]] = None,
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,
     vad_speech_pad_duration: float = 0.2,
     max_chunk_duration: float = 60.0,
 ) -> None:
+    try:
+        torch = cast(Any, importlib.import_module("torch"))
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "PyTorch is required to run the Whisper backend. Install the CPU build "
+            "with `pip install torch --index-url https://download.pytorch.org/whl/cpu` "
+            "or supply a compatible GPU build before retrying."
+        ) from exc
+
     def mps_available() -> bool:
         mps_backend = getattr(torch.backends, "mps", None)
         if not mps_backend or not hasattr(mps_backend, "is_available"):
@@ -182,17 +206,23 @@ def run_whisper_transcriber(
             device = "cpu"
     elif device_preference == "cuda":
         if not cuda_available:
-            raise RuntimeError("CUDA GPU requested (--device=cuda) but none is available.")
+            raise RuntimeError(
+                "CUDA GPU requested (--device=cuda) but none is available."
+            )
         device = "cuda"
     elif device_preference == "mps":
         if not apple_mps_available:
-            raise RuntimeError("Apple Metal GPU requested (--device=mps) but none is available.")
+            raise RuntimeError(
+                "Apple Metal GPU requested (--device=mps) but none is available."
+            )
         device = "mps"
     else:
         device = "cpu"
 
     if require_gpu and device not in {"cuda", "mps"}:
-        raise RuntimeError("GPU expected (--require-gpu supplied) but none is available.")
+        raise RuntimeError(
+            "GPU expected (--require-gpu supplied) but none is available."
+        )
 
     if device == "cuda":
         print("Running transcription on CUDA GPU.", file=sys.stderr)
@@ -224,6 +254,14 @@ def run_whisper_transcriber(
                 file=sys.stderr,
             )
         print(f"Loading Whisper model: {effective_model_name}", file=sys.stderr)
+        try:
+            whisper = cast(Any, importlib.import_module("whisper"))
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "openai-whisper is required to run the Whisper backend. Install it with "
+                "`pip install openai-whisper` and retry."
+            ) from exc
+
         model = whisper.load_model(effective_model_name, device=device)
     finally:
         if original_https_context is not None:
@@ -238,13 +276,20 @@ def run_whisper_transcriber(
     lock = threading.Lock()
 
     # VAD configuration
-    vad = WebRTCVAD(sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=vad_aggressiveness)
-    min_chunk_size = int(sample_rate * 2.0)  # Minimum 2 seconds to avoid transcribing short noise
+    vad = WebRTCVAD(
+        sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=vad_aggressiveness
+    )
+    min_chunk_size = int(
+        sample_rate * 2.0
+    )  # Minimum 2 seconds to avoid transcribing short noise
     max_chunk_size = int(sample_rate * max_chunk_duration)
     silence_frames_threshold = int(sample_rate * vad_min_silence_duration)
     min_speech_frames = int(sample_rate * vad_min_speech_duration)
     speech_pad_samples = int(sample_rate * vad_speech_pad_duration)
-    print(f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, aggressiveness: {vad_aggressiveness}, min_speech: {vad_min_speech_duration}s, pad: {vad_speech_pad_duration}s)", file=sys.stderr)
+    print(
+        f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, aggressiveness: {vad_aggressiveness}, min_speech: {vad_min_speech_duration}s, pad: {vad_speech_pad_duration}s)",
+        file=sys.stderr,
+    )
 
     def callback(indata: np.ndarray, frames: int, time, status) -> None:
         if status:
@@ -279,8 +324,8 @@ def run_whisper_transcriber(
 
                 # Process complete VAD frames
                 while len(vad_frame_buffer) >= vad.frame_size:
-                    frame = vad_frame_buffer[:vad.frame_size]
-                    vad_frame_buffer = vad_frame_buffer[vad.frame_size:]
+                    frame = vad_frame_buffer[: vad.frame_size]
+                    vad_frame_buffer = vad_frame_buffer[vad.frame_size :]
 
                     # Check if frame contains speech
                     if vad.is_speech(frame):
@@ -307,14 +352,20 @@ def run_whisper_transcriber(
                 # Trim trailing silence
                 trim_samples = min(silence_frames, buffer.size)
                 if trim_samples > 0:
-                    window = buffer[:-trim_samples] if trim_samples < buffer.size else buffer
+                    window = (
+                        buffer[:-trim_samples] if trim_samples < buffer.size else buffer
+                    )
                 else:
                     window = buffer
 
                 # Add speech padding from the circular buffer
                 if len(speech_pad_buffer) > speech_pad_samples:
-                    pad_start_idx = max(0, len(speech_pad_buffer) - len(window) - speech_pad_samples)
-                    padding = speech_pad_buffer[pad_start_idx:len(speech_pad_buffer) - len(window)]
+                    pad_start_idx = max(
+                        0, len(speech_pad_buffer) - len(window) - speech_pad_samples
+                    )
+                    padding = speech_pad_buffer[
+                        pad_start_idx : len(speech_pad_buffer) - len(window)
+                    ]
                     if len(padding) > 0:
                         window = np.concatenate((padding, window))
 
@@ -350,7 +401,9 @@ def run_whisper_transcriber(
 
                 # Compute absolute timestamps relative to session start
                 chunk_absolute_end = max(0.0, inference_start - session_start_time)
-                chunk_absolute_start = max(0.0, chunk_absolute_end - chunk_audio_duration)
+                chunk_absolute_start = max(
+                    0.0, chunk_absolute_end - chunk_audio_duration
+                )
 
                 if chunk_consumer is not None:
                     chunk_consumer(
@@ -373,7 +426,9 @@ def run_whisper_transcriber(
                 next_chunk_start = current_end
 
                 # Keep speech_pad_buffer size bounded to avoid excessive memory usage
-                max_pad_buffer_size = speech_pad_samples * 4  # Keep 4x padding size as history
+                max_pad_buffer_size = (
+                    speech_pad_samples * 4
+                )  # Keep 4x padding size as history
                 if len(speech_pad_buffer) > max_pad_buffer_size:
                     speech_pad_buffer = speech_pad_buffer[-max_pad_buffer_size:]
 

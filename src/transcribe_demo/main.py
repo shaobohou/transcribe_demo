@@ -39,7 +39,7 @@ class ChunkCollectorWithStitching:
         text = text.strip()
         if not is_final_chunk and text:
             # Strip trailing commas and periods, but not question marks or exclamation points
-            while text and text[-1] in '.,':
+            while text and text[-1] in ".,":
                 text = text[:-1].rstrip()
         return text
 
@@ -106,6 +106,10 @@ class ChunkCollectorWithStitching:
             timing_suffix = f" | t={absolute_end:.2f}s"
             label = f"[chunk {chunk_index:03d}{timing_suffix}]"
         use_color = bool(getattr(self._stream, "isatty", lambda: False)())
+        cyan = ""
+        green = ""
+        reset = ""
+        bold = ""
 
         if use_color:
             cyan = "\x1b[36m"
@@ -125,7 +129,9 @@ class ChunkCollectorWithStitching:
         if (chunk_index + 1) % 3 == 0:
             # Clean trailing punctuation from all chunks except the last one
             cleaned_chunks = [
-                self._clean_chunk_text(c.text, is_final_chunk=(i == len(self._chunks) - 1))
+                self._clean_chunk_text(
+                    c.text, is_final_chunk=(i == len(self._chunks) - 1)
+                )
                 for i, c in enumerate(self._chunks)
             ]
             concatenated = " ".join(chunk for chunk in cleaned_chunks if chunk)
@@ -133,7 +139,7 @@ class ChunkCollectorWithStitching:
             if use_color:
                 concat_label = f"\n{bold}{green}[CONCATENATED]{reset}"
             else:
-                concat_label = f"\n[CONCATENATED]"
+                concat_label = "\n[CONCATENATED]"
             self._stream.write(f"{concat_label} {concatenated}\n\n")
             self._stream.flush()
 
@@ -242,8 +248,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--refine-with-context",
         action="store_true",
         help="[NOT YET IMPLEMENTED] Use 3-chunk sliding window to refine middle chunk transcription. "
-             "Improves accuracy with more context but adds 1-chunk latency and ~3x inference time. "
-             "Requires word timestamps (not available on MPS/Apple Metal).",
+        "Improves accuracy with more context but adds 1-chunk latency and ~3x inference time. "
+        "Requires word timestamps (not available on MPS/Apple Metal).",
     )
     parser.add_argument(
         "--realtime-model",
@@ -271,12 +277,12 @@ def main(argv: Optional[list[str]] = None) -> None:
     args = parse_args(argv)
 
     # Check for unimplemented features
-    if hasattr(args, 'refine_with_context') and args.refine_with_context:
+    if hasattr(args, "refine_with_context") and args.refine_with_context:
         print(
             "ERROR: --refine-with-context is not yet implemented.\n"
             "This feature will use a 3-chunk sliding window to refine transcriptions with more context.\n"
             "See TODO comments in main.py for implementation details.",
-            file=sys.stderr
+            file=sys.stderr,
         )
         sys.exit(1)
 
@@ -304,11 +310,17 @@ def main(argv: Optional[list[str]] = None) -> None:
             final = collector.get_final_stitched()
             if final:
                 use_color = sys.stdout.isatty()
+                green = ""
+                reset = ""
+                bold = ""
                 if use_color:
                     green = "\x1b[32m"
                     reset = "\x1b[0m"
                     bold = "\x1b[1m"
-                    print(f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final}\n", file=sys.stdout)
+                    print(
+                        f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final}\n",
+                        file=sys.stdout,
+                    )
                 else:
                     print(f"\n[FINAL CONCATENATED] {final}\n", file=sys.stdout)
         return
@@ -338,11 +350,17 @@ def main(argv: Optional[list[str]] = None) -> None:
         final = collector.get_final_stitched()
         if final:
             use_color = sys.stdout.isatty()
+            green = ""
+            reset = ""
+            bold = ""
             if use_color:
                 green = "\x1b[32m"
                 reset = "\x1b[0m"
                 bold = "\x1b[1m"
-                print(f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final}\n", file=sys.stdout)
+                print(
+                    f"\n{bold}{green}[FINAL CONCATENATED]{reset} {final}\n",
+                    file=sys.stdout,
+                )
             else:
                 print(f"\n[FINAL CONCATENATED] {final}\n", file=sys.stdout)
 

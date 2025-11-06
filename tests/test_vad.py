@@ -23,7 +23,9 @@ class TestWebRTCVADInitialization:
     def test_valid_frame_durations(self):
         """Test that valid frame durations are accepted."""
         for duration in [10, 20, 30]:
-            vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=duration, aggressiveness=2)
+            vad = WebRTCVAD(
+                sample_rate=16000, frame_duration_ms=duration, aggressiveness=2
+            )
             assert vad.frame_duration_ms == duration
 
     def test_invalid_frame_duration(self):
@@ -34,7 +36,9 @@ class TestWebRTCVADInitialization:
     def test_valid_aggressiveness_levels(self):
         """Test that all aggressiveness levels (0-3) are accepted."""
         for level in [0, 1, 2, 3]:
-            vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=level)
+            vad = WebRTCVAD(
+                sample_rate=16000, frame_duration_ms=30, aggressiveness=level
+            )
             assert vad.vad is not None
 
     def test_frame_size_calculation(self):
@@ -175,7 +179,9 @@ class TestWebRTCVADIntegration:
     def test_different_sample_rates(self):
         """Test VAD with different sample rates."""
         for sample_rate in [8000, 16000, 32000, 48000]:
-            vad = WebRTCVAD(sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=2)
+            vad = WebRTCVAD(
+                sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=2
+            )
             frame_size = vad.frame_size
 
             # Create silent frame for this sample rate
