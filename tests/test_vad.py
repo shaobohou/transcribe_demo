@@ -1,5 +1,8 @@
 """Tests for the WebRTC VAD functionality."""
 
+from pathlib import Path
+import wave
+
 import numpy as np
 import pytest
 
@@ -235,3 +238,36 @@ class TestVADEdgeCases:
         # Should handle properly
         result = vad.is_speech(negative_frame)
         assert isinstance(result, bool)
+
+
+@pytest.mark.integration
+def test_webrtc_vad_detects_speech_in_sample_audio():
+    """Validate VAD detects speech frames in the provided sample clip."""
+    sample_path = Path(__file__).resolve().parent / "data" / "fox.wav"
+    if not sample_path.exists():
+        pytest.fail("Sample audio fox.wav not present in tests/data.")
+
+    with wave.open(str(sample_path), "rb") as wf:
+        if wf.getnchannels() != 1:
+            pytest.fail("fox.wav must be mono for VAD test.")
+        sample_rate = wf.getframerate()
+        frames = wf.readframes(wf.getnframes())
+
+    if sample_rate != 16000:
+        pytest.fail("fox.wav must be 16kHz for VAD test.")
+
+    audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+
+    vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+    frame_size = vad.frame_size
+    if audio.size < frame_size:
+        pytest.skip("Sample audio shorter than a single VAD frame.")
+
+    trimmed = audio[: (audio.size // frame_size) * frame_size]
+    frames = trimmed.reshape(-1, frame_size)
+
+    max_frames = 500  # Limit processing time
+    frames = frames[:max_frames]
+    detections = sum(1 for frame in frames if vad.is_speech(frame))
+
+    assert detections > 0, "VAD failed to detect speech in sample audio."

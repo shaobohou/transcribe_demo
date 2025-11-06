@@ -34,3 +34,6 @@ dev = [
 filterwarnings = [
     "ignore:pkg_resources is deprecated as an API:UserWarning"
 ]
+markers = [
+    "integration: marks tests that exercise higher-level audio flows",
+]
