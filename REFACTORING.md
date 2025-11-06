@@ -1,22 +1,6 @@
 # Refactoring Opportunities
 
-This document identifies opportunities to refactor the transcribe_demo codebase for improved maintainability, readability, and testability.
-
-## Summary
-
-The codebase is functional and well-documented, but several areas could benefit from refactoring:
-
-- **Code Duplication**: Duplicated logic for printing, SSL setup, and color formatting
-- **Long Functions**: Several functions exceed 200 lines with multiple responsibilities
-- **Magic Numbers**: Hardcoded values scattered throughout
-- **Nested Functions**: Deep nesting makes testing and reuse difficult
-- **Missing Abstractions**: Common patterns could be extracted into reusable components
-
----
-
 ## When to Refactor
-
-Understanding when to refactor versus when to document for later is crucial for maintaining momentum while improving code quality.
 
 ### DO Refactor When:
 
@@ -42,8 +26,6 @@ If unsure whether to refactor now or later, add it to this document with details
 ---
 
 ## Refactoring Workflow
-
-Follow this process to refactor safely and effectively:
 
 ### 1. Identify
 
@@ -92,8 +74,6 @@ After successful refactoring:
 ---
 
 ## Common Cleanup Patterns
-
-Watch for these patterns when working in the codebase:
 
 ### Code Duplication
 
@@ -1271,58 +1251,4 @@ def configure_logging(verbosity: int):
 - Can redirect to file
 - Standard Python practice
 
----
-
-## Summary of Refactoring Priorities
-
-### Quick Wins (Low effort, high impact):
-1. **Extract TerminalFormatter class** (eliminates 3 duplications)
-2. **Extract `_print_final_result()` function** (eliminates duplication)
-3. **Create constants.py** (clarifies magic numbers)
-4. **Extract SSL context manager** (eliminates duplication, safer)
-
-### Medium Effort (High impact):
-1. **Extract DeviceConfig class** (cleaner separation)
-2. **Add test fixtures** (better test maintainability)
-3. **Add type hints for callbacks** (better type safety)
-4. **Add logging** (better debugging)
-
-### Large Refactoring (Plan carefully):
-1. **Decompose run_whisper_transcriber()** into classes
-2. **Decompose run_realtime_transcriber()** into classes
-3. **Create TranscribeConfig** dataclass hierarchy
-4. **Decompose ChunkCollectorWithStitching.__call__()**
-
-### Testing Priorities:
-1. Add tests for `ChunkCollectorWithStitching`
-2. Add tests for device selection logic
-3. Add tests for audio utilities (resample, PCM conversion)
-4. Add tests for SSL configuration
-
----
-
-## Refactoring Strategy
-
-**Recommended Approach**:
-
-1. **Start with quick wins** - they build confidence and provide immediate value
-2. **Add tests before refactoring** - especially for complex functions
-3. **Refactor incrementally** - one function/class at a time
-4. **Keep existing tests passing** - ensures no regressions
-5. **Update documentation** - keep CLAUDE.md in sync
-
-**Don't Refactor**:
-- Code that rarely changes and works well
-- Code under active development (coordinate with team)
-- Without tests or a clear plan
-
----
-
-## Notes
-
-- The codebase is generally well-structured with good documentation
-- Most improvements are about reducing duplication and improving testability
-- The TODO comments for Silero VAD and sliding window refinement are well-documented
-- SSL configuration and color formatting are the biggest sources of duplication
-- Long functions are the main structural issue, but they work correctly
 
