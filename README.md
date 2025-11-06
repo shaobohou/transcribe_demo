@@ -189,5 +189,5 @@ uv run pytest -v
 
 ## Development
 
-- See `CLAUDE.md` for detailed architecture documentation and development guidelines
-- See `REFACTORING.md` for refactoring opportunities and code quality improvement guidelines
+- See `CLAUDE.md` for key implementation rules and default values
+- See `REFACTORING.md` for detailed refactoring opportunities and architectural improvements
