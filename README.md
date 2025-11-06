@@ -13,6 +13,7 @@ Built with the `uv` Python project manager.
 - **Intelligent Stitching**: Cleans up punctuation at chunk boundaries for smooth transcription flow
 - **Dual Backend Support**: Choose between local Whisper or cloud-based Realtime API
 - **Transcript Comparison**: Compares chunked vs. full-audio transcription with detailed diff output
+- **Automatic Session Logging**: Every session is saved to disk with audio, transcriptions, and metadata
 - **Flexible Configuration**: Fine-tune VAD sensitivity, chunk duration, capture limits, and more
 - **Safety Features**: Automatic capture duration limits, memory warnings, and cost confirmations
 
@@ -139,6 +140,51 @@ uv run transcribe-demo --language auto
 # Force Spanish transcription
 uv run transcribe-demo --language es
 ```
+
+### Session Logging
+
+Every transcription session is automatically saved to disk with comprehensive metadata. Sessions are organized by date and backend for easy browsing.
+
+#### Directory Structure
+
+```
+session_logs/
+└── 2025-11-06/                         # Organized by date
+    ├── session_143052_whisper/         # Timestamp + backend name
+    │   ├── session.json                # Complete metadata
+    │   ├── full_audio.wav              # Raw mono audio (16kHz)
+    │   ├── README.txt                  # Human-readable summary
+    │   └── chunks/                     # Individual chunk audio files
+    │       ├── chunk_000.wav
+    │       ├── chunk_001.wav
+    │       └── ...
+    └── session_150234_realtime/
+        └── ...
+```
+
+#### What Gets Logged
+
+Each session includes:
+- **Full audio**: Complete raw recording as WAV file
+- **Chunk audio**: Individual audio segments for each transcribed chunk
+- **Both transcriptions**: Stitched chunks + full audio transcription (for comparison)
+- **Metadata**: Model, device, VAD parameters, timestamps, inference times
+- **README.txt**: Human-readable summary with all transcriptions and chunk details
+
+#### Configuration
+
+```bash
+# Change log directory (default: session_logs/)
+uv run transcribe-demo --session_log_dir /path/to/logs
+
+# Only save sessions longer than N seconds (default: 10.0s)
+uv run transcribe-demo --min_log_duration 30
+
+# Save very short sessions including test runs
+uv run transcribe-demo --min_log_duration 0
+```
+
+**Note**: Sessions shorter than `--min_log_duration` are automatically discarded to avoid cluttering logs with test runs.
 
 ## How It Works
 

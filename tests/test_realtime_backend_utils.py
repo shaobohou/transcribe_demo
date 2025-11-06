@@ -24,23 +24,6 @@ def test_resample_audio_adjusts_length():
     assert np.isclose(resampled[-1], original[-1])
 
 
-def test_send_json_uses_lock():
-    sent = []
-
-    class StubWS:
-        async def send(self, message):
-            sent.append(json.loads(message))
-
-    payload = {"type": "ping"}
-
-    async def run_test():
-        lock = asyncio.Lock()
-        await realtime_backend.send_json(StubWS(), payload, lock)
-
-    asyncio.run(run_test())
-    assert sent == [payload]
-
-
 def test_run_async_falls_back_to_manual_loop(monkeypatch):
     original_new_loop = realtime_backend.asyncio.new_event_loop
 
@@ -128,11 +111,6 @@ def test_transcribe_full_audio_realtime_collects_chunks(monkeypatch):
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-    async def fake_send_json(ws, payload, lock):
-        async with lock:
-            await ws.send(json.dumps(payload))
-
-    monkeypatch.setattr(realtime_backend, "send_json", fake_send_json)
     monkeypatch.setattr(
         realtime_backend.websockets,
         "connect",

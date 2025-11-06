@@ -179,6 +179,8 @@ def test_main_whisper_flow_prints_summary(monkeypatch):
     class DummyResult:
         def __init__(self):
             self.full_audio_transcription = "complete audio text"
+            self.capture_duration = 15.0
+            self.metadata = {"model": "test", "device": "cpu"}
 
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -221,6 +223,8 @@ def test_main_realtime_flow_without_comparison(monkeypatch):
         def __init__(self):
             self.full_audio = np.zeros(0, dtype=np.float32)
             self.sample_rate = 24000
+            self.capture_duration = 15.0
+            self.metadata = {"model": "test-realtime"}
 
     stdout = io.StringIO()
     stderr = io.StringIO()

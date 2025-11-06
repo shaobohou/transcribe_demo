@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import queue as queue_module
+import threading
 import wave
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import numpy as np
 import pytest
 
 from transcribe_demo import realtime_backend
+from transcribe_demo import audio_capture
 
 
 def _load_fixture() -> tuple[np.ndarray, int]:
@@ -30,46 +32,62 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
     frame_size = 320  # 20ms at 16kHz
 
     chunk_texts: list[str] = []
-    queue_holder: dict[str, queue_module.Queue[np.ndarray | None]] = {}
     fake_ws_holder: dict[str, object] = {}
 
-    class TrackingQueue(queue_module.Queue):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            queue_holder["queue"] = self
+    # Monkeypatch AudioCaptureManager to feed test data
+    class FakeAudioCaptureManager:
+        def __init__(self, sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
+            self.sample_rate = sample_rate
+            self.channels = channels
+            self.max_capture_duration = max_capture_duration
+            self.collect_full_audio = collect_full_audio
+            self.audio_queue = queue_module.Queue()
+            self.stop_event = threading.Event()
+            self.capture_limit_reached = threading.Event()
+            self._full_audio_chunks = []
+            self._feeder_thread = None
 
-    monkeypatch.setattr(realtime_backend.queue, "Queue", TrackingQueue)
-
-    class FakeInputStream:
-        def __init__(self, callback, channels, samplerate, dtype):
-            assert channels == 1
-            assert samplerate == sample_rate
-            self.callback = callback
-
-        def __enter__(self):
+        def _feed_audio(self):
+            # Feed test audio into queue in a background thread
             for start in range(0, len(audio), frame_size):
+                if self.stop_event.is_set():
+                    break
                 chunk = audio[start : start + frame_size]
                 if not chunk.size:
                     continue
                 indata = chunk.astype(np.float32).reshape(-1, 1)
-                self.callback(indata, len(indata), None, None)
-            # Signal end of stream to audio sender
-            queue = queue_holder.get("queue")
-            if queue is not None:
-                queue.put(None)
-            return self
+                self.audio_queue.put(indata)
+                # Also collect for get_full_audio
+                mono = indata.mean(axis=1).astype(np.float32)
+                self._full_audio_chunks.append(mono)
+            # Signal end of stream
+            self.audio_queue.put(None)
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+        def start(self):
+            # Start feeding audio in background thread
+            self._feeder_thread = threading.Thread(target=self._feed_audio, daemon=True)
+            self._feeder_thread.start()
 
-    monkeypatch.setattr(realtime_backend.sd, "InputStream", FakeInputStream)
+        def wait_until_stopped(self):
+            # Wait until stop event is set
+            self.stop_event.wait()
 
-    async def fast_sleep(
-        _duration: float,
-    ) -> None:  # pragma: no cover - trivial awaitable
-        return None
+        def stop(self):
+            self.stop_event.set()
 
-    monkeypatch.setattr(realtime_backend.asyncio, "sleep", fast_sleep)
+        def close(self):
+            if self._feeder_thread and self._feeder_thread.is_alive():
+                self._feeder_thread.join(timeout=1.0)
+
+        def get_full_audio(self):
+            if not self._full_audio_chunks:
+                return np.zeros(0, dtype=np.float32)
+            return np.concatenate(self._full_audio_chunks)
+
+        def get_capture_duration(self):
+            return len(audio) / sample_rate
+
+    monkeypatch.setattr(audio_capture, "AudioCaptureManager", FakeAudioCaptureManager)
 
     class FakeWebSocket:
         def __init__(self, events):

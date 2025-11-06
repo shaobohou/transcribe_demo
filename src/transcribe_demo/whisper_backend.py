@@ -12,10 +12,12 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 import numpy as np
-import sounddevice as sd
 import torch
 import webrtcvad
 import whisper
+
+from transcribe_demo.audio_capture import AudioCaptureManager
+from transcribe_demo.session_logger import SessionLogger
 
 
 @dataclass
@@ -35,6 +37,8 @@ class WhisperTranscriptionResult:
     """Aggregate result returned after a Whisper transcription session."""
 
     full_audio_transcription: str | None
+    capture_duration: float = 0.0
+    metadata: dict = None
 
 
 def _mps_available() -> bool:
@@ -255,6 +259,8 @@ def run_whisper_transcriber(
     compare_transcripts: bool = True,
     max_capture_duration: float = 120.0,
     language: str = "en",
+    session_logger: Optional[SessionLogger] = None,
+    min_log_duration: float = 0.0,
 ) -> WhisperTranscriptionResult:
     model, device, fp16 = load_whisper_model(
         model_name=model_name,
@@ -270,15 +276,16 @@ def run_whisper_transcriber(
     # Track wall-clock start of the transcription session for absolute timestamps
     session_start_time = time.perf_counter()
 
-    audio_queue: queue.Queue[Optional[np.ndarray]] = queue.Queue()
+    # Initialize audio capture manager
+    audio_capture = AudioCaptureManager(
+        sample_rate=sample_rate,
+        channels=channels,
+        max_capture_duration=max_capture_duration,
+        collect_full_audio=compare_transcripts or (session_logger is not None),
+    )
+
     buffer = np.zeros(0, dtype=np.float32)
     lock = threading.Lock()
-    full_audio_chunks: list[np.ndarray] = []
-    # Always track capture duration, but only collect full audio for comparison if enabled
-    max_capture_samples = int(sample_rate * max_capture_duration) if max_capture_duration > 0 else 0
-    total_samples_captured = 0
-    capture_limit_reached = threading.Event()
-    stop_event = threading.Event()
 
     # VAD configuration
     vad = WebRTCVAD(sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=vad_aggressiveness)
@@ -288,7 +295,7 @@ def run_whisper_transcriber(
     min_speech_frames = int(sample_rate * vad_min_speech_duration)
     speech_pad_samples = int(sample_rate * vad_speech_pad_duration)
 
-    if max_capture_samples > 0:
+    if max_capture_duration > 0:
         print(
             f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, aggressiveness: {vad_aggressiveness}, "
             f"min_speech: {vad_min_speech_duration}s, pad: {vad_speech_pad_duration}s, max_capture: {max_capture_duration}s)",
@@ -301,27 +308,19 @@ def run_whisper_transcriber(
             file=sys.stderr,
         )
 
-    def callback(indata: np.ndarray, frames: int, time, status) -> None:
-        nonlocal total_samples_captured
-        if status:
-            print(f"InputStream status: {status}", file=sys.stderr)
-        if stop_event.is_set() or capture_limit_reached.is_set():
-            return
-        # Copy to avoid referencing the sounddevice ring buffer.
-        audio_queue.put(indata.copy())
-
-    def worker(stop_event: threading.Event) -> None:
-        nonlocal buffer, total_samples_captured
+    def worker() -> None:
+        nonlocal buffer
         chunk_index = 0
         next_chunk_start = 0.0
         silence_frames = 0
         speech_frames = 0
         speech_pad_buffer = np.zeros(0, dtype=np.float32)
         vad_frame_buffer = np.zeros(0, dtype=np.float32)
+        chunk_audio_buffers: list[tuple[int, np.ndarray, float, float]] = []  # (index, audio, start, end)
 
-        while not stop_event.is_set():
+        while not audio_capture.stop_event.is_set():
             try:
-                chunk = audio_queue.get(timeout=0.1)
+                chunk = audio_capture.audio_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
 
@@ -334,32 +333,6 @@ def run_whisper_transcriber(
                 mono = chunk.mean(axis=1).astype(np.float32, copy=False)
 
             with lock:
-                # Always track total samples captured (for duration limit)
-                total_samples_captured += len(mono)
-
-                # Check if capture duration limit reached
-                if max_capture_samples > 0 and total_samples_captured >= max_capture_samples:
-                    if not capture_limit_reached.is_set():
-                        capture_limit_reached.set()
-                        duration_captured = total_samples_captured / sample_rate
-                        print(
-                            f"\nCapture duration limit reached ({duration_captured:.1f}s). "
-                            f"Finishing current chunk and stopping gracefully...",
-                            file=sys.stderr,
-                        )
-                        # Don't set stop_event yet - let current chunk finish
-                        audio_queue.put(None)
-
-                # Preserve full-session audio for post-run transcription comparison (if enabled)
-                if compare_transcripts:
-                    full_audio_chunks.append(mono.copy())
-                    # Trim to max_capture_duration by removing oldest chunks
-                    if max_capture_samples > 0:
-                        total_samples = sum(len(c) for c in full_audio_chunks)
-                        while total_samples > max_capture_samples and len(full_audio_chunks) > 1:
-                            removed = full_audio_chunks.pop(0)
-                            total_samples -= len(removed)
-
                 buffer = np.concatenate((buffer, mono))
                 speech_pad_buffer = np.concatenate((speech_pad_buffer, mono))
 
@@ -391,9 +364,9 @@ def run_whisper_transcriber(
                         should_transcribe = True
                         max_duration_exceeded = True
 
-                if capture_limit_reached.is_set():
+                if audio_capture.capture_limit_reached.is_set():
                     if buffer.size >= min_chunk_size or (
-                        buffer.size > 0 and (audio_queue.empty() or force_transcribe_now)
+                        buffer.size > 0 and (audio_capture.audio_queue.empty() or force_transcribe_now)
                     ):
                         should_transcribe = True
                         force_flush = True
@@ -424,8 +397,8 @@ def run_whisper_transcriber(
                         continue
                     # Allow final partial chunk; avoid empty buffers
                     if len(window) == 0:
-                        if capture_limit_reached.is_set():
-                            stop_event.set()
+                        if audio_capture.capture_limit_reached.is_set():
+                            audio_capture.stop()
                         continue
 
                 current_start = next_chunk_start
@@ -459,6 +432,10 @@ def run_whisper_transcriber(
                 chunk_absolute_end = max(0.0, inference_start - session_start_time)
                 chunk_absolute_start = max(0.0, chunk_absolute_end - chunk_audio_duration)
 
+                # Store chunk audio for session logging
+                if session_logger is not None:
+                    chunk_audio_buffers.append((chunk_index, window.copy(), chunk_absolute_start, chunk_absolute_end))
+
                 if chunk_consumer is not None:
                     chunk_consumer(
                         chunk_index,
@@ -471,6 +448,17 @@ def run_whisper_transcriber(
                     print(
                         f"[chunk {chunk_index:03d} | t={chunk_absolute_end:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {inference_duration:.2f}s] {text}",
                         flush=True,
+                    )
+
+                # Log to session logger if enabled
+                if session_logger is not None:
+                    session_logger.log_chunk(
+                        index=chunk_index,
+                        text=text,
+                        start_time=chunk_absolute_start,
+                        end_time=chunk_absolute_end,
+                        inference_seconds=inference_duration,
+                        audio=window.copy() if session_logger.save_chunk_audio else None,
                     )
 
                 # Clear buffer completely (no overlap with VAD)
@@ -487,70 +475,62 @@ def run_whisper_transcriber(
                 chunk_index += 1
 
                 # After chunk completes, check if capture limit was reached and stop gracefully
-                if capture_limit_reached.is_set():
+                if audio_capture.capture_limit_reached.is_set():
                     print(
                         "Current chunk finished. Stopping transcription...",
                         file=sys.stderr,
                     )
-                    stop_event.set()
+                    audio_capture.stop()
                     break
 
-    thread = threading.Thread(target=worker, args=(stop_event,), daemon=True)
+    thread = threading.Thread(target=worker, daemon=True)
     thread.start()
 
-    input_thread: Optional[threading.Thread] = None
-
-    # TODO: Add audio_queue.put(None) to ensure immediate shutdown
-    # This function currently only sets the stop_event, which can lead to a
-    # delay in shutdown if the worker thread is blocked on audio_queue.get().
-    # Adding audio_queue.put(None) will wake up the worker immediately.
-    def _wait_for_enter() -> None:
-        """Block until the user presses Enter, then request shutdown."""
-        try:
-            input("Press Enter to stop...\n")
-        except (EOFError, OSError):
-            # stdin unavailable (e.g., running in background); rely on capture limit or Ctrl+C
-            return
-        stop_event.set()
-
-    if sys.stdin is not None and sys.stdin.isatty():
-        input_thread = threading.Thread(target=_wait_for_enter, name="stdin-watcher", daemon=True)
-        input_thread.start()
-    else:
-        print("stdin is not interactive; press Ctrl+C to stop recording.", file=sys.stderr)
-
+    # Start audio capture
     try:
-        with sd.InputStream(
-            callback=callback,
-            channels=channels,
-            samplerate=sample_rate,
-            dtype="float32",
-        ):
-            while not stop_event.is_set():
-                time.sleep(0.1)
+        audio_capture.start()
+        audio_capture.wait_until_stopped()
     finally:
-        stop_event.set()
+        audio_capture.stop()
         thread.join(timeout=1.0)
+        audio_capture.close()
         if temp_file is not None:
             with lock:
                 if temp_file.exists():
                     temp_file.unlink()
 
+    # Get full audio for comparison
     full_audio_transcription: str | None = None
-    if compare_transcripts and full_audio_chunks:
-        full_audio = np.concatenate(full_audio_chunks)
-        if full_audio.size:
-            full_audio_result = model.transcribe(
-                full_audio,
-                fp16=fp16,
-                temperature=0.0,
-                beam_size=1,
-                best_of=1,
-                language=normalized_language,
-            )
-            full_audio_transcription = full_audio_result["text"]
+    full_audio = audio_capture.get_full_audio()
+    if compare_transcripts and full_audio.size:
+        full_audio_result = model.transcribe(
+            full_audio,
+            fp16=fp16,
+            temperature=0.0,
+            beam_size=1,
+            best_of=1,
+            language=normalized_language,
+        )
+        full_audio_transcription = full_audio_result["text"]
 
-    return WhisperTranscriptionResult(full_audio_transcription=full_audio_transcription)
+    # Save full audio for session logging (finalization happens in main.py with stitched transcription)
+    if session_logger is not None:
+        session_logger.save_full_audio(full_audio, audio_capture.get_capture_duration())
+
+    return WhisperTranscriptionResult(
+        full_audio_transcription=full_audio_transcription,
+        capture_duration=audio_capture.get_capture_duration(),
+        metadata={
+            "model": model_name,
+            "device": device,
+            "language": normalized_language or "auto",
+            "vad_aggressiveness": vad_aggressiveness,
+            "vad_min_silence_duration": vad_min_silence_duration,
+            "vad_min_speech_duration": vad_min_speech_duration,
+            "vad_speech_pad_duration": vad_speech_pad_duration,
+            "max_chunk_duration": max_chunk_duration,
+        },
+    )
 
 
 def transcribe_full_audio(

@@ -15,6 +15,7 @@ from transcribe_demo.realtime_backend import (
     run_realtime_transcriber,
     transcribe_full_audio_realtime,
 )
+from transcribe_demo.session_logger import SessionLogger
 from transcribe_demo.whisper_backend import TranscriptionChunk, run_whisper_transcriber
 
 
@@ -161,6 +162,18 @@ flags.DEFINE_float(
     120.0,
     "Maximum duration (seconds) to run the transcription session. "
     "Program will gracefully stop after this duration. Set to 0 for unlimited duration.",
+)
+
+# Session logging configuration (always enabled)
+flags.DEFINE_string(
+    "session_log_dir",
+    "./session_logs",
+    "Directory to save session logs. All sessions are logged with full audio, chunk audio, and metadata.",
+)
+flags.DEFINE_float(
+    "min_log_duration",
+    10.0,
+    "Minimum session duration (seconds) required to save logs. Sessions shorter than this are discarded.",
 )
 
 # Validators
@@ -499,6 +512,16 @@ def main(argv: list[str]) -> None:
 
     language_pref = (FLAGS.language or "").strip()
 
+    # Create session logger (always enabled)
+    log_dir = Path(FLAGS.session_log_dir)
+    session_logger = SessionLogger(
+        output_dir=log_dir,
+        sample_rate=FLAGS.samplerate,
+        channels=FLAGS.channels,
+        backend=FLAGS.backend,
+        save_chunk_audio=True,  # Always save everything
+    )
+
     if FLAGS.backend == "whisper":
         collector = ChunkCollectorWithStitching(sys.stdout)
         whisper_result = None
@@ -521,9 +544,22 @@ def main(argv: list[str]) -> None:
                 compare_transcripts=FLAGS.compare_transcripts,
                 max_capture_duration=FLAGS.max_capture_duration,
                 language=language_pref,
+                session_logger=session_logger,
+                min_log_duration=FLAGS.min_log_duration,
             )
         finally:
             final = collector.get_final_stitched()
+
+            # Finalize session logging with both transcriptions
+            if whisper_result is not None:
+                session_logger.finalize(
+                    capture_duration=whisper_result.capture_duration,
+                    full_audio_transcription=whisper_result.full_audio_transcription,
+                    stitched_transcription=final,
+                    extra_metadata=whisper_result.metadata,
+                    min_duration=FLAGS.min_log_duration,
+                )
+
             if FLAGS.compare_transcripts:
                 complete_audio_text = ""
                 try:
@@ -575,17 +611,22 @@ def main(argv: list[str]) -> None:
             compare_transcripts=FLAGS.compare_transcripts,
             max_capture_duration=FLAGS.max_capture_duration,
             language=language_pref,
+            session_logger=session_logger,
+            min_log_duration=FLAGS.min_log_duration,
         )
     except KeyboardInterrupt:
         pass
     finally:
         # Show final stitched result
         final = collector.get_final_stitched()
-        if FLAGS.compare_transcripts:
-            complete_audio_text = ""
-            if realtime_result and realtime_result.full_audio.size > 0:
+
+        # Finalize session logging with both transcriptions
+        if realtime_result is not None:
+            # Get full audio transcription for comparison if enabled
+            full_audio_transcription = None
+            if FLAGS.compare_transcripts and realtime_result.full_audio.size > 0:
                 try:
-                    complete_audio_text = transcribe_full_audio_realtime(
+                    full_audio_transcription = transcribe_full_audio_realtime(
                         realtime_result.full_audio,
                         sample_rate=realtime_result.sample_rate,
                         chunk_duration=REALTIME_CHUNK_DURATION,
@@ -602,6 +643,17 @@ def main(argv: list[str]) -> None:
                         file=sys.stderr,
                     )
 
+            session_logger.finalize(
+                capture_duration=realtime_result.capture_duration,
+                full_audio_transcription=full_audio_transcription,
+                stitched_transcription=final,
+                extra_metadata=realtime_result.metadata,
+                min_duration=FLAGS.min_log_duration,
+            )
+
+        if FLAGS.compare_transcripts:
+            # Reuse the full_audio_transcription we already computed above
+            complete_audio_text = full_audio_transcription or ""
             print_transcription_summary(sys.stdout, final, complete_audio_text)
         else:
             # Just show final stitched result without comparison
