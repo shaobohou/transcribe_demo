@@ -16,7 +16,7 @@ import torch
 import webrtcvad
 import whisper
 
-from transcribe_demo._sounddevice import get_sounddevice
+from transcribe_demo.sound_device import get_sounddevice
 
 
 @dataclass

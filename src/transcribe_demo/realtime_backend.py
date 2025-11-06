@@ -13,7 +13,7 @@ from typing import Dict, Optional
 import numpy as np
 import websockets
 
-from transcribe_demo._sounddevice import get_sounddevice
+from transcribe_demo.sound_device import get_sounddevice
 
 
 def float_to_pcm16(audio: np.ndarray) -> bytes:
