@@ -94,6 +94,8 @@ class AudioCaptureManager:
                     )
                     # Signal end of stream with None sentinel
                     self.audio_queue.put(None)
+                    # Stop further capture so waiters unblock
+                    self.stop()
 
             # Preserve full-session audio for post-run transcription comparison (if enabled)
             if self.collect_full_audio:

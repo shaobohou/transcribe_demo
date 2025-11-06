@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import queue
 import ssl
 import struct
 import sys
-import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -285,7 +285,6 @@ def run_whisper_transcriber(
     )
 
     buffer = np.zeros(0, dtype=np.float32)
-    lock = threading.Lock()
 
     # VAD configuration
     vad = WebRTCVAD(sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=vad_aggressiveness)
@@ -308,31 +307,34 @@ def run_whisper_transcriber(
             file=sys.stderr,
         )
 
-    def worker() -> None:
+    transcription_queue: asyncio.Queue[tuple[int, np.ndarray, float] | None] = asyncio.Queue()
+    transcriber_error: list[BaseException] = []
+
+    async def vad_worker() -> None:
         nonlocal buffer
         chunk_index = 0
-        next_chunk_start = 0.0
         silence_frames = 0
         speech_frames = 0
         speech_pad_buffer = np.zeros(0, dtype=np.float32)
         vad_frame_buffer = np.zeros(0, dtype=np.float32)
-        chunk_audio_buffers: list[tuple[int, np.ndarray, float, float]] = []  # (index, audio, start, end)
+        next_chunk_start = 0.0
 
-        while not audio_capture.stop_event.is_set():
-            try:
-                chunk = audio_capture.audio_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
+        try:
+            while not audio_capture.stop_event.is_set():
+                try:
+                    chunk = await asyncio.to_thread(audio_capture.audio_queue.get, True, 0.1)
+                except queue.Empty:
+                    await asyncio.sleep(0.05)
+                    continue
 
-            # Reduce to mono when multiple channels are present.
-            force_transcribe_now = False
-            if chunk is None:
-                force_transcribe_now = True
-                mono = np.zeros(0, dtype=np.float32)
-            else:
-                mono = chunk.mean(axis=1).astype(np.float32, copy=False)
+                # Reduce to mono when multiple channels are present.
+                force_transcribe_now = False
+                if chunk is None:
+                    force_transcribe_now = True
+                    mono = np.zeros(0, dtype=np.float32)
+                else:
+                    mono = chunk.mean(axis=1).astype(np.float32, copy=False)
 
-            with lock:
                 buffer = np.concatenate((buffer, mono))
                 speech_pad_buffer = np.concatenate((speech_pad_buffer, mono))
 
@@ -401,9 +403,8 @@ def run_whisper_transcriber(
                             audio_capture.stop()
                         continue
 
-                current_start = next_chunk_start
-                current_end = next_chunk_start + len(window) / float(sample_rate)
-                chunk_audio_duration = current_end - current_start
+                chunk_audio_duration = len(window) / float(sample_rate)
+                current_end = next_chunk_start + chunk_audio_duration
 
                 # Log warning if max chunk duration was exceeded
                 if max_duration_exceeded:
@@ -416,50 +417,13 @@ def run_whisper_transcriber(
                 if temp_file is not None:
                     np.save(temp_file, window)
 
-                inference_start = time.perf_counter()
-                result = model.transcribe(
-                    window,
-                    fp16=fp16,
-                    temperature=0.0,
-                    beam_size=1,
-                    best_of=1,
-                    language=normalized_language,
-                )
-                inference_duration = time.perf_counter() - inference_start
-                text = result["text"]
-
-                # Compute absolute timestamps relative to session start
-                chunk_absolute_end = max(0.0, inference_start - session_start_time)
-                chunk_absolute_start = max(0.0, chunk_absolute_end - chunk_audio_duration)
-
-                # Store chunk audio for session logging
-                if session_logger is not None:
-                    chunk_audio_buffers.append((chunk_index, window.copy(), chunk_absolute_start, chunk_absolute_end))
-
-                if chunk_consumer is not None:
-                    chunk_consumer(
-                        chunk_index,
-                        text,
-                        chunk_absolute_start,
-                        chunk_absolute_end,
-                        inference_duration,
-                    )
-                else:
-                    print(
-                        f"[chunk {chunk_index:03d} | t={chunk_absolute_end:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {inference_duration:.2f}s] {text}",
-                        flush=True,
-                    )
-
-                # Log to session logger if enabled
-                if session_logger is not None:
-                    session_logger.log_chunk(
-                        index=chunk_index,
-                        text=text,
-                        start_time=chunk_absolute_start,
-                        end_time=chunk_absolute_end,
-                        inference_seconds=inference_duration,
-                        audio=window.copy() if session_logger.save_chunk_audio else None,
-                    )
+                # Enqueue chunk for transcription
+                try:
+                    await transcription_queue.put((chunk_index, window.copy(), chunk_audio_duration))
+                except Exception as exc:
+                    transcriber_error.append(exc)
+                    audio_capture.stop()
+                    break
 
                 # Clear buffer completely (no overlap with VAD)
                 buffer = np.zeros(0, dtype=np.float32)
@@ -482,22 +446,90 @@ def run_whisper_transcriber(
                     )
                     audio_capture.stop()
                     break
+        finally:
+            await transcription_queue.put(None)
 
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
+    async def transcriber_worker() -> None:
+        try:
+            while True:
+                item = await transcription_queue.get()
+                if item is None:
+                    break
 
-    # Start audio capture
-    try:
-        audio_capture.start()
-        audio_capture.wait_until_stopped()
-    finally:
-        audio_capture.stop()
-        thread.join(timeout=1.0)
-        audio_capture.close()
-        if temp_file is not None:
-            with lock:
-                if temp_file.exists():
-                    temp_file.unlink()
+                chunk_index, window, chunk_audio_duration = item
+
+                inference_start = time.perf_counter()
+                result = await asyncio.to_thread(
+                    model.transcribe,
+                    window,
+                    fp16=fp16,
+                    temperature=0.0,
+                    beam_size=1,
+                    best_of=1,
+                    language=normalized_language,
+                )
+                inference_duration = time.perf_counter() - inference_start
+                text = result["text"]
+
+                # Compute absolute timestamps relative to session start (approximate real-time)
+                chunk_absolute_end = max(0.0, inference_start - session_start_time)
+                chunk_absolute_start = max(0.0, chunk_absolute_end - chunk_audio_duration)
+
+                if chunk_consumer is not None:
+                    chunk_consumer(
+                        chunk_index,
+                        text,
+                        chunk_absolute_start,
+                        chunk_absolute_end,
+                        inference_duration,
+                    )
+                else:
+                    print(
+                        f"[chunk {chunk_index:03d} | t={chunk_absolute_end:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {inference_duration:.2f}s] {text}",
+                        flush=True,
+                    )
+
+                if session_logger is not None:
+                    session_logger.log_chunk(
+                        index=chunk_index,
+                        text=text,
+                        start_time=chunk_absolute_start,
+                        end_time=chunk_absolute_end,
+                        inference_seconds=inference_duration,
+                        audio=window.copy() if session_logger.save_chunk_audio else None,
+                    )
+        except Exception as exc:  # pragma: no cover - defensive guard
+            transcriber_error.append(exc)
+            audio_capture.stop()
+            await transcription_queue.put(None)
+
+    async def orchestrate() -> None:
+        builder_task = asyncio.create_task(vad_worker())
+        transcriber_task = asyncio.create_task(transcriber_worker())
+        try:
+            audio_capture.start()
+            await asyncio.to_thread(audio_capture.wait_until_stopped)
+        finally:
+            audio_capture.stop()
+            await asyncio.gather(builder_task, transcriber_task, return_exceptions=True)
+            audio_capture.close()
+            if temp_file is not None and temp_file.exists():
+                temp_file.unlink()
+
+    def run_asyncio_pipeline() -> None:
+        try:
+            asyncio.run(orchestrate())
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(orchestrate())
+            finally:
+                loop.close()
+
+    run_asyncio_pipeline()
+
+    if transcriber_error:
+        raise RuntimeError(f"Transcription worker error: {transcriber_error[0]}") from transcriber_error[0]
 
     # Get full audio for comparison
     full_audio_transcription: str | None = None
