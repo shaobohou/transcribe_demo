@@ -446,18 +446,11 @@ result_path = retranscribe_session(
 
 ---
 
-## Related Documents
+## Related Documentation
 
-- **README.md**: User-facing documentation, setup, usage examples
-- **CLAUDE.md**: Development workflow, testing guidelines, critical implementation rules
-- **TODO.md**: Implementation-level refactoring opportunities, code quality improvements, technical debt
-- **SESSION_LOGS.md**: Session log format specification
-- **SESSION_REPLAY.md**: Session replay utility documentation
+See [SITEMAP.md](SITEMAP.md) for a complete guide to all documentation.
 
-**Document Boundaries**:
-- **DESIGN.md** (this doc) answers "why did we design it this way?" (architecture, design rationale)
-- **TODO.md** answers "what should we improve?" (implementation opportunities, technical debt)
-- **CLAUDE.md** answers "how do we work on this?" (workflow, testing strategy, critical rules)
+**This document** answers "why did we design it this way?" (architecture, design rationale)
 
 ---
 

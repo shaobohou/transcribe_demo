@@ -266,6 +266,4 @@ See **[DESIGN.md](DESIGN.md#architecture-overview)** for detailed architecture a
 
 ## Development
 
-- **[DESIGN.md](DESIGN.md)**: Architectural design decisions and feature rationale
-- **[CLAUDE.md](CLAUDE.md)**: Development workflow and critical implementation rules
-- **[TODO.md](TODO.md)**: Implementation improvements and technical debt
+See [SITEMAP.md](SITEMAP.md) for a complete guide to all project documentation, including development workflow, architecture, and refactoring opportunities.

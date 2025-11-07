@@ -368,9 +368,6 @@ The retranscribed session directory name includes:
 
 This allows you to easily track which sessions are retranscriptions and compare them with originals.
 
-## See Also
+## Related Documentation
 
-- **SESSION_LOGS.md**: Session log format specification
-- **README.md**: User-facing documentation and usage examples
-- **DESIGN.md**: Architecture and design rationale
-- **CLAUDE.md**: Development workflow and critical implementation rules
+See [SITEMAP.md](SITEMAP.md) for a complete guide to all documentation.
