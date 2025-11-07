@@ -82,12 +82,10 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
                 if samples_fed >= max_samples:
                     self.capture_limit_reached.set()
                     self.audio_queue.put(None)
-                    self.stop()
                     break
             else:
                 # Signal end of stream if we finished naturally
                 self.audio_queue.put(None)
-                self.stop()
 
         def start(self):
             # Start feeding audio in background thread
