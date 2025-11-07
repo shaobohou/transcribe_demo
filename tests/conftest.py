@@ -76,15 +76,18 @@ class FakeSoundDeviceModule(types.ModuleType):
         return None
 
 
-# Inject the mock into sys.modules
-# This happens as soon as conftest.py is imported by pytest
+# Inject the mock into sys.modules at module level
+# This happens immediately when conftest.py is imported by pytest, before test
+# collection begins. This ensures sounddevice is already mocked when test modules
+# import backend code (which imports audio_capture, which imports sounddevice).
 mock_sd = FakeSoundDeviceModule()
 sys.modules['sounddevice'] = mock_sd
 sys.modules['sd'] = mock_sd  # Also mock 'sd' in case it's imported differently
 
-# NOTE: We do NOT replace AudioCaptureManager here because backend modules
-# import it directly with "from transcribe_demo.audio_capture import AudioCaptureManager"
-# which creates a direct reference before tests can monkeypatch.
-# Tests must use monkeypatch to replace AudioCaptureManager with FakeAudioCaptureManager.
-# With sounddevice mocked, the real AudioCaptureManager can be imported safely.
+# NOTE: We do NOT replace AudioCaptureManager here. Backend modules import the
+# audio_capture module (not the class directly) with:
+#   from transcribe_demo import audio_capture as audio_capture_lib
+# This allows tests to monkeypatch audio_capture_lib.AudioCaptureManager with
+# FakeAudioCaptureManager. With sounddevice mocked above, the real AudioCaptureManager
+# can be imported safely without triggering audio hardware access.
 
