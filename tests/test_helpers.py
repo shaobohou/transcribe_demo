@@ -221,10 +221,10 @@ def create_fake_audio_capture_factory(audio: np.ndarray, sample_rate: int, frame
         >>> monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", factory)
     """
 
-    def factory(sample_rate_param, channels, max_capture_duration=0.0, collect_full_audio=True):
+    def factory(sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
         return FakeAudioCaptureManager(
             audio=audio,
-            sample_rate=sample_rate_param,
+            sample_rate=sample_rate,
             channels=channels,
             max_capture_duration=max_capture_duration,
             collect_full_audio=collect_full_audio,
