@@ -118,7 +118,7 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
         vad_min_speech_duration=0.05,
         vad_speech_pad_duration=0.0,
         max_chunk_duration=5.0,
-        compare_transcripts=False,
+        compare_transcripts=True,  # Must be True to enable full audio collection
         max_capture_duration=duration_seconds,
         language="en",
     )

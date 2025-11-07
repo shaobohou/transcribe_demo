@@ -191,7 +191,7 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
         instructions="transcribe precisely",
         insecure_downloads=False,
         chunk_consumer=lambda *args: None,
-        compare_transcripts=False,
+        compare_transcripts=True,  # Must be True to enable full audio collection
         max_capture_duration=len(audio) / sample_rate,
         language="en",
     )
