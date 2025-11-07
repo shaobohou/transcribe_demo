@@ -488,6 +488,70 @@ def retranscribe_session(
     return session_logger.session_dir
 
 
+def remove_incomplete_sessions(
+    log_dir: Path | str,
+    backend: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    min_duration: float | None = None,
+    dry_run: bool = False,
+) -> list[Path]:
+    """
+    Remove incomplete sessions (sessions without completion marker).
+
+    Args:
+        log_dir: Base directory containing session logs
+        backend: Filter by backend ("whisper" or "realtime"), None for all
+        start_date: Filter sessions on or after this date (YYYY-MM-DD format)
+        end_date: Filter sessions on or before this date (YYYY-MM-DD format)
+        min_duration: Filter sessions with duration >= this value (seconds)
+        dry_run: If True, only list sessions that would be removed without actually removing them
+
+    Returns:
+        List of paths to removed (or would-be-removed if dry_run) session directories
+    """
+    import shutil
+
+    # Get all incomplete sessions using the existing list_sessions function
+    sessions = list_sessions(
+        log_dir=log_dir,
+        backend=backend,
+        start_date=start_date,
+        end_date=end_date,
+        min_duration=min_duration,
+        include_incomplete=True,
+    )
+
+    # Filter to only incomplete sessions
+    incomplete_sessions = [s for s in sessions if not s.is_complete]
+
+    if not incomplete_sessions:
+        print("No incomplete sessions found.", file=sys.stderr)
+        return []
+
+    removed_paths: list[Path] = []
+
+    for session in incomplete_sessions:
+        session_path = session.session_path
+        if dry_run:
+            print(f"[DRY RUN] Would remove: {session_path}", file=sys.stderr)
+            removed_paths.append(session_path)
+        else:
+            try:
+                shutil.rmtree(session_path)
+                print(f"Removed: {session_path}", file=sys.stderr)
+                removed_paths.append(session_path)
+            except OSError as e:
+                print(f"ERROR: Failed to remove {session_path}: {e}", file=sys.stderr)
+
+    if dry_run:
+        print(f"\n[DRY RUN] Would remove {len(removed_paths)} incomplete session(s)", file=sys.stderr)
+    else:
+        print(f"\nRemoved {len(removed_paths)} incomplete session(s)", file=sys.stderr)
+
+    return removed_paths
+
+
 def print_session_list(sessions: list[SessionInfo], verbose: bool = False) -> None:
     """
     Print a formatted list of sessions.

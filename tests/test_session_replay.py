@@ -14,6 +14,7 @@ from transcribe_demo.session_replay import (
     is_session_complete,
     list_sessions,
     load_session,
+    remove_incomplete_sessions,
     retranscribe_session,
 )
 
@@ -613,3 +614,212 @@ def test_retranscribe_session_preserves_audio(temp_session_dir: Path, create_tes
     assert retranscribed.audio.shape == original_audio.shape
     # Audio should be very similar (allowing for minor numerical differences from saving/loading)
     assert np.allclose(retranscribed.audio, original_audio, rtol=1e-4, atol=1e-6)
+
+
+def test_remove_incomplete_sessions(temp_session_dir: Path, create_test_session) -> None:
+    """Test removing incomplete sessions."""
+    # Create one complete session
+    create_test_session(session_id="complete_session")
+
+    # Create two incomplete sessions (without .complete marker)
+    incomplete_dir_1 = temp_session_dir / "2025-01-01" / "incomplete_session_1"
+    incomplete_dir_1.mkdir(parents=True)
+    session_data_1 = {
+        "metadata": {
+            "session_id": "incomplete_session_1",
+            "timestamp": "2025-01-01T10:00:00",
+            "backend": "whisper",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 5.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(incomplete_dir_1 / "session.json", "w") as f:
+        json.dump(session_data_1, f)
+
+    incomplete_dir_2 = temp_session_dir / "2025-01-02" / "incomplete_session_2"
+    incomplete_dir_2.mkdir(parents=True)
+    session_data_2 = {
+        "metadata": {
+            "session_id": "incomplete_session_2",
+            "timestamp": "2025-01-02T11:00:00",
+            "backend": "realtime",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 8.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(incomplete_dir_2 / "session.json", "w") as f:
+        json.dump(session_data_2, f)
+
+    # Verify all 3 sessions exist
+    all_sessions = list_sessions(temp_session_dir, include_incomplete=True)
+    assert len(all_sessions) == 3
+
+    # Remove incomplete sessions
+    removed_paths = remove_incomplete_sessions(temp_session_dir)
+
+    # Verify 2 sessions were removed
+    assert len(removed_paths) == 2
+
+    # Verify the directories were actually deleted
+    assert not incomplete_dir_1.exists()
+    assert not incomplete_dir_2.exists()
+
+    # Verify only the complete session remains
+    remaining_sessions = list_sessions(temp_session_dir, include_incomplete=True)
+    assert len(remaining_sessions) == 1
+    assert remaining_sessions[0].session_id == "complete_session"
+
+
+def test_remove_incomplete_sessions_dry_run(temp_session_dir: Path) -> None:
+    """Test dry run mode doesn't actually remove sessions."""
+    # Create an incomplete session
+    incomplete_dir = temp_session_dir / "2025-01-01" / "incomplete_session"
+    incomplete_dir.mkdir(parents=True)
+    session_data = {
+        "metadata": {
+            "session_id": "incomplete_session",
+            "timestamp": "2025-01-01T10:00:00",
+            "backend": "whisper",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 5.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(incomplete_dir / "session.json", "w") as f:
+        json.dump(session_data, f)
+
+    # Run dry run
+    removed_paths = remove_incomplete_sessions(temp_session_dir, dry_run=True)
+
+    # Verify the function returned the path
+    assert len(removed_paths) == 1
+    assert removed_paths[0] == incomplete_dir
+
+    # Verify the directory still exists
+    assert incomplete_dir.exists()
+    assert (incomplete_dir / "session.json").exists()
+
+
+def test_remove_incomplete_sessions_filter_by_backend(temp_session_dir: Path) -> None:
+    """Test filtering by backend when removing incomplete sessions."""
+    # Create two incomplete sessions with different backends
+    whisper_dir = temp_session_dir / "2025-01-01" / "incomplete_whisper"
+    whisper_dir.mkdir(parents=True)
+    whisper_data = {
+        "metadata": {
+            "session_id": "incomplete_whisper",
+            "timestamp": "2025-01-01T10:00:00",
+            "backend": "whisper",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 5.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(whisper_dir / "session.json", "w") as f:
+        json.dump(whisper_data, f)
+
+    realtime_dir = temp_session_dir / "2025-01-02" / "incomplete_realtime"
+    realtime_dir.mkdir(parents=True)
+    realtime_data = {
+        "metadata": {
+            "session_id": "incomplete_realtime",
+            "timestamp": "2025-01-02T11:00:00",
+            "backend": "realtime",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 8.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(realtime_dir / "session.json", "w") as f:
+        json.dump(realtime_data, f)
+
+    # Remove only whisper incomplete sessions
+    removed_paths = remove_incomplete_sessions(temp_session_dir, backend="whisper")
+
+    # Verify only whisper session was removed
+    assert len(removed_paths) == 1
+    assert not whisper_dir.exists()
+    assert realtime_dir.exists()
+
+
+def test_remove_incomplete_sessions_filter_by_duration(temp_session_dir: Path) -> None:
+    """Test filtering by duration when removing incomplete sessions."""
+    # Create two incomplete sessions with different durations
+    short_dir = temp_session_dir / "2025-01-01" / "incomplete_short"
+    short_dir.mkdir(parents=True)
+    short_data = {
+        "metadata": {
+            "session_id": "incomplete_short",
+            "timestamp": "2025-01-01T10:00:00",
+            "backend": "whisper",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 3.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(short_dir / "session.json", "w") as f:
+        json.dump(short_data, f)
+
+    long_dir = temp_session_dir / "2025-01-02" / "incomplete_long"
+    long_dir.mkdir(parents=True)
+    long_data = {
+        "metadata": {
+            "session_id": "incomplete_long",
+            "timestamp": "2025-01-02T11:00:00",
+            "backend": "whisper",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 15.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(long_dir / "session.json", "w") as f:
+        json.dump(long_data, f)
+
+    # Remove only sessions with duration >= 10.0
+    removed_paths = remove_incomplete_sessions(temp_session_dir, min_duration=10.0)
+
+    # Verify only long session was removed
+    assert len(removed_paths) == 1
+    assert short_dir.exists()
+    assert not long_dir.exists()
+
+
+def test_remove_incomplete_sessions_no_incomplete(temp_session_dir: Path, create_test_session) -> None:
+    """Test behavior when no incomplete sessions exist."""
+    # Create only complete sessions
+    create_test_session(session_id="complete_session_1")
+    create_test_session(session_id="complete_session_2")
+
+    # Try to remove incomplete sessions
+    removed_paths = remove_incomplete_sessions(temp_session_dir)
+
+    # Verify nothing was removed
+    assert len(removed_paths) == 0
+
+    # Verify all sessions still exist
+    remaining_sessions = list_sessions(temp_session_dir)
+    assert len(remaining_sessions) == 2
+
+
+def test_remove_incomplete_sessions_empty_directory(temp_session_dir: Path) -> None:
+    """Test behavior in an empty directory."""
+    removed_paths = remove_incomplete_sessions(temp_session_dir)
+
+    # Verify nothing was removed
+    assert len(removed_paths) == 0

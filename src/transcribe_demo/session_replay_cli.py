@@ -11,6 +11,7 @@ from transcribe_demo.session_replay import (
     load_session,
     print_session_details,
     print_session_list,
+    remove_incomplete_sessions,
     retranscribe_session,
 )
 
@@ -20,8 +21,8 @@ FLAGS = flags.FLAGS
 flags.DEFINE_enum(
     "command",
     None,
-    ["list", "show", "retranscribe"],
-    "Command to execute: list (list sessions), show (show session details), retranscribe (retranscribe a session)",
+    ["list", "show", "retranscribe", "remove-incomplete"],
+    "Command to execute: list (list sessions), show (show session details), retranscribe (retranscribe a session), remove-incomplete (remove incomplete sessions)",
 )
 flags.mark_flag_as_required("command")
 
@@ -63,6 +64,11 @@ flags.DEFINE_boolean(
     "include_incomplete",
     False,
     "Include incomplete sessions (sessions without .complete marker, for list command)",
+)
+flags.DEFINE_boolean(
+    "dry_run",
+    False,
+    "Dry run mode - show what would be removed without actually removing (for remove-incomplete command)",
 )
 
 # Show/retranscribe command flags
@@ -205,6 +211,22 @@ def main(argv: list[str]) -> None:
         except (FileNotFoundError, ValueError) as e:
             print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(1)
+
+    elif FLAGS.command == "remove-incomplete":
+        # Remove incomplete sessions
+        removed_paths = remove_incomplete_sessions(
+            log_dir=FLAGS.session_log_dir,
+            backend=FLAGS.backend,
+            start_date=FLAGS.start_date,
+            end_date=FLAGS.end_date,
+            min_duration=FLAGS.min_duration,
+            dry_run=FLAGS.dry_run,
+        )
+
+        if removed_paths and not FLAGS.dry_run:
+            print(f"\nSuccessfully removed {len(removed_paths)} session(s).", file=sys.stdout)
+        elif removed_paths and FLAGS.dry_run:
+            print(f"\n[DRY RUN] Would remove {len(removed_paths)} session(s).", file=sys.stdout)
 
     else:
         print(f"ERROR: Unknown command '{FLAGS.command}'", file=sys.stderr)
