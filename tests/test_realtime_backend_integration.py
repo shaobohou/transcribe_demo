@@ -61,6 +61,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
                 self._full_audio_chunks.append(mono)
             # Signal end of stream
             self.audio_queue.put(None)
+            self.stop()
 
         def start(self):
             # Start feeding audio in background thread
