@@ -58,13 +58,9 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
             self.capture_limit_reached = threading.Event()
             self._full_audio_chunks = []
             self._feeder_thread = None
-            self._total_samples_fed = 0
 
         def _feed_audio(self):
             # Feed test audio into queue in a background thread
-            samples_fed = 0
-            max_samples = int(self.sample_rate * self.max_capture_duration) if self.max_capture_duration > 0 else float('inf')
-
             for start in range(0, len(audio), frame_size):
                 if self.stop_event.is_set():
                     break
@@ -74,17 +70,8 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
                 self.audio_queue.put(frame.reshape(-1, 1))
                 # Also collect for get_full_audio
                 self._full_audio_chunks.append(frame.copy())
-                samples_fed += len(frame)
-                self._total_samples_fed = samples_fed
-
-                # Check if capture duration limit reached
-                if samples_fed >= max_samples:
-                    self.capture_limit_reached.set()
-                    self.audio_queue.put(None)
-                    break
-            else:
-                # Signal end of stream if we finished naturally
-                self.audio_queue.put(None)
+            # Signal end of stream
+            self.audio_queue.put(None)
 
         def start(self):
             # Start feeding audio in background thread
@@ -108,7 +95,7 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
             return np.concatenate(self._full_audio_chunks)
 
         def get_capture_duration(self):
-            return self._total_samples_fed / self.sample_rate
+            return len(audio) / sample_rate
 
     monkeypatch.setattr(whisper_backend, "AudioCaptureManager", FakeAudioCaptureManager)
 
