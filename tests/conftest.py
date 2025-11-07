@@ -9,6 +9,8 @@ from __future__ import annotations
 import sys
 import types
 
+import pytest
+
 # Mock sounddevice BEFORE any test modules are imported
 # This must happen at module level (not in a fixture) because pytest imports
 # test modules during collection, before any fixtures run. When test modules
@@ -90,4 +92,22 @@ sys.modules['sd'] = mock_sd  # Also mock 'sd' in case it's imported differently
 # This allows tests to monkeypatch audio_capture_lib.AudioCaptureManager with
 # FakeAudioCaptureManager. With sounddevice mocked above, the real AudioCaptureManager
 # can be imported safely without triggering audio hardware access.
+
+
+@pytest.fixture(autouse=True)
+def mock_stdin_for_audio_capture(monkeypatch):
+    """
+    Ensure stdin.isatty() returns False to prevent stdin listener threads.
+
+    This prevents AudioCaptureManager from starting a stdin listener thread
+    that would block on input() in CI environments. Applies to all tests
+    automatically via autouse=True.
+    """
+    # Create a mock stdin that always reports it's not a TTY
+    class MockStdin:
+        def isatty(self):
+            return False
+
+    monkeypatch.setattr(sys, 'stdin', MockStdin())
+
 
