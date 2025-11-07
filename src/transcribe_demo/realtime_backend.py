@@ -17,7 +17,7 @@ from typing import Any, Protocol
 import numpy as np
 import websockets
 
-from transcribe_demo.audio_capture import AudioCaptureManager
+from transcribe_demo import audio_capture
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -216,7 +216,7 @@ def run_realtime_transcriber(
     min_log_duration: float = 0.0,
 ) -> RealtimeTranscriptionResult:
     # Initialize audio capture manager
-    audio_capture = AudioCaptureManager(
+    audio_capture_manager = audio_capture.AudioCaptureManager(
         sample_rate=sample_rate,
         channels=channels,
         max_capture_duration=max_capture_duration,
@@ -292,7 +292,7 @@ def run_realtime_transcriber(
 
                         try:
                             while True:
-                                if audio_capture.stop_event.is_set() and sentinel_received:
+                                if audio_capture_manager.stop_event.is_set() and sentinel_received:
                                     break
 
                                 # Get audio from queue
@@ -302,8 +302,8 @@ def run_realtime_transcriber(
 
                                 if not sentinel_received and buffer.size < chunk_size:
                                     try:
-                                        timeout = 0.1 if not audio_capture.stop_event.is_set() else 0.01
-                                        item = await asyncio.to_thread(audio_capture.audio_queue.get, True, timeout)
+                                        timeout = 0.1 if not audio_capture_manager.stop_event.is_set() else 0.01
+                                        item = await asyncio.to_thread(audio_capture_manager.audio_queue.get, True, timeout)
                                         got_item = True
                                     except queue.Empty:
                                         got_item = False
@@ -319,8 +319,8 @@ def run_realtime_transcriber(
                                         buffer = np.concatenate((buffer, chunk.astype(np.float32, copy=False)))
                                 else:
                                     if (
-                                        audio_capture.stop_event.is_set()
-                                        or audio_capture.capture_limit_reached.is_set()
+                                        audio_capture_manager.stop_event.is_set()
+                                        or audio_capture_manager.capture_limit_reached.is_set()
                                     ):
                                         force_flush = buffer.size > 0 or sentinel_received
                                     elif buffer.size < chunk_size:
@@ -330,8 +330,8 @@ def run_realtime_transcriber(
                                 if buffer.size == 0:
                                     if (
                                         sentinel_received
-                                        or audio_capture.stop_event.is_set()
-                                        or audio_capture.capture_limit_reached.is_set()
+                                        or audio_capture_manager.stop_event.is_set()
+                                        or audio_capture_manager.capture_limit_reached.is_set()
                                     ):
                                         break
                                     continue
@@ -340,8 +340,8 @@ def run_realtime_transcriber(
                                 if send_count == 0:
                                     if (
                                         sentinel_received
-                                        or audio_capture.stop_event.is_set()
-                                        or audio_capture.capture_limit_reached.is_set()
+                                        or audio_capture_manager.stop_event.is_set()
+                                        or audio_capture_manager.capture_limit_reached.is_set()
                                     ):
                                         break
                                     continue
@@ -386,7 +386,7 @@ def run_realtime_transcriber(
                     async def receiver() -> None:
                         try:
                             async for message in ws:
-                                if audio_capture.stop_event.is_set():
+                                if audio_capture_manager.stop_event.is_set():
                                     break
 
                                 payload = json.loads(message)
@@ -489,7 +489,7 @@ def run_realtime_transcriber(
 
             except Exception as e:
                 print(f"Websocket error: {e}", file=sys.stderr)
-                audio_capture.stop()
+                audio_capture_manager.stop()
 
         # Run the async websocket in this thread
         try:
@@ -497,7 +497,7 @@ def run_realtime_transcriber(
         except KeyboardInterrupt:
             pass
         finally:
-            audio_capture.stop()
+            audio_capture_manager.stop()
 
     # Start websocket worker thread
     ws_thread = threading.Thread(target=websocket_worker, daemon=True)
@@ -505,27 +505,27 @@ def run_realtime_transcriber(
 
     # Start audio capture
     try:
-        audio_capture.start()
-        audio_capture.wait_until_stopped()
+        audio_capture_manager.start()
+        audio_capture_manager.wait_until_stopped()
     except KeyboardInterrupt:
         pass
     finally:
-        audio_capture.stop()
+        audio_capture_manager.stop()
         ws_thread.join(timeout=2.0)
-        audio_capture.close()
+        audio_capture_manager.close()
 
     # Get full audio
-    full_audio = audio_capture.get_full_audio()
+    full_audio = audio_capture_manager.get_full_audio()
 
     # Save full audio for session logging (finalization happens in main.py with stitched transcription)
     if session_logger is not None:
-        session_logger.save_full_audio(full_audio, audio_capture.get_capture_duration())
+        session_logger.save_full_audio(full_audio, audio_capture_manager.get_capture_duration())
 
     return RealtimeTranscriptionResult(
         full_audio=full_audio,
         sample_rate=sample_rate,
         chunks=chunk_texts,
-        capture_duration=audio_capture.get_capture_duration(),
+        capture_duration=audio_capture_manager.get_capture_duration(),
         metadata={
             "model": model,
             "realtime_endpoint": endpoint,
