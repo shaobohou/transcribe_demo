@@ -293,6 +293,9 @@ class SessionLogger:
         # Create human-readable README
         self._create_readme()
 
+        # Create marker file to indicate successful finalization
+        self._create_completion_marker()
+
     def _save_audio(self, audio: np.ndarray, path: Path) -> None:
         """
         Save audio in the configured format (WAV or FLAC).
@@ -403,3 +406,9 @@ class SessionLogger:
                     f.write(f"  Audio: chunks/{chunk.audio_filename}\n")
 
         print(f"Created README: {readme_path}", file=sys.stderr)
+
+    def _create_completion_marker(self) -> None:
+        """Create a marker file to indicate successful session finalization."""
+        marker_path = self.session_dir / ".complete"
+        marker_path.touch()
+        print(f"Session finalized successfully: {marker_path}", file=sys.stderr)
