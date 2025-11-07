@@ -28,8 +28,10 @@ jobs:
       with:
         version: "latest"
 
-    - name: Install dependencies
-      run: uv sync
+    - name: Install dependencies (CPU-only PyTorch)
+      run: |
+        uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+        uv sync --no-install-package torch
 
     - name: Run tests
       run: uv run pytest
