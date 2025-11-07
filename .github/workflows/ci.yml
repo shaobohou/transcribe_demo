@@ -31,8 +31,7 @@ jobs:
     - name: Install dependencies (CPU-only PyTorch)
       run: |
         uv venv
-        uv pip install torch --index-url https://download.pytorch.org/whl/cpu
-        uv sync --no-install-package torch
+        uv sync --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
 
     - name: Run tests
       # Skip integration tests in CI due to threading issues with mocked audio devices
