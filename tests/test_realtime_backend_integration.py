@@ -3,37 +3,23 @@ from __future__ import annotations
 import json
 import queue as queue_module
 import threading
-import wave
-from pathlib import Path
+import time
 
 import numpy as np
 import pytest
 
+from conftest import load_test_fixture
 from transcribe_demo import realtime_backend
-
-
-def _load_fixture() -> tuple[np.ndarray, int]:
-    fixture = Path(__file__).resolve().parent / "data" / "fox.wav"
-    if not fixture.exists():
-        raise FileNotFoundError("tests/data/fox.wav fixture not found")
-    with wave.open(str(fixture), "rb") as wf:
-        if wf.getnchannels() != 1:
-            raise RuntimeError("fox.wav must be mono")
-        sample_rate = wf.getframerate()
-        frames = wf.readframes(wf.getnframes())
-    audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
-    return audio, sample_rate
 
 
 @pytest.mark.integration
 def test_run_realtime_transcriber_processes_audio(monkeypatch):
-    audio, sample_rate = _load_fixture()
-    frame_size = 320  # 20ms at 16kHz
+    audio, sample_rate = load_test_fixture()
 
     chunk_texts: list[str] = []
-    fake_ws_holder: dict[str, FakeWebSocket] = {}
+    fake_ws_holder: dict[str, "FakeWebSocket"] = {}
 
-    # Monkeypatch AudioCaptureManager to feed test data
+    # Simplified FakeAudioCaptureManager for this specific test
     class FakeAudioCaptureManager:
         def __init__(self, sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
             self.sample_rate = sample_rate
@@ -47,7 +33,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
             self._feeder_thread = None
 
         def _feed_audio(self):
-            # Feed test audio into queue in a background thread
+            frame_size = 320  # 20ms at 16kHz
             for start in range(0, len(audio), frame_size):
                 if self.stop_event.is_set():
                     break
@@ -56,23 +42,17 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
                     continue
                 indata = chunk.astype(np.float32).reshape(-1, 1)
                 self.audio_queue.put(indata)
-                # Also collect for get_full_audio
                 mono = indata.mean(axis=1).astype(np.float32)
                 self._full_audio_chunks.append(mono)
-            # Signal end of stream
             self.audio_queue.put(None)
-            # Give backend time to start processing before signaling stop
-            import time
             time.sleep(0.5)
             self.stop()
 
         def start(self):
-            # Start feeding audio in background thread
             self._feeder_thread = threading.Thread(target=self._feed_audio, daemon=True)
             self._feeder_thread.start()
 
         def wait_until_stopped(self):
-            # Wait until stop event is set
             self.stop_event.wait()
 
         def stop(self):
@@ -92,6 +72,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
 
     monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", FakeAudioCaptureManager)
 
+    # Custom FakeWebSocket for this test with specific events
     class FakeWebSocket:
         def __init__(self, events):
             self._events = list(events)
@@ -109,7 +90,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
                 raise StopAsyncIteration
             return json.dumps(self._events.pop(0))
 
-        async def close(self, code: int = 1000, reason: str = "") -> None:  # pragma: no cover - simple setter
+        async def close(self, code: int = 1000, reason: str = "") -> None:
             self.closed = True
 
         async def __aenter__(self):

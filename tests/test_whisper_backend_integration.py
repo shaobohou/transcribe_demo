@@ -1,30 +1,19 @@
 from __future__ import annotations
 
+import queue as queue_module
 import threading
-import wave
-from pathlib import Path
+import time
 
 import numpy as np
 import pytest
 
+from conftest import load_test_fixture
 from transcribe_demo import whisper_backend
-
-
-def _load_fixture() -> tuple[np.ndarray, int]:
-    fixture = Path(__file__).resolve().parent / "data" / "fox.wav"
-    if not fixture.exists():
-        raise FileNotFoundError("tests/data/fox.wav fixture not found")
-    with wave.open(str(fixture), "rb") as wf:
-        if wf.getnchannels() != 1:
-            raise RuntimeError("fox.wav must be mono")
-        rate = wf.getframerate()
-        audio = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16).astype(np.float32)
-    return audio / 32768.0, rate
 
 
 @pytest.mark.integration
 def test_run_whisper_transcriber_processes_audio(monkeypatch):
-    audio, sample_rate = _load_fixture()
+    audio, sample_rate = load_test_fixture()
     chunks: list[dict[str, float | str | None]] = []
 
     class DummyModel:
