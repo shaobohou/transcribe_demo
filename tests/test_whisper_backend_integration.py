@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -77,8 +79,13 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
 @pytest.mark.integration
 def test_whisper_backend_full_audio_matches_input(monkeypatch):
     """Test that full audio returned from audio capture matches the original input audio."""
+    from typing import TYPE_CHECKING
+
     audio, sample_rate = load_test_fixture()
-    audio_capture_holder: dict[str, object] = {}
+    audio_capture_holder: dict[str, Any] = {}
+
+    if TYPE_CHECKING:
+        from test_helpers import FakeAudioCaptureManager
 
     class DummyModel:
         def transcribe(self, audio_chunk: np.ndarray, **kwargs):
@@ -124,7 +131,10 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
     )
 
     # Verify that the full audio captured matches the original input
-    manager = audio_capture_holder["manager"]
+    if TYPE_CHECKING:
+        manager: FakeAudioCaptureManager = audio_capture_holder["manager"]  # type: ignore[assignment]
+    else:
+        manager = audio_capture_holder["manager"]
     captured_audio = manager.get_full_audio()
     assert captured_audio.size > 0, "No audio was captured"
     # Audio should match the original input (possibly with minor floating point differences)
