@@ -277,7 +277,7 @@ def run_whisper_transcriber(
     session_start_time = time.perf_counter()
 
     # Initialize audio capture manager
-    audio_capture_manager = audio_capture_lib.AudioCaptureManager(
+    audio_capture = audio_capture_lib.AudioCaptureManager(
         sample_rate=sample_rate,
         channels=channels,
         max_capture_duration=max_capture_duration,
@@ -320,9 +320,9 @@ def run_whisper_transcriber(
         next_chunk_start = 0.0
 
         try:
-            while not audio_capture_manager.stop_event.is_set():
+            while not audio_capture.stop_event.is_set():
                 try:
-                    chunk = await asyncio.to_thread(audio_capture_manager.audio_queue.get, True, 0.1)
+                    chunk = await asyncio.to_thread(audio_capture.audio_queue.get, True, 0.1)
                 except queue.Empty:
                     await asyncio.sleep(0.05)
                     continue
@@ -366,9 +366,9 @@ def run_whisper_transcriber(
                         should_transcribe = True
                         max_duration_exceeded = True
 
-                if audio_capture_manager.capture_limit_reached.is_set():
+                if audio_capture.capture_limit_reached.is_set():
                     if buffer.size >= min_chunk_size or (
-                        buffer.size > 0 and (audio_capture_manager.audio_queue.empty() or force_transcribe_now)
+                        buffer.size > 0 and (audio_capture.audio_queue.empty() or force_transcribe_now)
                     ):
                         should_transcribe = True
                         force_flush = True
@@ -399,8 +399,8 @@ def run_whisper_transcriber(
                         continue
                     # Allow final partial chunk; avoid empty buffers
                     if len(window) == 0:
-                        if audio_capture_manager.capture_limit_reached.is_set():
-                            audio_capture_manager.stop()
+                        if audio_capture.capture_limit_reached.is_set():
+                            audio_capture.stop()
                         continue
 
                 chunk_audio_duration = len(window) / float(sample_rate)
@@ -422,7 +422,7 @@ def run_whisper_transcriber(
                     await transcription_queue.put((chunk_index, window.copy(), chunk_audio_duration))
                 except Exception as exc:
                     transcriber_error.append(exc)
-                    audio_capture_manager.stop()
+                    audio_capture.stop()
                     break
 
                 # Clear buffer completely (no overlap with VAD)
@@ -439,12 +439,12 @@ def run_whisper_transcriber(
                 chunk_index += 1
 
                 # After chunk completes, check if capture limit was reached and stop gracefully
-                if audio_capture_manager.capture_limit_reached.is_set():
+                if audio_capture.capture_limit_reached.is_set():
                     print(
                         "Current chunk finished. Stopping transcription...",
                         file=sys.stderr,
                     )
-                    audio_capture_manager.stop()
+                    audio_capture.stop()
                     break
         finally:
             await transcription_queue.put(None)
@@ -506,19 +506,19 @@ def run_whisper_transcriber(
                     )
         except Exception as exc:  # pragma: no cover - defensive guard
             transcriber_error.append(exc)
-            audio_capture_manager.stop()
+            audio_capture.stop()
             await transcription_queue.put(None)
 
     async def orchestrate() -> None:
         builder_task = asyncio.create_task(vad_worker())
         transcriber_task = asyncio.create_task(transcriber_worker())
         try:
-            audio_capture_manager.start()
-            await asyncio.to_thread(audio_capture_manager.wait_until_stopped)
+            audio_capture.start()
+            await asyncio.to_thread(audio_capture.wait_until_stopped)
         finally:
-            audio_capture_manager.stop()
+            audio_capture.stop()
             await asyncio.gather(builder_task, transcriber_task, return_exceptions=True)
-            audio_capture_manager.close()
+            audio_capture.close()
             if temp_file is not None and temp_file.exists():
                 temp_file.unlink()
 
@@ -539,7 +539,7 @@ def run_whisper_transcriber(
 
     # Get full audio for comparison
     full_audio_transcription: str | None = None
-    full_audio = audio_capture_manager.get_full_audio()
+    full_audio = audio_capture.get_full_audio()
     if compare_transcripts and full_audio.size:
         full_audio_result: dict[str, Any] = model.transcribe(
             full_audio,
@@ -559,11 +559,11 @@ def run_whisper_transcriber(
 
     # Save full audio for session logging (finalization happens in main.py with stitched transcription)
     if session_logger is not None:
-        session_logger.save_full_audio(full_audio, audio_capture_manager.get_capture_duration())
+        session_logger.save_full_audio(full_audio, audio_capture.get_capture_duration())
 
     return WhisperTranscriptionResult(
         full_audio_transcription=full_audio_transcription,
-        capture_duration=audio_capture_manager.get_capture_duration(),
+        capture_duration=audio_capture.get_capture_duration(),
         metadata={
             "model": model_name,
             "device": device,
