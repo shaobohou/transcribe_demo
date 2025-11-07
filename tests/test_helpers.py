@@ -75,6 +75,10 @@ class FakeAudioCaptureManager:
 
         # Signal end of stream
         self.audio_queue.put(None)
+        # Give backend time to process queued audio before signaling stop
+        # This is critical for realtime backend which processes audio asynchronously
+        if not self.capture_limit_reached.is_set():
+            time.sleep(0.5)  # Allow async processing to complete
         # Set stop_event so wait_until_stopped() can return
         self.stop_event.set()
 
