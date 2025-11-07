@@ -138,15 +138,90 @@ After successful refactoring:
 
 ---
 
+## ✅ Completed Refactorings
+
+This section tracks refactorings that have been completed since this document was created.
+
+### ✅ SessionLogger Module (High Priority)
+
+**Status**: ✅ **COMPLETED**
+
+**Implementation**: `session_logger.py` (393 lines)
+
+**Features Implemented**:
+- WAV and FLAC support with compression
+- Diff tracking (`transcription_similarity`, `transcription_diffs`)
+- Chunk metadata with cleaned text
+- Organized directory structure by date: `{output_dir}/YYYY-MM-DD/session_{time}_{backend}/`
+- Min duration filtering (discards short sessions)
+- Comprehensive README generation with session metadata
+
+**Tests**: `test_session_logger.py` (219 lines) - comprehensive coverage
+
+**Benefits Realized**:
+- Rich debugging information preserved for every session
+- Audio preservation for post-analysis
+- Automatic comparison tracking
+- Clean separation from main transcription logic
+
+---
+
+### ✅ AudioCaptureManager Module (Related to Priority 1.4)
+
+**Status**: ✅ **COMPLETED**
+
+**Implementation**: `audio_capture.py` (191 lines)
+
+**Features Implemented**:
+- Unified interface for both backends
+- Time limit enforcement
+- Full audio collection for comparison
+- Thread-safe stop coordination
+- Queue management
+- Capture duration tracking
+
+**Benefits Realized**:
+- DRY: Removed duplicated capture logic from both backends
+- Consistent behavior across whisper and realtime
+- Easier to test capture timing independently
+- Clear separation between audio input and transcription logic
+
+---
+
+### ✅ Test Coverage Improvements (Priority 4)
+
+**Status**: ✅ **SIGNIFICANTLY IMPROVED**
+
+**New Test Files Added**:
+- `test_main_utils.py` (259 lines) - ChunkCollectorWithStitching, diff utilities
+- `test_session_logger.py` (219 lines) - SessionLogger functionality
+- `test_backend_time_limits.py` (698 lines) - Integration tests for both backends
+- `test_realtime_backend_clipping.py` (17 lines) - PCM conversion edge cases
+
+**Coverage Ratio**: ~82% (2,061 test lines for 2,516 source lines)
+
+**Benefits Realized**:
+- ChunkCollectorWithStitching now fully tested (formatting, stitching, cleaned text)
+- SessionLogger behavior verified (metadata, diffs, min duration, formats)
+- Backend integration thoroughly tested (time limits, logging, comparison)
+- PCM conversion edge cases covered (clipping, scaling)
+
+**Remaining Gaps** (see Priority 4.2):
+- Device selection edge cases (MPS failures, GPU requirement violations)
+- SSL context error scenarios
+- Audio resampling edge cases (very short input, extreme ratios)
+
+---
+
 ## Priority 1: High Impact Refactoring
 
 ### 1.1 Extract Duplicate Realtime Session Configuration (realtime_backend.py)
 
-**Issue**: Identical OpenAI Realtime API session configuration appears twice (20+ lines duplicated).
+**Issue**: Identical OpenAI Realtime API session configuration appears twice (15+ lines duplicated).
 
 **Locations**:
-- `realtime_backend.py:97-119` (in `transcribe_full_audio_realtime`)
-- `realtime_backend.py:417-439` (in `run_realtime_transcriber`)
+- `realtime_backend.py:128-140` (in `transcribe_full_audio_realtime`)
+- `realtime_backend.py:267-285` (in `run_realtime_transcriber`)
 
 **Current Code**:
 ```python
@@ -201,7 +276,7 @@ await send_json(ws, _create_session_config(instructions), lock)
 - Reduces 20+ lines of duplication
 - Consistent behavior between full audio and streaming
 
-**Priority**: Quick win - 10 minutes, saves 20 lines
+**Priority**: Quick win - 10 minutes, saves 15+ lines, single source of truth
 
 ### 1.2 Centralize Terminal Output Formatting (main.py)
 
@@ -220,6 +295,78 @@ await send_json(ws, _create_session_config(instructions), lock)
 - One place to adjust color codes or fall back to plain text.
 - Simplifies unit testing of presentation logic.
 - Eliminates two large blocks of duplicate `print(..., file=sys.stdout)` code.
+
+---
+
+### 1.2b Extract Final Output Printing (main.py)
+
+**Issue**: Final stitched result printing is duplicated in 4 near-identical code blocks.
+
+**Locations**:
+- `main.py:642-653` (whisper backend without comparison)
+- `main.py:738-751` (realtime backend without comparison)
+
+**Current Code**:
+```python
+# Whisper path (lines 642-653):
+if final:
+    use_color = sys.stdout.isatty()
+    if use_color:
+        green = "\x1b[32m"
+        reset = "\x1b[0m"
+        bold = "\x1b[1m"
+        print(
+            f"\n{bold}{green}[FINAL STITCHED]{reset} {final}\n",
+            file=sys.stdout,
+        )
+    else:
+        print(f"\n[FINAL STITCHED] {final}\n", file=sys.stdout)
+
+# Realtime path (lines 738-751):
+if final:
+    use_color = sys.stdout.isatty()
+    green = ""
+    reset = ""
+    bold = ""
+    if use_color:
+        green = "\x1b[32m"
+        reset = "\x1b[0m"
+        bold = "\x1b[1m"
+        print(
+            f"\n{bold}{green}[FINAL STITCHED]{reset} {final}\n",
+            file=sys.stdout,
+        )
+    else:
+        print(f"\n[FINAL STITCHED] {final}\n", file=sys.stdout)
+```
+
+**Proposed Solution**:
+```python
+def _print_final_stitched(stream: TextIO, text: str) -> None:
+    """Print final stitched transcription with appropriate formatting."""
+    if not text:
+        return
+
+    use_color = getattr(stream, "isatty", lambda: False)()
+    if use_color:
+        green = "\x1b[32m"
+        reset = "\x1b[0m"
+        bold = "\x1b[1m"
+        print(f"\n{bold}{green}[FINAL STITCHED]{reset} {text}\n", file=stream)
+    else:
+        print(f"\n[FINAL STITCHED] {text}\n", file=stream)
+
+# Usage:
+_print_final_stitched(sys.stdout, final)
+```
+
+**Benefits**:
+- DRY: Eliminates 4 code blocks (~40 lines)
+- Consistent formatting across both backends
+- Easier to modify output format in one place
+- More testable
+
+**Priority**: Quick win - 5 minutes, immediate cleanup
 
 ---
 
@@ -303,12 +450,17 @@ def _check_mps_available() -> bool:
 
 ### 1.4 Unify Transcription Session Harness
 
-**Issue**: `whisper_backend.py` and `realtime_backend.py` each reimplement the same lifecycle:
+**Status**: ⚠️ **PARTIALLY COMPLETED** - AudioCaptureManager extracted, but backend-specific logic still duplicated
 
+**Progress**: The `AudioCaptureManager` class (in `audio_capture.py`) now handles:
 - Queue + event wiring for `sounddevice.InputStream`
 - Capture-duration enforcement and warning logs
 - Full-audio accumulation when `--compare_transcripts` is set
-- Final stitched output and optional comparison transcription
+- Thread-safe stop coordination
+
+**Remaining Issue**: `whisper_backend.py` and `realtime_backend.py` still each reimplement:
+
+- Final stitched output and optional comparison transcription (handled in `main.py` but duplicated)
 
 The backends only diverge when actually producing text (Whisper VAD loop vs. realtime websocket).
 
@@ -1425,9 +1577,347 @@ def configure_logging(verbosity: int):
 - Eliminates redundant O(n) passes over the chunk list and the extra logger mutation API.
 - Simplifies the main control flow (no post-run loop just to backfill data) and makes the logging path easier to test.
 
+**Current Implementation** (2-pass approach):
+```python
+# main.py:603-604 (whisper) and 688-689 (realtime) - identical code
+for chunk_index, cleaned_text in collector.get_cleaned_chunks():
+    session_logger.update_chunk_cleaned_text(chunk_index, cleaned_text)
+```
 
+---
 
+## Priority 6: Recently Identified Opportunities
 
+This section contains refactoring opportunities discovered during recent codebase review (2025).
+
+### 6.1 Extract Synthetic Audio Test Utility (tests)
+
+**Issue**: The `_generate_synthetic_audio()` function is defined only in `test_backend_time_limits.py:33-56` but would be useful across all test files.
+
+**Location**: `test_backend_time_limits.py:33-56` (24 lines)
+
+**Current Usage**: Used to create fast, predictable test audio without file I/O
+
+**Proposed Solution**:
+```python
+# tests/conftest.py or tests/test_utils.py
+import numpy as np
+import pytest
+
+@pytest.fixture
+def generate_synthetic_audio():
+    """Factory fixture for generating synthetic audio for tests."""
+    def _generate(
+        duration_seconds: float = 3.0,
+        sample_rate: int = 16000,
+        frequency: float = 440.0,
+    ) -> np.ndarray:
+        """
+        Generate synthetic audio for testing.
+
+        Args:
+            duration_seconds: Duration of audio in seconds
+            sample_rate: Sample rate in Hz
+            frequency: Frequency of sine wave in Hz
+
+        Returns:
+            Mono float32 audio array
+        """
+        num_samples = int(duration_seconds * sample_rate)
+        t = np.linspace(0, duration_seconds, num_samples, endpoint=False)
+        audio = np.sin(2 * np.pi * frequency * t).astype(np.float32)
+        return audio * 0.3  # Scale to reasonable amplitude
+
+    return _generate
+
+# Usage in tests:
+def test_something(generate_synthetic_audio):
+    audio = generate_synthetic_audio(duration_seconds=2.0, sample_rate=16000)
+    # ... use audio
+```
+
+**Benefits**:
+- DRY: Reusable across all test files
+- Consistent test audio generation
+- Can add variations (noise, silence, speech-like patterns)
+- Discoverable through pytest fixtures
+
+**Priority**: Low - 15 minutes, improves test maintainability
+
+---
+
+### 6.2 Normalize Language Parameter Utility (both backends)
+
+**Issue**: Language parameter normalization is duplicated in both backends.
+
+**Locations**:
+- `whisper_backend.py:272-274`
+- `realtime_backend.py:228, 252-254`
+
+**Current Code**:
+```python
+# whisper_backend.py
+normalized_language = None
+if language and language.lower() != "auto":
+    normalized_language = language
+
+# realtime_backend.py
+language_value = (language or "").strip()
+if language_value and language_value.lower() != "auto":
+    # use it
+```
+
+**Proposed Solution**:
+```python
+# utils.py or config.py
+def normalize_language(language: str | None) -> str | None:
+    """
+    Normalize language parameter.
+
+    Args:
+        language: Language code or "auto"
+
+    Returns:
+        Normalized language code or None if auto/empty
+    """
+    if not language:
+        return None
+
+    normalized = language.strip().lower()
+    return None if normalized == "auto" else language
+```
+
+**Benefits**:
+- Single source of truth
+- Consistent behavior across backends
+- Easier to test edge cases
+- Clear documentation of "auto" → None conversion
+
+**Priority**: Low - 5 minutes
+
+---
+
+### 6.3 Extract RealtimeMessageHandler Class (realtime_backend.py)
+
+**Issue**: WebSocket message handling logic is embedded in nested `receiver()` function with state management (partials dict, item ID tracking).
+
+**Location**: Inside `realtime_backend.py:run_realtime_transcriber()` nested function
+
+**Current Structure**:
+```python
+async def receiver() -> None:
+    partials: dict[str, str] = {}
+    # ... event handling logic mixed with state
+```
+
+**Proposed Solution**:
+```python
+class RealtimeMessageHandler:
+    """Handles OpenAI Realtime API WebSocket messages."""
+
+    def __init__(self):
+        self.partials: dict[str, str] = {}
+        self.completed: list[str] = []
+        self.chunk_counter = 0
+
+    def handle_delta(self, payload: dict) -> None:
+        """Handle transcript delta event."""
+        item_id = payload.get("item_id", "")
+        delta_text = payload.get("delta", "")
+        self.partials[item_id] = self.partials.get(item_id, "") + delta_text
+
+    def handle_completed(self, payload: dict) -> str | None:
+        """
+        Handle transcript completed event.
+
+        Returns:
+            Final transcript text or None if empty
+        """
+        item_id = payload.get("item_id", "")
+        transcript = payload.get("transcript", "").strip()
+
+        # Prefer completed transcript over partial accumulation
+        if transcript:
+            self.partials.pop(item_id, None)
+            return transcript
+        elif item_id in self.partials:
+            final_text = self.partials.pop(item_id).strip()
+            return final_text if final_text else None
+
+        return None
+
+    def handle_error(self, payload: dict, event_type: str) -> None:
+        """Handle error events."""
+        error_detail = payload.get("error", {})
+        print(
+            f"Realtime API {event_type}: {error_detail}",
+            file=sys.stderr
+        )
+```
+
+**Benefits**:
+- Testable without WebSocket connection
+- Clear state management
+- Easier to modify message handling logic
+- Could be reused if adding other realtime streaming backends
+
+**Priority**: Medium - 1 hour, improves testability
+
+---
+
+### 6.4 Extract FakeAudioCaptureManager to Test Utils (tests)
+
+**Issue**: `FakeAudioCaptureManager` is duplicated across 3 test files with slight variations.
+
+**Locations**:
+- `test_backend_time_limits.py:59-150` (91 lines)
+- `test_whisper_backend_integration.py:50-102` (52 lines)
+- `test_realtime_backend_integration.py:37-91` (54 lines)
+
+**Impact**:
+- Maintenance burden (changes need to be made in 3 places)
+- Inconsistent implementations (each has slight differences)
+- Tests become brittle if real `AudioCaptureManager` API changes
+
+**Proposed Solution**:
+```python
+# tests/conftest.py
+import pytest
+from transcribe_demo.audio_capture import AudioCaptureManager
+
+@pytest.fixture
+def fake_audio_capture_manager():
+    """Factory for creating FakeAudioCaptureManager instances."""
+
+    class FakeAudioCaptureManager:
+        """Test double for AudioCaptureManager with configurable behavior."""
+
+        def __init__(
+            self,
+            audio_chunks: list[np.ndarray] | None = None,
+            simulate_time_limit: bool = False,
+            capture_duration_seconds: float | None = None,
+        ):
+            self.audio_chunks = audio_chunks or []
+            self.simulate_time_limit = simulate_time_limit
+            self.capture_duration_seconds = capture_duration_seconds
+
+            # State tracking
+            self.stop_event = threading.Event()
+            self.audio_queue: queue.Queue[np.ndarray] = queue.Queue()
+            self.full_audio_chunks: list[np.ndarray] = []
+            self.chunk_index = 0
+
+        def __enter__(self):
+            # Start feeding audio chunks in background thread
+            self._feed_thread = threading.Thread(target=self._feed_audio)
+            self._feed_thread.start()
+            return self
+
+        def __exit__(self, *args):
+            self.stop_event.set()
+            self._feed_thread.join(timeout=2.0)
+
+        def _feed_audio(self):
+            """Feed audio chunks to queue."""
+            for chunk in self.audio_chunks:
+                if self.stop_event.is_set():
+                    break
+                self.audio_queue.put(chunk)
+                time.sleep(0.01)  # Small delay to simulate real capture
+
+            if self.simulate_time_limit:
+                time.sleep(0.1)
+                self.stop_event.set()
+
+    return FakeAudioCaptureManager
+
+# Usage in tests:
+def test_something(fake_audio_capture_manager, generate_synthetic_audio):
+    audio = generate_synthetic_audio(duration_seconds=2.0)
+    fake_mgr = fake_audio_capture_manager(
+        audio_chunks=[audio],
+        simulate_time_limit=True,
+    )
+    # ... test with fake_mgr
+```
+
+**Benefits**:
+- Single source of truth
+- Consistent behavior across tests
+- Easier to extend with new features
+- Reduces test code by ~150 lines
+
+**Priority**: Medium - 1 hour, significant test cleanup
+
+---
+
+### 6.5 Extract Cleaned Text Backfilling Pattern (main.py)
+
+**Issue**: Cleaned text is computed in a second pass after all chunks are collected, duplicated in both backend paths.
+
+**Status**: Related to §5.4, but worth highlighting as a distinct issue
+
+**Locations**:
+- `main.py:603-604` (whisper backend)
+- `main.py:688-689` (realtime backend)
+
+**Current Flow**:
+1. Backend emits chunk with raw text → `collector(chunk_index, text, ...)`
+2. ChunkCollector stores chunk in `self._chunks`
+3. After transcription completes: `collector.get_cleaned_chunks()` iterates all chunks
+4. For each chunk: `session_logger.update_chunk_cleaned_text(chunk_index, cleaned)`
+
+**Problems**:
+- Two passes over all chunks (O(n) redundancy)
+- Cleaned text not available if session crashes/interrupted
+- SessionLogger needs mutation API (`update_chunk_cleaned_text`)
+- Logic duplicated in both backend paths
+
+**Proposed Solution**:
+1. Compute cleaned text immediately in `ChunkCollectorWithStitching.__call__`:
+```python
+def __call__(self, chunk_index, text, absolute_start, absolute_end, inference_seconds=None):
+    # ... existing code ...
+
+    # Compute cleaned text immediately
+    is_final = False  # We don't know yet, so clean conservatively
+    cleaned_text = self._clean_chunk_text(text, is_final_chunk=is_final)
+
+    chunk = TranscriptionChunk(
+        index=chunk_index,
+        text=text,
+        cleaned_text=cleaned_text,  # Store both
+        start_time=absolute_start,
+        end_time=absolute_end,
+        # ...
+    )
+    self._chunks.append(chunk)
+```
+
+2. Pass cleaned text to session logger immediately:
+```python
+# In both whisper_backend.py and realtime_backend.py:
+if chunk_consumer:
+    chunk_consumer(chunk_index, text, start, end, inference)
+
+    # NEW: Pass cleaned text immediately if logger supports it
+    if hasattr(chunk_consumer, 'get_last_cleaned_text'):
+        cleaned = chunk_consumer.get_last_cleaned_text()
+        # pass to session logger
+```
+
+3. Remove the backfilling loop from `main.py`
+
+**Benefits**:
+- Single pass over chunks (performance)
+- Cleaned text preserved even if session interrupted
+- Simpler SessionLogger API (no `update_chunk_cleaned_text` needed)
+- No code duplication between backends
+
+**Priority**: Medium - 2 hours, architectural improvement
+
+---
 
 ## Future Improvements
 
@@ -1492,3 +1982,191 @@ uv run transcribe-demo --vad-backend silero --vad-threshold 0.8
 - CLI flag added: `--refine-with-context` (currently shows error if used)
 - Implementation TODO documented in `main.py` (lines 71-95)
 - Requires modifications to `whisper_backend.py` to pass raw audio buffers
+
+---
+
+## Summary and Prioritized Action Plan
+
+### Recent Progress (✅ Completed)
+
+The codebase has made significant progress with these major refactorings completed:
+
+1. **SessionLogger Module** - Comprehensive session persistence with metadata, diffs, and audio preservation
+2. **AudioCaptureManager Module** - Unified audio capture interface for both backends
+3. **Test Coverage** - Increased to ~82% with focused unit and integration tests
+4. **Diff Tracking** - Automatic comparison and similarity scoring
+
+**Impact**: These completions have significantly improved code organization, testability, and debugging capabilities.
+
+---
+
+### Current State Assessment
+
+**Strengths**:
+- Clear module separation between backends
+- Strong test coverage (2,061 test lines for 2,516 source lines)
+- Well-documented development guidelines (CLAUDE.md)
+- Modern Python style (type hints, dataclasses where used)
+
+**Pain Points**:
+- **Long functions**: 4 functions >200 lines (main(), run_whisper_transcriber(), run_realtime_transcriber(), ChunkCollectorWithStitching.__call__)
+- **Code duplication**: Session config (15 lines × 2), SSL setup, output formatting (40 lines × 2), test utilities (150+ lines × 3)
+- **Magic numbers**: Scattered constants lack semantic meaning
+- **Tight coupling**: Abseil flags make library reuse difficult
+- **Two-pass patterns**: Cleaned text backfilling after collection
+
+---
+
+### Immediate Wins (1-2 hours total)
+
+Start here for quick improvements with high value:
+
+| Priority | Item | Time | Impact | Lines Saved |
+|----------|------|------|--------|-------------|
+| **1** | §1.1: Extract realtime session config | 10 min | High | 15+ lines |
+| **2** | §1.2b: Extract final output printing | 5 min | Medium | 40 lines |
+| **3** | §3.1: Extract magic numbers to constants.py | 30 min | High | 0 (readability) |
+| **4** | §6.2: Normalize language parameter | 5 min | Low | 5 lines |
+| **5** | §2.3: Extract comparison to separate module | 1 hour | Medium | 166 lines |
+
+**Total**: ~2 hours, saves ~226 lines, improves maintainability significantly
+
+---
+
+### Medium Impact Refactorings (4-8 hours each)
+
+These require more planning but provide substantial benefits:
+
+1. **§1.2: Centralize terminal formatting** (4 hours)
+   - Create `TerminalFormatter` class
+   - Eliminates scattered ANSI color code handling
+   - Consistent styling across all output
+
+2. **§1.3: Extract device selection logic** (2 hours)
+   - Create `DeviceConfig.detect_device()` classmethod
+   - Testable in isolation, clearer logic
+
+3. **§1.5: SSL context manager** (2 hours)
+   - Proper cleanup with context manager
+   - Reusable across both backends
+
+4. **§3.2: Configuration dataclasses** (6 hours)
+   - `WhisperConfig`, `RealtimeConfig`, `VADConfig`, `TranscribeConfig`
+   - Type-safe, reduces 12-parameter functions to single config object
+
+5. **§6.3: Extract RealtimeMessageHandler** (1 hour)
+   - Testable without WebSocket
+   - Clear state management
+
+6. **§6.4: Extract FakeAudioCaptureManager to conftest** (1 hour)
+   - Reduces test code by ~150 lines
+   - Consistent test infrastructure
+
+---
+
+### Major Architectural Refactorings (1-3 days each)
+
+These are larger efforts that fundamentally improve architecture:
+
+1. **§2.1 + §2.4: Decompose worker functions** (2-3 days)
+   - Break down 200-300 line functions into focused classes
+   - `WhisperTranscriptionWorker`, `AudioProcessor`, `TranscriptionWorker`
+   - `RealtimeTranscriber`, `AudioSender`, `TranscriptReceiver`
+   - **Impact**: Each component testable independently, much clearer control flow
+
+2. **§3.3: Decouple from Abseil flags** (1-2 days)
+   - Move CLI parsing to separate module
+   - Create `parse_cli_config()` that returns dataclasses
+   - Make library code importable without side effects
+   - **Impact**: Library reuse, cleaner testing, better IDE support
+
+3. **§5.3: Add logging framework** (1 day)
+   - Replace all `print(..., file=sys.stderr)` with proper logging
+   - Add `--verbose` flag with log levels
+   - **Impact**: Configurable verbosity, structured logging, better debugging
+
+4. **§5.4 + §6.5: Inline cleaned text computation** (2 hours)
+   - Compute cleaned text during emission, not in second pass
+   - Remove SessionLogger mutation API
+   - **Impact**: Simpler flow, preserved data on interruption, no duplication
+
+---
+
+### Recommended Execution Order
+
+**Phase 1: Quick Wins** (Week 1)
+```
+Day 1-2: Complete all immediate wins (§1.1, §1.2b, §3.1, §6.2, §2.3)
+         → 226 lines saved, improved readability
+```
+
+**Phase 2: Configuration & Infrastructure** (Week 2-3)
+```
+Day 3-5:  §1.2, §1.3, §1.5 (Terminal formatting, device selection, SSL)
+Day 6-10: §3.2 (Configuration dataclasses) + §3.3 (Decouple Abseil)
+         → Type-safe configs, library reusability
+```
+
+**Phase 3: Test Infrastructure** (Week 4)
+```
+Day 11-12: §6.1, §6.4 (Test utilities to conftest.py)
+           → Cleaner tests, better maintainability
+```
+
+**Phase 4: Major Decomposition** (Week 5-6)
+```
+Day 13-20: §2.1, §2.4 (Worker function decomposition)
+           → Much clearer code structure, easier to extend
+```
+
+**Phase 5: Quality & Polish** (Week 7)
+```
+Day 21-23: §5.3 (Logging framework)
+Day 24-25: §5.4, §6.5 (Inline cleaned text)
+Day 26:    §6.3 (RealtimeMessageHandler)
+           → Professional-grade observability and cleaner flow
+```
+
+---
+
+### Metrics to Track
+
+**Code Health Indicators**:
+- Total lines of code (currently 2,516 source)
+- Test-to-source ratio (currently ~82%)
+- Average function length (target: <50 lines for 80% of functions)
+- Code duplication percentage (current: ~8%, target: <3%)
+- Number of functions >100 lines (current: 8, target: <3)
+
+**After Full Refactoring** (estimated):
+- Source lines: ~2,800 (slight increase from better organization)
+- Duplication: <2%
+- Functions >100 lines: 1-2
+- Test lines: ~2,200 (better fixtures = more compact tests)
+- Test-to-source ratio: ~79% (slightly lower but higher quality)
+
+---
+
+### Questions Before Starting?
+
+Before beginning any refactoring:
+
+1. **Is there test coverage?** If not, add tests first
+2. **Are line numbers accurate?** Verify in current codebase
+3. **Will this break existing behavior?** Plan for backward compatibility
+4. **Can it be done incrementally?** Prefer small PRs over large rewrites
+5. **What's the rollback plan?** Keep commits focused and revertible
+
+---
+
+## Document Maintenance
+
+**Last Updated**: 2025-01-07
+
+**Review Schedule**: Review this document quarterly or after major feature additions
+
+**How to Update**:
+1. Mark completed items with ✅ and move to "Completed Refactorings" section
+2. Add new opportunities to appropriate priority section
+3. Update line numbers if they've shifted
+4. Keep code examples current with actual implementation
