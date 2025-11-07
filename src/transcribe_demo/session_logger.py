@@ -25,6 +25,7 @@ class ChunkMetadata:
     duration: float
     inference_seconds: float | None = None
     audio_filename: str | None = None
+    cleaned_text: str | None = None  # Text after stitching punctuation cleanup
 
 
 @dataclass
@@ -56,6 +57,10 @@ class SessionMetadata:
     # Complete audio transcription
     full_audio_transcription: str | None = None
     stitched_transcription: str | None = None
+
+    # Diff information
+    transcription_similarity: float | None = None  # Similarity ratio between stitched and complete
+    transcription_diffs: list[dict[str, str]] | None = None  # Detailed diff snippets
 
 
 class SessionLogger:
@@ -134,17 +139,19 @@ class SessionLogger:
         end_time: float,
         inference_seconds: float | None = None,
         audio: np.ndarray | None = None,
+        cleaned_text: str | None = None,
     ) -> None:
         """
         Log a transcription chunk.
 
         Args:
             index: Chunk index
-            text: Transcribed text
+            text: Transcribed text (original, before stitching cleanup)
             start_time: Chunk start time (seconds)
             end_time: Chunk end time (seconds)
             inference_seconds: Inference duration (None for realtime)
             audio: Optional audio samples for this chunk
+            cleaned_text: Optional cleaned text after stitching punctuation cleanup
         """
         duration = end_time - start_time
         audio_filename = None
@@ -164,8 +171,22 @@ class SessionLogger:
             duration=duration,
             inference_seconds=inference_seconds,
             audio_filename=audio_filename,
+            cleaned_text=cleaned_text,
         )
         self.chunks.append(chunk_meta)
+
+    def update_chunk_cleaned_text(self, index: int, cleaned_text: str) -> None:
+        """
+        Update the cleaned text for a specific chunk.
+
+        Args:
+            index: Chunk index
+            cleaned_text: Cleaned text after stitching punctuation cleanup
+        """
+        for chunk in self.chunks:
+            if chunk.index == index:
+                chunk.cleaned_text = cleaned_text
+                return
 
     def save_full_audio(self, audio: np.ndarray, capture_duration: float) -> None:
         """
@@ -190,6 +211,8 @@ class SessionLogger:
         stitched_transcription: str | None = None,
         extra_metadata: dict[str, Any] | None = None,
         min_duration: float = 0.0,
+        transcription_similarity: float | None = None,
+        transcription_diffs: list[dict[str, str]] | None = None,
     ) -> None:
         """
         Finalize the session and write metadata to disk.
@@ -200,6 +223,8 @@ class SessionLogger:
             stitched_transcription: Optional stitched chunk transcription
             extra_metadata: Optional additional metadata (model, device, VAD params, etc.)
             min_duration: Minimum duration (seconds) required to save logs (default: 0.0 = always save)
+            transcription_similarity: Optional similarity ratio between stitched and complete
+            transcription_diffs: Optional detailed diff snippets
         """
         # Check if session meets minimum duration requirement
         if capture_duration < min_duration:
@@ -225,6 +250,8 @@ class SessionLogger:
             total_chunks=len(self.chunks),
             full_audio_transcription=full_audio_transcription,
             stitched_transcription=stitched_transcription,
+            transcription_similarity=transcription_similarity,
+            transcription_diffs=transcription_diffs,
         )
 
         # Merge extra metadata
@@ -321,6 +348,22 @@ class SessionLogger:
                 f.write("=" * 60 + "\n")
                 f.write(meta.full_audio_transcription + "\n")
 
+            # Add diff information if available
+            if meta.stitched_transcription and meta.full_audio_transcription:
+                f.write("\n" + "=" * 60 + "\n")
+                f.write("TRANSCRIPTION COMPARISON:\n")
+                f.write("=" * 60 + "\n")
+                if meta.transcription_similarity is not None:
+                    f.write(f"Similarity: {meta.transcription_similarity:.2%}\n")
+                if meta.transcription_diffs and len(meta.transcription_diffs) > 0:
+                    f.write(f"Differences found: {len(meta.transcription_diffs)}\n\n")
+                    for i, diff in enumerate(meta.transcription_diffs, 1):
+                        f.write(f"Diff {i} ({diff['tag']}):\n")
+                        f.write(f"  Stitched: {diff['stitched']}\n")
+                        f.write(f"  Complete: {diff['complete']}\n\n")
+                elif meta.transcription_similarity == 1.0:
+                    f.write("Transcriptions match exactly.\n")
+
             f.write("\n" + "=" * 60 + "\n")
             f.write("CHUNKS:\n")
             f.write("=" * 60 + "\n")
@@ -328,7 +371,9 @@ class SessionLogger:
                 f.write(f"\nChunk {chunk.index:03d} [{chunk.start_time:.2f}s - {chunk.end_time:.2f}s]:\n")
                 if chunk.inference_seconds is not None:
                     f.write(f"  Inference: {chunk.inference_seconds:.2f}s\n")
-                f.write(f"  Text: {chunk.text}\n")
+                f.write(f"  Text (original): {chunk.text}\n")
+                if chunk.cleaned_text is not None:
+                    f.write(f"  Text (cleaned): {chunk.cleaned_text}\n")
                 if chunk.audio_filename:
                     f.write(f"  Audio: chunks/{chunk.audio_filename}\n")
 

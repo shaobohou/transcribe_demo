@@ -316,9 +316,45 @@ class ChunkCollectorWithStitching:
         ]
         return " ".join(chunk for chunk in cleaned_chunks if chunk)
 
+    def get_cleaned_chunks(self) -> list[tuple[int, str]]:
+        """
+        Get cleaned text for each chunk.
+
+        Returns:
+            List of (chunk_index, cleaned_text) tuples
+        """
+        cleaned_chunks = [
+            (
+                c.index,
+                self._clean_chunk_text(c.text, is_final_chunk=(i == len(self._chunks) - 1)),
+            )
+            for i, c in enumerate(self._chunks)
+        ]
+        return cleaned_chunks
+
 
 def _normalize_whitespace(text: str) -> str:
     return " ".join(text.split())
+
+
+def compute_transcription_diff(
+    stitched_text: str, complete_text: str
+) -> tuple[float, list[dict[str, str]]]:
+    """
+    Compute diff between stitched and complete transcriptions.
+
+    Returns:
+        Tuple of (similarity_ratio, diff_snippets)
+    """
+    if not (stitched_text.strip() and complete_text.strip()):
+        return (0.0, [])
+
+    stitched_tokens_norm = [norm for _, norm in _tokenize_with_original(stitched_text)]
+    complete_tokens_norm = [norm for _, norm in _tokenize_with_original(complete_text)]
+    similarity = difflib.SequenceMatcher(None, stitched_tokens_norm, complete_tokens_norm).ratio()
+    diff_snippets = _generate_diff_snippets(stitched_text, complete_text, use_color=False)
+
+    return (similarity, diff_snippets)
 
 
 def print_transcription_summary(
@@ -556,6 +592,18 @@ def main(argv: list[str]) -> None:
         finally:
             final = collector.get_final_stitched()
 
+            # Update session logger with cleaned chunk text
+            for chunk_index, cleaned_text in collector.get_cleaned_chunks():
+                session_logger.update_chunk_cleaned_text(chunk_index, cleaned_text)
+
+            # Compute diff if comparison is enabled
+            similarity = None
+            diff_snippets = None
+            if whisper_result is not None and whisper_result.full_audio_transcription:
+                similarity, diff_snippets = compute_transcription_diff(
+                    final, whisper_result.full_audio_transcription
+                )
+
             # Finalize session logging with both transcriptions
             if whisper_result is not None:
                 session_logger.finalize(
@@ -564,6 +612,8 @@ def main(argv: list[str]) -> None:
                     stitched_transcription=final,
                     extra_metadata=whisper_result.metadata,
                     min_duration=FLAGS.min_log_duration,
+                    transcription_similarity=similarity,
+                    transcription_diffs=diff_snippets,
                 )
 
             if FLAGS.compare_transcripts:
@@ -627,6 +677,10 @@ def main(argv: list[str]) -> None:
         # Show final stitched result
         final = collector.get_final_stitched()
 
+        # Update session logger with cleaned chunk text
+        for chunk_index, cleaned_text in collector.get_cleaned_chunks():
+            session_logger.update_chunk_cleaned_text(chunk_index, cleaned_text)
+
         # Finalize session logging with both transcriptions
         if realtime_result is not None:
             # Get full audio transcription for comparison if enabled
@@ -649,12 +703,22 @@ def main(argv: list[str]) -> None:
                         file=sys.stderr,
                     )
 
+            # Compute diff if we have full audio transcription
+            similarity = None
+            diff_snippets = None
+            if full_audio_transcription:
+                similarity, diff_snippets = compute_transcription_diff(
+                    final, full_audio_transcription
+                )
+
             session_logger.finalize(
                 capture_duration=realtime_result.capture_duration,
                 full_audio_transcription=full_audio_transcription,
                 stitched_transcription=final,
                 extra_metadata=realtime_result.metadata,
                 min_duration=FLAGS.min_log_duration,
+                transcription_similarity=similarity,
+                transcription_diffs=diff_snippets,
             )
 
         if FLAGS.compare_transcripts:
