@@ -88,13 +88,14 @@ class FakeAudioCaptureManager:
             if self.stop_event.is_set():
                 break
 
-            # Check max_capture_duration BEFORE feeding the frame
+            # Check max_capture_duration and set flag, but continue feeding
+            # This matches real AudioCaptureManager behavior - it signals the limit
+            # but continues until backend explicitly calls stop()
             if self.max_capture_duration > 0:
                 samples_duration = fed_samples / self.sample_rate
                 if samples_duration >= self.max_capture_duration:
                     self.capture_limit_reached.set()
-                    # Stop feeding audio - the limit has been reached
-                    break
+                    # Don't break - backend needs time to process queued audio
 
             frame = self._audio[start : start + self._frame_size]
             if not frame.size:
@@ -104,14 +105,17 @@ class FakeAudioCaptureManager:
             frame_shaped = frame.reshape(-1, 1) if self.channels == 1 else frame
             self.audio_queue.put(frame_shaped)
 
-            # Collect for get_full_audio
-            if self.collect_full_audio:
+            # Collect for get_full_audio (only up to max_capture_duration)
+            if self.collect_full_audio and not self.capture_limit_reached.is_set():
                 mono = frame_shaped.mean(axis=1).astype(np.float32) if frame_shaped.ndim > 1 else frame_shaped
                 self._full_audio_chunks.append(mono)
 
             fed_samples += len(frame)
 
-            # No delay - tests should run fast
+            # Small delay to allow backend to process frames
+            # Without this, audio feeds too fast and backend doesn't have time to process
+            if self.capture_limit_reached.is_set():
+                time.sleep(0.001)  # 1ms delay after limit reached to allow backend to stop
 
         # Signal end of stream
         self.audio_queue.put(None)
