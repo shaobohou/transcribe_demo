@@ -11,6 +11,7 @@ import pytest
 from transcribe_demo.session_logger import SessionLogger
 from transcribe_demo.session_replay import (
     SessionInfo,
+    is_session_complete,
     list_sessions,
     load_session,
 )
@@ -199,6 +200,9 @@ def test_load_session_missing_audio(temp_session_dir: Path) -> None:
     with open(session_dir / "session.json", "w") as f:
         json.dump(session_data, f)
 
+    # Add completion marker so we get past the completeness check
+    (session_dir / ".complete").touch()
+
     with pytest.raises(FileNotFoundError, match="Audio file not found"):
         load_session(session_dir)
 
@@ -244,3 +248,165 @@ def test_list_sessions_with_corrupted_json(temp_session_dir: Path, create_test_s
     sessions = list_sessions(temp_session_dir)
     assert len(sessions) == 1
     assert sessions[0].session_id == "valid_session"
+
+
+def test_is_session_complete(temp_session_dir: Path, create_test_session) -> None:
+    """Test checking if a session is complete."""
+    session_dir = create_test_session(session_id="complete_session")
+
+    # Session created by fixture should be complete (has .complete marker)
+    assert is_session_complete(session_dir)
+
+    # Create incomplete session (without marker)
+    incomplete_dir = temp_session_dir / "2025-01-01" / "incomplete_session"
+    incomplete_dir.mkdir(parents=True)
+    session_data = {
+        "metadata": {
+            "session_id": "incomplete_session",
+            "timestamp": "2025-01-01T00:00:00",
+            "backend": "whisper",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 10.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(incomplete_dir / "session.json", "w") as f:
+        json.dump(session_data, f)
+
+    # Should be incomplete (no .complete marker)
+    assert not is_session_complete(incomplete_dir)
+
+
+def test_list_sessions_excludes_incomplete_by_default(temp_session_dir: Path, create_test_session) -> None:
+    """Test that incomplete sessions are excluded by default."""
+    # Create complete session
+    create_test_session(session_id="complete_session")
+
+    # Create incomplete session (without .complete marker)
+    incomplete_dir = temp_session_dir / "2025-01-01" / "incomplete_session"
+    incomplete_dir.mkdir(parents=True)
+    session_data = {
+        "metadata": {
+            "session_id": "incomplete_session",
+            "timestamp": "2025-01-01T00:00:00",
+            "backend": "whisper",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 10.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(incomplete_dir / "session.json", "w") as f:
+        json.dump(session_data, f)
+
+    # By default, should only include complete sessions
+    sessions = list_sessions(temp_session_dir)
+    assert len(sessions) == 1
+    assert sessions[0].session_id == "complete_session"
+    assert sessions[0].is_complete
+
+
+def test_list_sessions_includes_incomplete_when_requested(temp_session_dir: Path, create_test_session) -> None:
+    """Test that incomplete sessions can be included with flag."""
+    # Create complete session
+    create_test_session(session_id="complete_session")
+
+    # Create incomplete session (without .complete marker)
+    incomplete_dir = temp_session_dir / "2025-01-01" / "incomplete_session"
+    incomplete_dir.mkdir(parents=True)
+    session_data = {
+        "metadata": {
+            "session_id": "incomplete_session",
+            "timestamp": "2025-01-01T00:00:00",
+            "backend": "whisper",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 10.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(incomplete_dir / "session.json", "w") as f:
+        json.dump(session_data, f)
+
+    # With include_incomplete=True, should include both
+    sessions = list_sessions(temp_session_dir, include_incomplete=True)
+    assert len(sessions) == 2
+
+    # Check that is_complete flag is set correctly
+    complete_sessions = [s for s in sessions if s.is_complete]
+    incomplete_sessions = [s for s in sessions if not s.is_complete]
+    assert len(complete_sessions) == 1
+    assert len(incomplete_sessions) == 1
+    assert complete_sessions[0].session_id == "complete_session"
+    assert incomplete_sessions[0].session_id == "incomplete_session"
+
+
+def test_load_session_rejects_incomplete(temp_session_dir: Path) -> None:
+    """Test that loading incomplete session raises error by default."""
+    # Create incomplete session (without .complete marker)
+    incomplete_dir = temp_session_dir / "2025-01-01" / "incomplete_session"
+    incomplete_dir.mkdir(parents=True)
+
+    # Create valid session.json and audio
+    session_data = {
+        "metadata": {
+            "session_id": "incomplete_session",
+            "timestamp": "2025-01-01T00:00:00",
+            "backend": "whisper",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 5.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(incomplete_dir / "session.json", "w") as f:
+        json.dump(session_data, f)
+
+    # Create fake audio
+    audio = np.random.randn(16000 * 5).astype(np.float32) * 0.1
+    import soundfile as sf
+
+    sf.write(str(incomplete_dir / "full_audio.flac"), audio, 16000, format="FLAC", subtype="PCM_16")
+
+    # Should raise ValueError for incomplete session
+    with pytest.raises(ValueError, match="Session is incomplete"):
+        load_session(incomplete_dir)
+
+
+def test_load_session_allows_incomplete_with_flag(temp_session_dir: Path) -> None:
+    """Test that incomplete sessions can be loaded with allow_incomplete=True."""
+    # Create incomplete session (without .complete marker)
+    incomplete_dir = temp_session_dir / "2025-01-01" / "incomplete_session"
+    incomplete_dir.mkdir(parents=True)
+
+    # Create valid session.json and audio
+    session_data = {
+        "metadata": {
+            "session_id": "incomplete_session",
+            "timestamp": "2025-01-01T00:00:00",
+            "backend": "whisper",
+            "sample_rate": 16000,
+            "channels": 1,
+            "capture_duration": 5.0,
+            "total_chunks": 0,
+        },
+        "chunks": [],
+    }
+    with open(incomplete_dir / "session.json", "w") as f:
+        json.dump(session_data, f)
+
+    # Create fake audio
+    audio = np.random.randn(16000 * 5).astype(np.float32) * 0.1
+    import soundfile as sf
+
+    sf.write(str(incomplete_dir / "full_audio.flac"), audio, 16000, format="FLAC", subtype="PCM_16")
+
+    # Should succeed with allow_incomplete=True
+    loaded = load_session(incomplete_dir, allow_incomplete=True)
+    assert loaded.metadata.session_id == "incomplete_session"
+    assert loaded.audio.size > 0

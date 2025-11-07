@@ -28,6 +28,7 @@ class SessionInfo:
     total_chunks: int
     sample_rate: int
     channels: int
+    is_complete: bool = True  # Whether session was successfully finalized
 
 
 @dataclass
@@ -41,12 +42,27 @@ class LoadedSession:
     sample_rate: int
 
 
+def is_session_complete(session_dir: Path) -> bool:
+    """
+    Check if a session has been successfully finalized.
+
+    Args:
+        session_dir: Path to the session directory
+
+    Returns:
+        True if the session has a completion marker, False otherwise
+    """
+    marker_path = session_dir / ".complete"
+    return marker_path.exists()
+
+
 def list_sessions(
     log_dir: Path | str,
     backend: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
     min_duration: float | None = None,
+    include_incomplete: bool = False,
 ) -> list[SessionInfo]:
     """
     List all logged sessions in a directory.
@@ -57,6 +73,7 @@ def list_sessions(
         start_date: Filter sessions on or after this date (YYYY-MM-DD format)
         end_date: Filter sessions on or before this date (YYYY-MM-DD format)
         min_duration: Filter sessions with duration >= this value (seconds)
+        include_incomplete: If True, include sessions without completion marker (default: False)
 
     Returns:
         List of SessionInfo objects, sorted by timestamp (newest first)
@@ -99,16 +116,25 @@ def list_sessions(
             if min_duration is not None and duration < min_duration:
                 continue
 
+            # Check if session is complete
+            session_dir = session_json.parent
+            is_complete = is_session_complete(session_dir)
+
+            # Skip incomplete sessions unless explicitly requested
+            if not is_complete and not include_incomplete:
+                continue
+
             # Create SessionInfo
             info = SessionInfo(
-                session_path=session_json.parent,
-                session_id=metadata.get("session_id", session_json.parent.name),
+                session_path=session_dir,
+                session_id=metadata.get("session_id", session_dir.name),
                 timestamp=session_timestamp,
                 backend=metadata.get("backend", "unknown"),
                 capture_duration=duration,
                 total_chunks=metadata.get("total_chunks", 0),
                 sample_rate=metadata.get("sample_rate", 16000),
                 channels=metadata.get("channels", 1),
+                is_complete=is_complete,
             )
             sessions.append(info)
 
@@ -121,25 +147,34 @@ def list_sessions(
     return sessions
 
 
-def load_session(session_path: Path | str) -> LoadedSession:
+def load_session(session_path: Path | str, allow_incomplete: bool = False) -> LoadedSession:
     """
     Load a session from disk.
 
     Args:
         session_path: Path to the session directory (containing session.json)
+        allow_incomplete: If False, raise error for incomplete sessions (default: False)
 
     Returns:
         LoadedSession object with metadata, chunks, and audio
 
     Raises:
         FileNotFoundError: If session.json or audio file doesn't exist
-        ValueError: If session data is invalid
+        ValueError: If session data is invalid or incomplete
     """
     session_dir = Path(session_path)
     session_json = session_dir / "session.json"
 
     if not session_json.exists():
         raise FileNotFoundError(f"Session file not found: {session_json}")
+
+    # Check if session is complete
+    if not allow_incomplete and not is_session_complete(session_dir):
+        raise ValueError(
+            f"Session is incomplete (missing .complete marker): {session_dir}\n"
+            f"This may indicate the session was interrupted or not properly finalized.\n"
+            f"Use allow_incomplete=True to load anyway."
+        )
 
     # Load session data
     with open(session_json, encoding="utf-8") as f:
@@ -482,8 +517,9 @@ def print_session_list(sessions: list[SessionInfo], verbose: bool = False) -> No
         for session in sessions:
             duration_str = f"{session.capture_duration:.1f}s"
             chunks_str = f"{session.total_chunks} chunks"
+            status_marker = "" if session.is_complete else " [INCOMPLETE]"
             print(
-                f"  {session.session_id:40s} | {session.backend:8s} | {duration_str:8s} | {chunks_str}"
+                f"  {session.session_id:40s} | {session.backend:8s} | {duration_str:8s} | {chunks_str}{status_marker}"
             )
 
 

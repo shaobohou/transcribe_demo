@@ -19,6 +19,20 @@ uv run transcribe-session --command=retranscribe \
   --vad_aggressiveness=3
 ```
 
+## Session Completion Marker
+
+All successfully finalized sessions contain a `.complete` marker file. This file is created as the last step of session finalization and indicates that:
+- All audio files have been written
+- All metadata has been saved
+- The session was not interrupted
+
+By default, the session replay utility only lists and loads complete sessions (those with the `.complete` marker). This protects against:
+- Incomplete sessions from crashes or interruptions
+- Partially written session data
+- Corrupted session directories
+
+To work with incomplete sessions, use the `--include_incomplete` flag for listing or `--allow_incomplete` flag for loading/retranscribing.
+
 ## Commands
 
 ### `list` - List All Sessions
@@ -51,6 +65,12 @@ uv run transcribe-session --command=list --min_duration=60.0
 uv run transcribe-session --command=list --verbose
 ```
 
+**Include incomplete sessions:**
+```bash
+# Show all sessions including those without completion marker
+uv run transcribe-session --command=list --include_incomplete
+```
+
 **Example output (compact):**
 ```
 Found 5 session(s):
@@ -58,7 +78,10 @@ Found 5 session(s):
   session_143052_whisper                   | whisper  | 45.2s    | 8 chunks
   session_142830_realtime                  | realtime | 30.1s    | 15 chunks
   session_141500_whisper                   | whisper  | 120.5s   | 20 chunks
+  session_140000_whisper                   | whisper  | 15.2s    | 3 chunks [INCOMPLETE]
 ```
+
+Note: Sessions marked `[INCOMPLETE]` are missing the `.complete` marker and may be corrupted or partially written.
 
 ### `show` - Show Session Details
 
@@ -67,6 +90,14 @@ Display detailed information about a specific session.
 **Usage:**
 ```bash
 uv run transcribe-session --command=show --session_path=session_logs/2025-11-07/session_143052_whisper
+```
+
+**Load incomplete session:**
+```bash
+# Force loading session without completion marker
+uv run transcribe-session --command=show \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --allow_incomplete
 ```
 
 **Example output:**
@@ -166,12 +197,14 @@ uv run transcribe-session --command=retranscribe \
 | `--end_date` | None | Filter sessions on or before this date (YYYY-MM-DD) |
 | `--min_duration` | None | Filter sessions with duration >= this value (seconds) |
 | `--verbose` | False | Show detailed information |
+| `--include_incomplete` | False | Include sessions without completion marker |
 
 ### Show/Retranscribe Command Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--session_path` | (required) | Path to session directory |
+| `--allow_incomplete` | False | Allow loading sessions without completion marker |
 
 ### Retranscribe Command Flags
 
@@ -270,20 +303,32 @@ from transcribe_demo.session_replay import (
     retranscribe_session,
 )
 
-# List sessions
+# List sessions (only complete ones by default)
 sessions = list_sessions(
     log_dir="./session_logs",
     backend="whisper",
     min_duration=10.0,
 )
 
+# Include incomplete sessions
+all_sessions = list_sessions(
+    log_dir="./session_logs",
+    include_incomplete=True,
+)
+
 for session in sessions:
     print(f"{session.session_id}: {session.capture_duration:.1f}s")
 
-# Load a specific session
+# Load a specific session (must be complete)
 loaded = load_session("session_logs/2025-11-07/session_143052_whisper")
 print(f"Loaded session with {loaded.metadata.total_chunks} chunks")
 print(f"Audio duration: {loaded.metadata.capture_duration:.2f}s")
+
+# Load incomplete session (use with caution)
+incomplete_loaded = load_session(
+    "session_logs/2025-11-07/session_incomplete",
+    allow_incomplete=True,
+)
 
 # Retranscribe with different settings
 result_path = retranscribe_session(
@@ -307,6 +352,7 @@ Retranscribed sessions are saved in the same format as original sessions:
 session_logs/
 └── YYYY-MM-DD/
     └── retranscribe_HHMMSS_<backend>_from_<original_session_id>/
+        ├── .complete              # Completion marker
         ├── session.json           # New metadata and chunks
         ├── full_audio.flac        # Same audio as original
         ├── chunks/                # New chunk audio files

@@ -59,12 +59,22 @@ flags.DEFINE_boolean(
     False,
     "Show detailed information (for list command)",
 )
+flags.DEFINE_boolean(
+    "include_incomplete",
+    False,
+    "Include incomplete sessions (sessions without .complete marker, for list command)",
+)
 
 # Show/retranscribe command flags
 flags.DEFINE_string(
     "session_path",
     None,
     "Path to session directory (for show/retranscribe commands)",
+)
+flags.DEFINE_boolean(
+    "allow_incomplete",
+    False,
+    "Allow loading incomplete sessions (for show/retranscribe commands)",
 )
 
 # Retranscribe command flags
@@ -133,6 +143,7 @@ def main(argv: list[str]) -> None:
             start_date=FLAGS.start_date,
             end_date=FLAGS.end_date,
             min_duration=FLAGS.min_duration,
+            include_incomplete=FLAGS.include_incomplete,
         )
         print_session_list(sessions, verbose=FLAGS.verbose)
 
@@ -143,9 +154,9 @@ def main(argv: list[str]) -> None:
             sys.exit(1)
 
         try:
-            loaded = load_session(FLAGS.session_path)
+            loaded = load_session(FLAGS.session_path, allow_incomplete=FLAGS.allow_incomplete)
             print_session_details(loaded)
-        except FileNotFoundError as e:
+        except (FileNotFoundError, ValueError) as e:
             print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(1)
 
@@ -157,7 +168,7 @@ def main(argv: list[str]) -> None:
 
         try:
             # Load session
-            loaded = load_session(FLAGS.session_path)
+            loaded = load_session(FLAGS.session_path, allow_incomplete=FLAGS.allow_incomplete)
 
             # Build backend kwargs
             backend_kwargs = {

@@ -8,6 +8,7 @@ This document describes the complete format of session logs created by transcrib
 session_logs/
 └── YYYY-MM-DD/                           # Organized by date
     └── session_HHMMSS_<backend>/         # Timestamp + backend (whisper/realtime)
+        ├── .complete                      # Completion marker (indicates successful finalization)
         ├── session.json                   # Complete structured metadata (machine-readable)
         ├── full_audio.wav                 # Complete raw audio (mono, 16kHz, int16)
         ├── README.txt                     # Human-readable summary
@@ -16,6 +17,14 @@ session_logs/
             ├── chunk_001.wav              # Audio for chunk 1
             └── ...
 ```
+
+**Completion Marker (`.complete`):**
+This hidden file is created as the last step of session finalization. Its presence guarantees that:
+- All audio files have been written successfully
+- All metadata has been saved to disk
+- The session was not interrupted or crashed
+
+The session replay utility uses this marker to filter out incomplete or corrupted sessions by default.
 
 ## session.json Format
 
