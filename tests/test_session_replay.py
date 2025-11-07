@@ -14,6 +14,7 @@ from transcribe_demo.session_replay import (
     is_session_complete,
     list_sessions,
     load_session,
+    retranscribe_session,
 )
 
 
@@ -410,3 +411,205 @@ def test_load_session_allows_incomplete_with_flag(temp_session_dir: Path) -> Non
     loaded = load_session(incomplete_dir, allow_incomplete=True)
     assert loaded.metadata.session_id == "incomplete_session"
     assert loaded.audio.size > 0
+
+
+def test_retranscribe_session_whisper(temp_session_dir: Path, create_test_session, monkeypatch) -> None:
+    """Test retranscribing a session with Whisper backend."""
+    # Create a test session
+    session_dir = create_test_session(session_id="original_session", duration=5.0, chunks=2)
+
+    # Load the session
+    loaded = load_session(session_dir)
+
+    # Mock the backend runner to avoid actually running Whisper
+    from dataclasses import dataclass
+
+    @dataclass
+    class FakeWhisperResult:
+        capture_duration: float
+        full_audio_transcription: str | None
+        metadata: dict
+
+    called_with = {}
+
+    def fake_whisper_runner(**kwargs):
+        called_with.update(kwargs)
+        # Call the chunk consumer with some fake chunks
+        if "chunk_consumer" in kwargs:
+            consumer = kwargs["chunk_consumer"]
+            consumer(0, "Retranscribed chunk 0.", 0.0, 2.5, 0.1)
+            consumer(1, "Retranscribed chunk 1.", 2.5, 5.0, 0.1)
+        # Also log chunks if session_logger is provided
+        if "session_logger" in kwargs:
+            session_logger = kwargs["session_logger"]
+            session_logger.log_chunk(0, "Retranscribed chunk 0.", 0.0, 2.5, 0.1)
+            session_logger.log_chunk(1, "Retranscribed chunk 1.", 2.5, 5.0, 0.1)
+        return FakeWhisperResult(
+            capture_duration=5.0,
+            full_audio_transcription=None,
+            metadata={"model": "turbo", "device": "cpu"},
+        )
+
+    monkeypatch.setattr("transcribe_demo.whisper_backend.run_whisper_transcriber", fake_whisper_runner)
+
+    # Retranscribe
+    output_dir = temp_session_dir / "retranscriptions"
+    result_path = retranscribe_session(
+        loaded_session=loaded,
+        output_dir=output_dir,
+        backend="whisper",
+        backend_kwargs={"model": "small", "vad_aggressiveness": 3},
+    )
+
+    # Verify the backend was called
+    assert "model_name" in called_with
+    assert called_with["model_name"] == "small"
+    assert called_with["vad_aggressiveness"] == 3
+    assert called_with["sample_rate"] == 16000
+
+    # Verify the new session was created
+    assert result_path.exists()
+    assert (result_path / "session.json").exists()
+    assert (result_path / ".complete").exists()
+
+    # Load and verify the retranscribed session
+    retranscribed = load_session(result_path)
+    assert "retranscribe_" in retranscribed.metadata.session_id
+    assert "from_original_session" in retranscribed.metadata.session_id
+    assert retranscribed.metadata.backend == "whisper"
+    assert retranscribed.metadata.total_chunks == 2
+
+
+def test_retranscribe_session_realtime(temp_session_dir: Path, create_test_session, monkeypatch) -> None:
+    """Test retranscribing a session with Realtime backend."""
+    # Create a test session
+    session_dir = create_test_session(session_id="original_session", duration=5.0, chunks=2)
+
+    # Load the session
+    loaded = load_session(session_dir)
+
+    # Mock the backend runner
+    from dataclasses import dataclass
+
+    @dataclass
+    class FakeRealtimeResult:
+        capture_duration: float
+        metadata: dict
+
+    called_with = {}
+
+    def fake_realtime_runner(**kwargs):
+        called_with.update(kwargs)
+        # Call the chunk consumer with some fake chunks
+        if "chunk_consumer" in kwargs:
+            consumer = kwargs["chunk_consumer"]
+            consumer(0, "Realtime chunk 0.", 0.0, 2.0, None)
+            consumer(1, "Realtime chunk 1.", 2.0, 4.0, None)
+        return FakeRealtimeResult(
+            capture_duration=5.0, metadata={"realtime_model": "gpt-realtime-mini"}
+        )
+
+    monkeypatch.setattr("transcribe_demo.realtime_backend.run_realtime_transcriber", fake_realtime_runner)
+
+    # Retranscribe with API key
+    output_dir = temp_session_dir / "retranscriptions"
+    result_path = retranscribe_session(
+        loaded_session=loaded,
+        output_dir=output_dir,
+        backend="realtime",
+        backend_kwargs={"api_key": "fake_key", "realtime_model": "gpt-realtime-mini"},
+    )
+
+    # Verify the backend was called
+    assert "api_key" in called_with
+    assert called_with["api_key"] == "fake_key"
+    assert called_with["model"] == "gpt-realtime-mini"
+    assert called_with["sample_rate"] == 16000
+
+    # Verify the new session was created
+    assert result_path.exists()
+    assert (result_path / "session.json").exists()
+    assert (result_path / ".complete").exists()
+
+    # Load and verify the retranscribed session
+    retranscribed = load_session(result_path)
+    assert "retranscribe_" in retranscribed.metadata.session_id
+    assert "from_original_session" in retranscribed.metadata.session_id
+    assert retranscribed.metadata.backend == "realtime"
+
+
+def test_retranscribe_session_invalid_backend(temp_session_dir: Path, create_test_session) -> None:
+    """Test that invalid backend raises error."""
+    session_dir = create_test_session(session_id="test_session")
+    loaded = load_session(session_dir)
+
+    with pytest.raises(ValueError, match="Invalid backend"):
+        retranscribe_session(
+            loaded_session=loaded,
+            output_dir=temp_session_dir / "retranscriptions",
+            backend="invalid_backend",
+        )
+
+
+def test_retranscribe_session_realtime_missing_api_key(temp_session_dir: Path, create_test_session, monkeypatch) -> None:
+    """Test that realtime backend without API key raises error."""
+    session_dir = create_test_session(session_id="test_session")
+    loaded = load_session(session_dir)
+
+    # Ensure OPENAI_API_KEY is not set
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    # Mock the realtime runner to prevent actual execution
+    def fake_realtime_runner(**kwargs):
+        raise ValueError("Should not be called")
+
+    monkeypatch.setattr("transcribe_demo.realtime_backend.run_realtime_transcriber", fake_realtime_runner)
+
+    with pytest.raises(ValueError, match="OpenAI API key required"):
+        retranscribe_session(
+            loaded_session=loaded,
+            output_dir=temp_session_dir / "retranscriptions",
+            backend="realtime",
+            backend_kwargs={},  # No API key provided
+        )
+
+
+def test_retranscribe_session_preserves_audio(temp_session_dir: Path, create_test_session, monkeypatch) -> None:
+    """Test that retranscription preserves the original audio."""
+    # Create a test session with known audio
+    session_dir = create_test_session(session_id="test_session", duration=3.0)
+    loaded = load_session(session_dir)
+    original_audio = loaded.audio.copy()
+
+    # Mock the backend runner
+    from dataclasses import dataclass
+
+    @dataclass
+    class FakeWhisperResult:
+        capture_duration: float
+        full_audio_transcription: str | None
+        metadata: dict
+
+    def fake_whisper_runner(**kwargs):
+        if "chunk_consumer" in kwargs:
+            consumer = kwargs["chunk_consumer"]
+            consumer(0, "Test chunk.", 0.0, 3.0, 0.1)
+        return FakeWhisperResult(
+            capture_duration=3.0, full_audio_transcription=None, metadata={"model": "turbo"}
+        )
+
+    monkeypatch.setattr("transcribe_demo.whisper_backend.run_whisper_transcriber", fake_whisper_runner)
+
+    # Retranscribe
+    output_dir = temp_session_dir / "retranscriptions"
+    result_path = retranscribe_session(
+        loaded_session=loaded,
+        output_dir=output_dir,
+        backend="whisper",
+    )
+
+    # Load the retranscribed session and verify audio is the same
+    retranscribed = load_session(result_path)
+    assert retranscribed.audio.shape == original_audio.shape
+    # Audio should be very similar (allowing for minor numerical differences from saving/loading)
+    assert np.allclose(retranscribed.audio, original_audio, rtol=1e-4, atol=1e-6)
