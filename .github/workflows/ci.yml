@@ -35,7 +35,9 @@ jobs:
         uv sync --no-install-package torch
 
     - name: Run tests
-      run: uv run pytest
+      # Skip integration tests in CI due to threading issues with mocked audio devices
+      # Integration tests should be run locally with real audio hardware
+      run: uv run pytest -m "not integration"
 
     - name: Run type checker
       run: uv run pyright
