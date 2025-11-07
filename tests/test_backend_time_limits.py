@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from transcribe_demo import audio_capture, realtime_backend, whisper_backend
+from transcribe_demo import realtime_backend, whisper_backend
 from transcribe_demo.session_logger import SessionLogger
 
 
