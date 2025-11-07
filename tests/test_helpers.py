@@ -40,18 +40,23 @@ class FakeAudioCaptureManager:
     def _feed_audio(self) -> None:
         """Feed test audio into queue in a background thread."""
         fed_samples = 0
+        limit_reached_this_iteration = False
         for start in range(0, len(self._audio), self._frame_size):
             if self.stop_event.is_set():
                 break
 
-            # Check max_capture_duration and set flag, but continue feeding
-            # This matches real AudioCaptureManager behavior - it signals the limit
-            # but continues until backend explicitly calls stop()
-            if self.max_capture_duration > 0:
+            # Check max_capture_duration before feeding frame
+            # Match real AudioCaptureManager: stop feeding after limit is reached
+            if self.max_capture_duration > 0 and not self.capture_limit_reached.is_set():
                 samples_duration = fed_samples / self.sample_rate
                 if samples_duration >= self.max_capture_duration:
                     self.capture_limit_reached.set()
-                    # Don't break - backend needs time to process queued audio
+                    limit_reached_this_iteration = True
+                    # Signal end of stream with None sentinel (matches real behavior)
+                    self.audio_queue.put(None)
+                    # Stop further feeding (real AudioCaptureManager stops immediately)
+                    self.stop()
+                    break
 
             frame = self._audio[start : start + self._frame_size]
             if not frame.size:
@@ -62,25 +67,20 @@ class FakeAudioCaptureManager:
             self.audio_queue.put(frame_shaped)
 
             # Collect for get_full_audio (only up to max_capture_duration)
-            if self.collect_full_audio and not self.capture_limit_reached.is_set():
+            if self.collect_full_audio:
                 mono = frame_shaped.mean(axis=1).astype(np.float32) if frame_shaped.ndim > 1 else frame_shaped
                 self._full_audio_chunks.append(mono)
 
             fed_samples += len(frame)
 
-            # Small delay to allow backend to process frames
-            # Without this, audio feeds too fast and backend doesn't have time to process
-            if self.capture_limit_reached.is_set():
-                time.sleep(0.001)  # 1ms delay after limit reached to allow backend to stop
-
-        # Signal end of stream
-        self.audio_queue.put(None)
-        # Give backend time to process queued audio before signaling stop
-        # This is critical for realtime backend which processes audio asynchronously
-        if not self.capture_limit_reached.is_set():
+        # Signal end of stream if we finished naturally (not due to timeout)
+        if not limit_reached_this_iteration and not self.stop_event.is_set():
+            self.audio_queue.put(None)
+            # Give backend time to process queued audio before signaling stop
+            # This is critical for realtime backend which processes audio asynchronously
             time.sleep(0.5)  # Allow async processing to complete
-        # Set stop_event so wait_until_stopped() can return
-        self.stop_event.set()
+            # Set stop_event so wait_until_stopped() can return
+            self.stop_event.set()
 
     def start(self) -> None:
         """Start feeding audio in background thread."""
