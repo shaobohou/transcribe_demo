@@ -72,15 +72,16 @@ class FakeAudioCaptureManager:
                     limit_reached_this_iteration = True
                     # Signal end of stream with None sentinel (matches real behavior)
                     self.audio_queue.put(None)
-                    # Stop further feeding (real AudioCaptureManager stops immediately)
-                    self.stop()
+                    # Don't call self.stop() here - let backend process queued audio
                     break
 
         # Signal end of stream if we finished naturally (not due to timeout)
         if not limit_reached_this_iteration and not self.stop_event.is_set():
             self.audio_queue.put(None)
-            # Give backend time to process queued audio before signaling stop
-            # This is critical for realtime backend which processes audio asynchronously
+
+        # Give backend time to process queued audio before signaling stop
+        # This is critical for both backends to process audio asynchronously
+        if not self.stop_event.is_set():
             time.sleep(0.5)  # Allow async processing to complete
             # Set stop_event so wait_until_stopped() can return
             self.stop_event.set()
