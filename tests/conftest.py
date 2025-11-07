@@ -13,6 +13,11 @@ from pathlib import Path
 
 import pytest
 
+# Add tests directory to sys.path so test_helpers can be imported
+_tests_dir = Path(__file__).parent
+if str(_tests_dir) not in sys.path:
+    sys.path.insert(0, str(_tests_dir))
+
 # Mock sounddevice BEFORE any test modules are imported
 # This must happen at module level (not in a fixture) because pytest imports
 # test modules during collection, before any fixtures run. When test modules
