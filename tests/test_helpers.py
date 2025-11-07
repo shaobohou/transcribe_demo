@@ -45,8 +45,26 @@ class FakeAudioCaptureManager:
             if self.stop_event.is_set():
                 break
 
-            # Check max_capture_duration before feeding frame
-            # Match real AudioCaptureManager: stop feeding after limit is reached
+            frame = self._audio[start : start + self._frame_size]
+            if not frame.size:
+                continue
+
+            # Reshape to match expected format (samples, channels)
+            frame_shaped = frame.reshape(-1, 1) if self.channels == 1 else frame
+
+            # Put frame in queue FIRST (matches real AudioCaptureManager behavior)
+            self.audio_queue.put(frame_shaped)
+
+            # Collect for get_full_audio
+            if self.collect_full_audio:
+                mono = frame_shaped.mean(axis=1).astype(np.float32) if frame_shaped.ndim > 1 else frame_shaped
+                self._full_audio_chunks.append(mono)
+
+            # Track samples AFTER putting in queue
+            fed_samples += len(frame)
+
+            # Check max_capture_duration AFTER feeding frame (matches real behavior)
+            # The chunk that causes timeout IS included in the queue
             if self.max_capture_duration > 0 and not self.capture_limit_reached.is_set():
                 samples_duration = fed_samples / self.sample_rate
                 if samples_duration >= self.max_capture_duration:
@@ -57,21 +75,6 @@ class FakeAudioCaptureManager:
                     # Stop further feeding (real AudioCaptureManager stops immediately)
                     self.stop()
                     break
-
-            frame = self._audio[start : start + self._frame_size]
-            if not frame.size:
-                continue
-
-            # Reshape to match expected format (samples, channels)
-            frame_shaped = frame.reshape(-1, 1) if self.channels == 1 else frame
-            self.audio_queue.put(frame_shaped)
-
-            # Collect for get_full_audio (only up to max_capture_duration)
-            if self.collect_full_audio:
-                mono = frame_shaped.mean(axis=1).astype(np.float32) if frame_shaped.ndim > 1 else frame_shaped
-                self._full_audio_chunks.append(mono)
-
-            fed_samples += len(frame)
 
         # Signal end of stream if we finished naturally (not due to timeout)
         if not limit_reached_this_iteration and not self.stop_event.is_set():
