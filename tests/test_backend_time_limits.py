@@ -73,6 +73,76 @@ def test_whisper_backend_respects_time_limit(monkeypatch):
     assert result.full_audio_transcription is not None
 
 
+def test_whisper_backend_transcribes_incomplete_chunk_on_timeout(monkeypatch):
+    """Test that incomplete chunks are transcribed immediately when time limit is hit."""
+    audio, sample_rate = generate_synthetic_audio(duration_seconds=5.0)
+    # Set time limit to cut off mid-speech, creating an incomplete final chunk
+    time_limit = 2.3  # This should create a final chunk < 2s (min_chunk_size)
+
+    chunks: list[dict] = []
+    transcribed_audio_durations: list[float] = []
+
+    class DummyModel:
+        def transcribe(self, audio_chunk: np.ndarray, **kwargs):
+            # Track the duration of each transcribed audio chunk
+            duration = len(audio_chunk) / sample_rate
+            transcribed_audio_durations.append(duration)
+            return {"text": f"Chunk {len(chunks)} (duration: {duration:.2f}s)"}
+
+    dummy_model = DummyModel()
+
+    def fake_load_whisper_model(**kwargs):
+        return dummy_model, "cpu", False
+
+    monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
+
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
+    )
+
+    def capture_chunk(index, text, start, end, inference_seconds):
+        chunks.append({"index": index, "text": text, "start": start, "end": end})
+
+    result = whisper_backend.run_whisper_transcriber(
+        model_name="fixture",
+        sample_rate=sample_rate,
+        channels=1,
+        temp_file=None,
+        ca_cert=None,
+        insecure_downloads=False,
+        device_preference="cpu",
+        require_gpu=False,
+        chunk_consumer=capture_chunk,
+        vad_aggressiveness=0,  # Low aggressiveness to ensure speech detection
+        vad_min_silence_duration=0.5,  # Long silence requirement - won't be met before timeout
+        vad_min_speech_duration=0.05,
+        vad_speech_pad_duration=0.0,
+        max_chunk_duration=10.0,  # High value - won't trigger before timeout
+        compare_transcripts=True,
+        max_capture_duration=time_limit,
+        language="en",
+    )
+
+    # Verify that we got at least one chunk
+    assert len(chunks) > 0, "Expected at least one chunk to be transcribed"
+
+    # Verify that the last chunk is incomplete (< 2s which is min_chunk_size)
+    # Note: Some chunks might be padded, so we check the actual transcribed audio durations
+    assert len(transcribed_audio_durations) > 0, "Expected at least one transcribed audio chunk"
+
+    # At least one chunk should be less than min_chunk_size (2.0s), demonstrating
+    # that we transcribe incomplete chunks on timeout
+    has_incomplete_chunk = any(duration < 2.0 for duration in transcribed_audio_durations)
+    assert has_incomplete_chunk, (
+        f"Expected at least one incomplete chunk (< 2.0s), "
+        f"but all chunks were >= 2.0s: {transcribed_audio_durations}"
+    )
+
+    # Verify capture stopped around the time limit
+    assert result.capture_duration <= time_limit * 1.5  # Allow 50% margin
+
+
 def test_whisper_backend_logs_session(monkeypatch, temp_session_dir):
     """Test that Whisper backend properly logs session with all metadata."""
     audio, sample_rate = generate_synthetic_audio(duration_seconds=3.0)

@@ -361,19 +361,18 @@ def run_whisper_transcriber(
                 should_transcribe = False
                 force_flush = force_transcribe_now
                 max_duration_exceeded = False
-                if buffer.size >= min_chunk_size and speech_frames >= min_speech_frames:
+
+                # When time limit is reached, transcribe immediately without waiting for VAD pause
+                if audio_capture.capture_limit_reached.is_set() and buffer.size > 0:
+                    should_transcribe = True
+                    force_flush = True
+                # Normal VAD-based chunking
+                elif buffer.size >= min_chunk_size and speech_frames >= min_speech_frames:
                     if silence_frames >= silence_frames_threshold:
                         should_transcribe = True
                     elif buffer.size >= max_chunk_size:
                         should_transcribe = True
                         max_duration_exceeded = True
-
-                if audio_capture.capture_limit_reached.is_set():
-                    if buffer.size >= min_chunk_size or (
-                        buffer.size > 0 and (audio_capture.audio_queue.empty() or force_transcribe_now)
-                    ):
-                        should_transcribe = True
-                        force_flush = True
 
                 if force_transcribe_now:
                     should_transcribe = True

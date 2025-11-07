@@ -141,6 +141,7 @@ def transcribe_full_audio_realtime(
 
             cursor = 0
             total_samples = audio.size
+            chunks_sent = 0
             while cursor < total_samples:
                 window = audio[cursor : cursor + chunk_size]
                 cursor += chunk_size
@@ -154,6 +155,12 @@ def transcribe_full_audio_realtime(
                         "audio": payload,
                     }
                 )
+                chunks_sent += 1
+
+            # Only commit if we actually sent audio chunks
+            if chunks_sent == 0:
+                return ""
+
             await send_json({"type": "input_audio_buffer.commit"})
 
             while True:

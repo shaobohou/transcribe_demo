@@ -232,6 +232,25 @@ The Whisper backend uses WebRTC Voice Activity Detection (VAD) to intelligently 
 
 This approach minimizes transcription errors by chunking at natural pauses instead of arbitrary time intervals.
 
+### Timeout Behavior
+
+**When the time limit is reached, capture stops immediately and all buffered audio is transcribed, including incomplete chunks.**
+
+This ensures zero data loss—the chunk that pushes over the timeout limit is included in the transcription:
+
+```
+Time:  2.0s         2.1s         2.2s         2.3s (timeout)   2.4s
+       |            |            |            |                |
+Device: [chunk1] -> [chunk2] -> [chunk3] -> [chunk4]         [chunk5]
+       |            |            |            |                |
+Queue:  [put]       [put]       [put]       [put+None]       [rejected]
+       |            |            |            |                |
+Buffer: [add]       [add]       [add]       [add]
+                                             [TRANSCRIBE ALL]
+```
+
+Audio arriving after the timeout (chunk5) is discarded, but all previously captured audio is transcribed immediately without waiting for VAD silence detection or minimum chunk size requirements.
+
 ### Output Format
 
 Each chunk displays:
