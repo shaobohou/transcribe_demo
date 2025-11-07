@@ -13,6 +13,31 @@ uv run pytest                     # Run all tests (pre-commit hook enforces)
 uv run pytest tests/test_vad.py   # Run VAD tests only
 ```
 
+## Development Workflow
+
+### Branch Strategy
+**YOU MUST always develop on a feature branch** - NEVER commit directly to `main`.
+
+**Creating a feature branch:**
+```bash
+git checkout -b feature/descriptive-name
+# or
+git checkout -b fix/bug-description
+```
+
+**Branch naming conventions:**
+- Feature: `feature/descriptive-name`
+- Bug fix: `fix/bug-description`
+- Refactor: `refactor/what-you-refactor`
+
+**Before creating a PR:**
+1. Ensure all tests pass: `uv run pytest`
+2. Type checking passes: `uv run pyright`
+3. Linting passes: `uv run ruff check`
+4. Commit and push your branch: `git push -u origin your-branch-name`
+
+**CI/CD:** GitHub Actions runs all checks automatically on PRs. All checks must pass before merge.
+
 ## Key Files
 
 - **main.py**: `parse_args()` for CLI changes, `ChunkCollectorWithStitching` handles stitching logic

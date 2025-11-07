@@ -5,9 +5,9 @@ import wave
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from transcribe_demo import whisper_backend
-from transcribe_demo import audio_capture
 
 
 def _load_fixture() -> tuple[np.ndarray, int]:
@@ -22,6 +22,7 @@ def _load_fixture() -> tuple[np.ndarray, int]:
     return audio / 32768.0, rate
 
 
+@pytest.mark.integration
 def test_run_whisper_transcriber_processes_audio(monkeypatch):
     audio, sample_rate = _load_fixture()
     chunks: list[dict[str, float | str | None]] = []
@@ -71,6 +72,10 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
                 self._full_audio_chunks.append(frame.copy())
             # Signal end of stream
             self.audio_queue.put(None)
+            # Give backend time to start processing before signaling stop
+            import time
+            time.sleep(0.5)
+            self.stop()
 
         def start(self):
             # Start feeding audio in background thread
@@ -96,7 +101,7 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
         def get_capture_duration(self):
             return len(audio) / sample_rate
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", FakeAudioCaptureManager)
+    monkeypatch.setattr(whisper_backend, "AudioCaptureManager", FakeAudioCaptureManager)
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append(

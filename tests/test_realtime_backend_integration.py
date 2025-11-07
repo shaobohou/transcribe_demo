@@ -10,7 +10,6 @@ import numpy as np
 import pytest
 
 from transcribe_demo import realtime_backend
-from transcribe_demo import audio_capture
 
 
 def _load_fixture() -> tuple[np.ndarray, int]:
@@ -62,6 +61,10 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
                 self._full_audio_chunks.append(mono)
             # Signal end of stream
             self.audio_queue.put(None)
+            # Give backend time to start processing before signaling stop
+            import time
+            time.sleep(0.5)
+            self.stop()
 
         def start(self):
             # Start feeding audio in background thread
@@ -87,7 +90,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
         def get_capture_duration(self):
             return len(audio) / sample_rate
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", FakeAudioCaptureManager)
+    monkeypatch.setattr(realtime_backend, "AudioCaptureManager", FakeAudioCaptureManager)
 
     class FakeWebSocket:
         def __init__(self, events):
