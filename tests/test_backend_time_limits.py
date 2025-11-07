@@ -115,6 +115,8 @@ class FakeAudioCaptureManager:
 
         # Signal end of stream
         self.audio_queue.put(None)
+        # Set stop_event so wait_until_stopped() can return
+        self.stop_event.set()
 
     def start(self) -> None:
         """Start feeding audio in background thread."""
