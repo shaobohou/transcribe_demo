@@ -28,12 +28,8 @@ jobs:
       with:
         version: "latest"
 
-    - name: Install dependencies (CPU-only PyTorch)
-      run: |
-        python -m venv .venv
-        source .venv/bin/activate
-        pip install torch --index-url https://download.pytorch.org/whl/cpu
-        uv pip install -e ".[dev]"
+    - name: Install dependencies
+      run: uv sync
 
     - name: Run tests
       # Skip integration tests in CI due to threading issues with mocked audio devices
