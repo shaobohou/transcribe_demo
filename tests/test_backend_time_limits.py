@@ -88,13 +88,13 @@ class FakeAudioCaptureManager:
             if self.stop_event.is_set():
                 break
 
-            # Check max_capture_duration
+            # Check max_capture_duration BEFORE feeding the frame
             if self.max_capture_duration > 0:
                 samples_duration = fed_samples / self.sample_rate
                 if samples_duration >= self.max_capture_duration:
                     self.capture_limit_reached.set()
-                    # Don't break immediately - let backend finish processing
-                    # Backend will call stop() when it sees capture_limit_reached
+                    # Stop feeding audio - the limit has been reached
+                    break
 
             frame = self._audio[start : start + self._frame_size]
             if not frame.size:
@@ -301,7 +301,7 @@ def test_whisper_backend_logs_session(monkeypatch):
         session_dir = session_logger.session_dir
         assert session_dir.exists()
         assert (session_dir / "session.json").exists()
-        assert (session_dir / "full_audio.wav").exists()
+        assert (session_dir / "full_audio.flac").exists()
         assert (session_dir / "README.txt").exists()
 
         # Verify session.json contains correct data
@@ -534,7 +534,7 @@ def test_realtime_backend_logs_session(monkeypatch):
         session_dir = session_logger.session_dir
         assert session_dir.exists()
         assert (session_dir / "session.json").exists()
-        assert (session_dir / "full_audio.wav").exists()
+        assert (session_dir / "full_audio.flac").exists()
         assert (session_dir / "README.txt").exists()
 
         # Verify session.json contains correct data
