@@ -123,11 +123,10 @@ class SessionLogger:
         # Organize sessions by date: output_dir/YYYY-MM-DD/session_HHMMSS_backend/
         date_dir = output_dir / date_str
         self.session_dir = date_dir / session_id
-        self.session_dir.mkdir(parents=True, exist_ok=True)
+        self._dir_created = False  # Track if directory has been created
 
         if save_chunk_audio:
             self.chunks_dir = self.session_dir / "chunks"
-            self.chunks_dir.mkdir(exist_ok=True)
         else:
             self.chunks_dir = None
 
@@ -135,7 +134,14 @@ class SessionLogger:
         self.chunks: list[ChunkMetadata] = []
         self.session_metadata: SessionMetadata | None = None
 
-        print(f"Session logging to: {self.session_dir}", file=sys.stderr)
+    def _ensure_dirs_exist(self) -> None:
+        """Create session directories if they don't exist yet (lazy initialization)."""
+        if not self._dir_created:
+            self.session_dir.mkdir(parents=True, exist_ok=True)
+            if self.save_chunk_audio and self.chunks_dir is not None:
+                self.chunks_dir.mkdir(exist_ok=True)
+            self._dir_created = True
+            print(f"Session logging to: {self.session_dir}", file=sys.stderr)
 
     def log_chunk(
         self,
@@ -164,6 +170,7 @@ class SessionLogger:
 
         # Save chunk audio if requested and provided
         if self.save_chunk_audio and audio is not None and self.chunks_dir is not None:
+            self._ensure_dirs_exist()  # Create directories if needed
             audio_filename = f"chunk_{index:03d}.{self.audio_format}"
             audio_path = self.chunks_dir / audio_filename
             self._save_audio(audio, audio_path)
@@ -206,6 +213,7 @@ class SessionLogger:
             print("WARNING: No audio to save", file=sys.stderr)
             return
 
+        self._ensure_dirs_exist()  # Create directories if needed
         full_audio_path = self.session_dir / f"full_audio.{self.audio_format}"
         self._save_audio(audio, full_audio_path)
         print(f"Saved full audio: {full_audio_path}", file=sys.stderr)
@@ -239,10 +247,14 @@ class SessionLogger:
                 f"Discarding session logs.",
                 file=sys.stderr,
             )
-            # Clean up the session directory
-            if self.session_dir.exists():
+            # Clean up the session directory if it was created
+            # (e.g., if save_full_audio or log_chunk with audio was called)
+            if self._dir_created and self.session_dir.exists():
                 shutil.rmtree(self.session_dir)
             return
+
+        # Ensure directories exist before finalizing
+        self._ensure_dirs_exist()
 
         # Build session metadata
         timestamp = datetime.now().isoformat()
