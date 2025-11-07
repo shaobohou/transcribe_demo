@@ -118,37 +118,21 @@ uv run ruff check        # Must pass
 
 **Code style:** Use `list[str]` not `List[str]`, use `str | None` not `Optional[str]`
 
-### CI Testing Requirements
+### CI Testing (No Audio Hardware)
 
-**CRITICAL:** Tests must run in GitHub Actions without audio hardware access.
-
-**sounddevice mocking (tests/conftest.py):**
-- Mock sounddevice at MODULE LEVEL, not in fixtures
-- Pytest imports test modules during collection BEFORE fixtures run
-- Module-level mock intercepts imports during test collection
-- Without this: `PortAudioError: Error querying device -1` in CI
-
-**stdin mocking:**
-- Autouse fixture mocks `sys.stdin.isatty()` to return False
-- Prevents AudioCaptureManager from starting blocking stdin listener threads
-- Required for all tests, not just audio capture tests
+**Mocking strategy (tests/conftest.py):**
+- **sounddevice**: Module-level mock (not fixture) - pytest imports during collection before fixtures run
+- **stdin.isatty()**: Autouse fixture returns False - prevents blocking listener threads
 
 **Monkeypatching AudioCaptureManager:**
-- Backends import: `from transcribe_demo import audio_capture as audio_capture_lib`
-- Tests monkeypatch: `monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", FakeCls)`
-- Use STRING-based paths, not attribute-based - more reliable for cross-module mocking
-- Pattern allows clean instance variable names while keeping module alias distinct
+- Backends: `from transcribe_demo import audio_capture as audio_capture_lib`
+- Tests: `monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", FakeCls)`
+- Use STRING-based paths (not attribute-based) for reliable cross-module mocking
 
-**FakeAudioCaptureManager gotchas:**
-- MUST set `stop_event` after feeding all audio (prevents hanging in `wait_until_stopped()`)
-- MUST respect `max_capture_duration` by setting `capture_limit_reached` flag
-- MUST add small delay (1ms) after limit reached to give backend time to process queued frames
-- Without delay: backend has no time to process, tests fail with "no chunks collected"
-
-**Testing with pytest-timeout:**
-- CI runs with `pytest --timeout=30 --timeout-method=thread`
-- Timeout helps identify hanging tests quickly
-- Check stack traces to find blocking operations (queue.get, threading.Event.wait, etc.)
+**FakeAudioCaptureManager critical requirements:**
+- Set `stop_event` after feeding audio (prevents hanging in `wait_until_stopped()`)
+- Respect `max_capture_duration` with `capture_limit_reached` flag
+- Add 1ms delay after limit to give backend time to process queued frames
 
 ## Related Files
 
