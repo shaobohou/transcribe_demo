@@ -168,8 +168,12 @@ Each session includes:
 - **Full audio**: Complete raw recording as WAV file
 - **Chunk audio**: Individual audio segments for each transcribed chunk
 - **Both transcriptions**: Stitched chunks + full audio transcription (for comparison)
+- **Diff tracking**: Similarity scores and detailed diffs between stitched and complete transcriptions
 - **Metadata**: Model, device, VAD parameters, timestamps, inference times
-- **README.txt**: Human-readable summary with all transcriptions and chunk details
+- **session.json**: Complete structured data in machine-readable JSON format
+- **README.txt**: Human-readable summary with all transcriptions, diffs, and chunk details
+
+See **[SESSION_LOGS.md](SESSION_LOGS.md)** for the complete session log format reference.
 
 #### Configuration
 
