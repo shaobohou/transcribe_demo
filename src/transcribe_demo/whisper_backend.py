@@ -16,7 +16,7 @@ import torch
 import webrtcvad
 import whisper
 
-from transcribe_demo.audio_capture import AudioCaptureManager
+from transcribe_demo import audio_capture as audio_capture_lib
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -277,7 +277,7 @@ def run_whisper_transcriber(
     session_start_time = time.perf_counter()
 
     # Initialize audio capture manager
-    audio_capture = AudioCaptureManager(
+    audio_capture = audio_capture_lib.AudioCaptureManager(
         sample_rate=sample_rate,
         channels=channels,
         max_capture_duration=max_capture_duration,
@@ -296,14 +296,16 @@ def run_whisper_transcriber(
 
     if max_capture_duration > 0:
         print(
-            f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, aggressiveness: {vad_aggressiveness}, "
-            f"min_speech: {vad_min_speech_duration}s, pad: {vad_speech_pad_duration}s, max_capture: {max_capture_duration}s)",
+            f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, "
+            f"aggressiveness: {vad_aggressiveness}, min_speech: {vad_min_speech_duration}s, "
+            f"pad: {vad_speech_pad_duration}s, max_capture: {max_capture_duration}s)",
             file=sys.stderr,
         )
     else:
         print(
-            f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, aggressiveness: {vad_aggressiveness}, "
-            f"min_speech: {vad_min_speech_duration}s, pad: {vad_speech_pad_duration}s)",
+            f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, "
+            f"aggressiveness: {vad_aggressiveness}, min_speech: {vad_min_speech_duration}s, "
+            f"pad: {vad_speech_pad_duration}s)",
             file=sys.stderr,
         )
 
@@ -409,7 +411,8 @@ def run_whisper_transcriber(
                 # Log warning if max chunk duration was exceeded
                 if max_duration_exceeded:
                     print(
-                        f"WARNING: Chunk split due to max duration exceeded ({chunk_audio_duration:.2f}s >= {max_chunk_duration}s). "
+                        f"WARNING: Chunk split due to max duration exceeded "
+                        f"({chunk_audio_duration:.2f}s >= {max_chunk_duration}s). "
                         f"Consider increasing --max-chunk-duration or check for continuous speech without pauses.",
                         file=sys.stderr,
                     )
@@ -491,7 +494,8 @@ def run_whisper_transcriber(
                     )
                 else:
                     print(
-                        f"[chunk {chunk_index:03d} | t={chunk_absolute_end:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {inference_duration:.2f}s] {text}",
+                        f"[chunk {chunk_index:03d} | t={chunk_absolute_end:.2f}s | "
+                        f"audio: {chunk_audio_duration:.2f}s | inference: {inference_duration:.2f}s] {text}",
                         flush=True,
                     )
 

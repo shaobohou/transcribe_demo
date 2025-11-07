@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from transcribe_demo import audio_capture, realtime_backend, whisper_backend
+from transcribe_demo import realtime_backend, whisper_backend
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -88,13 +88,14 @@ class FakeAudioCaptureManager:
             if self.stop_event.is_set():
                 break
 
-            # Check max_capture_duration
+            # Check max_capture_duration and set flag, but continue feeding
+            # This matches real AudioCaptureManager behavior - it signals the limit
+            # but continues until backend explicitly calls stop()
             if self.max_capture_duration > 0:
                 samples_duration = fed_samples / self.sample_rate
                 if samples_duration >= self.max_capture_duration:
                     self.capture_limit_reached.set()
-                    # Don't break immediately - let backend finish processing
-                    # Backend will call stop() when it sees capture_limit_reached
+                    # Don't break - backend needs time to process queued audio
 
             frame = self._audio[start : start + self._frame_size]
             if not frame.size:
@@ -104,17 +105,22 @@ class FakeAudioCaptureManager:
             frame_shaped = frame.reshape(-1, 1) if self.channels == 1 else frame
             self.audio_queue.put(frame_shaped)
 
-            # Collect for get_full_audio
-            if self.collect_full_audio:
+            # Collect for get_full_audio (only up to max_capture_duration)
+            if self.collect_full_audio and not self.capture_limit_reached.is_set():
                 mono = frame_shaped.mean(axis=1).astype(np.float32) if frame_shaped.ndim > 1 else frame_shaped
                 self._full_audio_chunks.append(mono)
 
             fed_samples += len(frame)
 
-            # No delay - tests should run fast
+            # Small delay to allow backend to process frames
+            # Without this, audio feeds too fast and backend doesn't have time to process
+            if self.capture_limit_reached.is_set():
+                time.sleep(0.001)  # 1ms delay after limit reached to allow backend to stop
 
         # Signal end of stream
         self.audio_queue.put(None)
+        # Set stop_event so wait_until_stopped() can return
+        self.stop_event.set()
 
     def start(self) -> None:
         """Start feeding audio in background thread."""
@@ -180,7 +186,7 @@ def test_whisper_backend_respects_time_limit(monkeypatch):
             collect_full_audio=collect_full_audio,
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append({"index": index, "text": text, "start": start, "end": end})
@@ -245,7 +251,7 @@ def test_whisper_backend_logs_session(monkeypatch):
             collect_full_audio=collect_full_audio,
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append({"index": index, "text": text, "start": start, "end": end})
@@ -299,7 +305,7 @@ def test_whisper_backend_logs_session(monkeypatch):
         session_dir = session_logger.session_dir
         assert session_dir.exists()
         assert (session_dir / "session.json").exists()
-        assert (session_dir / "full_audio.wav").exists()
+        assert (session_dir / "full_audio.flac").exists()
         assert (session_dir / "README.txt").exists()
 
         # Verify session.json contains correct data
@@ -391,7 +397,7 @@ def test_realtime_backend_respects_time_limit(monkeypatch):
             frame_size=320,  # Smaller frame for realtime
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     class FakeConnect:
         def __init__(self):
@@ -461,7 +467,7 @@ def test_realtime_backend_logs_session(monkeypatch):
             frame_size=320,
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     class FakeConnect:
         def __init__(self):
@@ -532,7 +538,7 @@ def test_realtime_backend_logs_session(monkeypatch):
         session_dir = session_logger.session_dir
         assert session_dir.exists()
         assert (session_dir / "session.json").exists()
-        assert (session_dir / "full_audio.wav").exists()
+        assert (session_dir / "full_audio.flac").exists()
         assert (session_dir / "README.txt").exists()
 
         # Verify session.json contains correct data
@@ -567,7 +573,7 @@ def test_realtime_backend_compares_stitched_vs_complete(monkeypatch):
             frame_size=320,
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     class FakeConnect:
         def __init__(self):
@@ -644,7 +650,7 @@ def test_session_logger_respects_min_duration(monkeypatch):
             collect_full_audio=collect_full_audio,
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append({"index": index, "text": text})

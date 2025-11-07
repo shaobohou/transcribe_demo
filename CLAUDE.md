@@ -118,6 +118,22 @@ uv run ruff check        # Must pass
 
 **Code style:** Use `list[str]` not `List[str]`, use `str | None` not `Optional[str]`
 
+### CI Testing (No Audio Hardware)
+
+**Mocking strategy (tests/conftest.py):**
+- **sounddevice**: Module-level mock (not fixture) - pytest imports during collection before fixtures run
+- **stdin.isatty()**: Autouse fixture returns False - prevents blocking listener threads
+
+**Monkeypatching AudioCaptureManager:**
+- Backends: `from transcribe_demo import audio_capture as audio_capture_lib`
+- Tests: `monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", FakeCls)`
+- Use STRING-based paths (not attribute-based) for reliable cross-module mocking
+
+**FakeAudioCaptureManager critical requirements:**
+- Set `stop_event` after feeding audio (prevents hanging in `wait_until_stopped()`)
+- Respect `max_capture_duration` with `capture_limit_reached` flag
+- Add 1ms delay after limit to give backend time to process queued frames
+
 ## Related Files
 
 - **REFACTORING.md**: Known refactoring opportunities
