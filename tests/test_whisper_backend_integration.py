@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from conftest import create_fake_audio_capture_factory, load_test_fixture
+from test_helpers import create_fake_audio_capture_factory, load_test_fixture
 from transcribe_demo import whisper_backend
 
 

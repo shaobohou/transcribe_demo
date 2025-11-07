@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from conftest import load_test_fixture
+from test_helpers import load_test_fixture
 from transcribe_demo.whisper_backend import WebRTCVAD
 
 

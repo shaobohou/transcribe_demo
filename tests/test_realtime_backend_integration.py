@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from conftest import create_fake_audio_capture_factory, load_test_fixture
+from test_helpers import create_fake_audio_capture_factory, load_test_fixture
 from transcribe_demo import realtime_backend
 
 
