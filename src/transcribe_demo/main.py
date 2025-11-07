@@ -175,6 +175,12 @@ flags.DEFINE_float(
     10.0,
     "Minimum session duration (seconds) required to save logs. Sessions shorter than this are discarded.",
 )
+flags.DEFINE_enum(
+    "audio_format",
+    "flac",
+    ["wav", "flac"],
+    "Audio format for saved session files. 'flac' provides lossless compression (~50-60% smaller), 'wav' is uncompressed.",
+)
 
 # Validators
 flags.register_validator(
@@ -562,6 +568,7 @@ def main(argv: list[str]) -> None:
         channels=FLAGS.channels,
         backend=FLAGS.backend,
         save_chunk_audio=True,  # Always save everything
+        audio_format=FLAGS.audio_format,
     )
 
     if FLAGS.backend == "whisper":

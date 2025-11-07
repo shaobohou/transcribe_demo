@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import soundfile as sf
 
 
 @dataclass
@@ -70,10 +71,10 @@ class SessionLogger:
     Directory structure:
         {output_dir}/YYYY-MM-DD/session_HHMMSS_backend/
             ├── session.json           # Session metadata and chunk info
-            ├── full_audio.wav         # Complete raw audio (mono, 16kHz)
+            ├── full_audio.{fmt}       # Complete raw audio (mono, 16kHz) - WAV or FLAC
             ├── chunks/                # Individual chunk audio files (optional)
-            │   ├── chunk_000.wav
-            │   ├── chunk_001.wav
+            │   ├── chunk_000.{fmt}    # WAV or FLAC depending on audio_format
+            │   ├── chunk_001.{fmt}
             │   └── ...
             └── README.txt             # Human-readable description
     """
@@ -86,6 +87,7 @@ class SessionLogger:
         backend: str,
         save_chunk_audio: bool = False,
         session_id: str | None = None,
+        audio_format: str = "flac",
     ):
         """
         Initialize the session logger.
@@ -97,11 +99,15 @@ class SessionLogger:
             backend: Backend name ("whisper" or "realtime")
             save_chunk_audio: Whether to save individual chunk audio files
             session_id: Optional session ID (auto-generated if None)
+            audio_format: Audio format for saved files ("wav" or "flac", default: "flac")
         """
         self.sample_rate = sample_rate
         self.channels = channels
         self.backend = backend
         self.save_chunk_audio = save_chunk_audio
+        self.audio_format = audio_format.lower()
+        if self.audio_format not in ("wav", "flac"):
+            raise ValueError(f"Unsupported audio format: {audio_format}. Must be 'wav' or 'flac'.")
 
         # Generate session ID and create directory
         now = datetime.now()
@@ -158,9 +164,9 @@ class SessionLogger:
 
         # Save chunk audio if requested and provided
         if self.save_chunk_audio and audio is not None and self.chunks_dir is not None:
-            audio_filename = f"chunk_{index:03d}.wav"
+            audio_filename = f"chunk_{index:03d}.{self.audio_format}"
             audio_path = self.chunks_dir / audio_filename
-            self._save_audio_wav(audio, audio_path)
+            self._save_audio(audio, audio_path)
 
         # Store chunk metadata
         chunk_meta = ChunkMetadata(
@@ -200,8 +206,8 @@ class SessionLogger:
             print("WARNING: No audio to save", file=sys.stderr)
             return
 
-        full_audio_path = self.session_dir / "full_audio.wav"
-        self._save_audio_wav(audio, full_audio_path)
+        full_audio_path = self.session_dir / f"full_audio.{self.audio_format}"
+        self._save_audio(audio, full_audio_path)
         print(f"Saved full audio: {full_audio_path}", file=sys.stderr)
 
     def finalize(
@@ -275,29 +281,36 @@ class SessionLogger:
         # Create human-readable README
         self._create_readme()
 
-    def _save_audio_wav(self, audio: np.ndarray, path: Path) -> None:
+    def _save_audio(self, audio: np.ndarray, path: Path) -> None:
         """
-        Save audio as WAV file (mono, int16 PCM).
+        Save audio in the configured format (WAV or FLAC).
 
         Args:
             audio: Mono audio array (float32, [-1.0, 1.0])
-            path: Output WAV file path
+            path: Output audio file path
         """
         # Ensure audio is mono and float32
         audio = np.asarray(audio, dtype=np.float32)
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
 
-        # Clip to valid range and convert to int16
+        # Clip to valid range
         audio = np.clip(audio, -1.0, 1.0)
-        audio_int16 = (audio * 32767.0).astype(np.int16)
 
-        # Write WAV file
-        with wave.open(str(path), "wb") as wav_file:
-            wav_file.setnchannels(1)  # mono
-            wav_file.setsampwidth(2)  # 16-bit
-            wav_file.setframerate(self.sample_rate)
-            wav_file.writeframes(audio_int16.tobytes())
+        if self.audio_format == "wav":
+            # Use wave module for WAV (backward compatible with existing code)
+            audio_int16 = (audio * 32767.0).astype(np.int16)
+            with wave.open(str(path), "wb") as wav_file:
+                wav_file.setnchannels(1)  # mono
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(self.sample_rate)
+                wav_file.writeframes(audio_int16.tobytes())
+        elif self.audio_format == "flac":
+            # Use soundfile for FLAC (compressed lossless format)
+            # soundfile expects float32 audio in range [-1.0, 1.0]
+            sf.write(str(path), audio, self.sample_rate, format="FLAC", subtype="PCM_16")
+        else:
+            raise ValueError(f"Unsupported audio format: {self.audio_format}")
 
     def _create_readme(self) -> None:
         """Create a human-readable README.txt describing the session."""
