@@ -72,6 +72,9 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
                 self._full_audio_chunks.append(frame.copy())
             # Signal end of stream
             self.audio_queue.put(None)
+            # Give backend time to start processing before signaling stop
+            import time
+            time.sleep(0.5)
             self.stop()
 
         def start(self):
