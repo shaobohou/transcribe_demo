@@ -101,7 +101,7 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
         def get_capture_duration(self):
             return len(audio) / sample_rate
 
-    monkeypatch.setattr(whisper_backend, "AudioCaptureManager", FakeAudioCaptureManager)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", FakeAudioCaptureManager)
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append(

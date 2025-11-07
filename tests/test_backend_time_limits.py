@@ -180,7 +180,7 @@ def test_whisper_backend_respects_time_limit(monkeypatch):
             collect_full_audio=collect_full_audio,
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append({"index": index, "text": text, "start": start, "end": end})
@@ -245,7 +245,7 @@ def test_whisper_backend_logs_session(monkeypatch):
             collect_full_audio=collect_full_audio,
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append({"index": index, "text": text, "start": start, "end": end})
@@ -391,7 +391,7 @@ def test_realtime_backend_respects_time_limit(monkeypatch):
             frame_size=320,  # Smaller frame for realtime
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     class FakeConnect:
         def __init__(self):
@@ -461,7 +461,7 @@ def test_realtime_backend_logs_session(monkeypatch):
             frame_size=320,
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     class FakeConnect:
         def __init__(self):
@@ -567,7 +567,7 @@ def test_realtime_backend_compares_stitched_vs_complete(monkeypatch):
             frame_size=320,
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     class FakeConnect:
         def __init__(self):
@@ -644,7 +644,7 @@ def test_session_logger_respects_min_duration(monkeypatch):
             collect_full_audio=collect_full_audio,
         )
 
-    monkeypatch.setattr(audio_capture, "AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append({"index": index, "text": text})

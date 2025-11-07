@@ -90,7 +90,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
         def get_capture_duration(self):
             return len(audio) / sample_rate
 
-    monkeypatch.setattr(realtime_backend, "AudioCaptureManager", FakeAudioCaptureManager)
+    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", FakeAudioCaptureManager)
 
     class FakeWebSocket:
         def __init__(self, events):
