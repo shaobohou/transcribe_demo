@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 from transcribe_demo import whisper_backend
-from transcribe_demo import audio_capture
 
 
 def _load_fixture() -> tuple[np.ndarray, int]:
