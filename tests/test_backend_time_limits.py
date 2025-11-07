@@ -183,17 +183,10 @@ def test_realtime_backend_respects_time_limit(monkeypatch):
 
     chunk_texts: list[str] = []
 
-    def fake_audio_capture_factory(sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
-        return FakeAudioCaptureManager(
-            audio=audio,
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=collect_full_audio,
-            frame_size=320,  # Smaller frame for realtime
-        )
-
-    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate, frame_size=320),  # Smaller frame for realtime
+    )
 
     class FakeConnect:
         def __init__(self):
@@ -252,17 +245,10 @@ def test_realtime_backend_logs_session(monkeypatch, temp_session_dir):
 
     chunk_texts: list[str] = []
 
-    def fake_audio_capture_factory(sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
-        return FakeAudioCaptureManager(
-            audio=audio,
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=collect_full_audio,
-            frame_size=320,
-        )
-
-    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate, frame_size=320),
+    )
 
     class FakeConnect:
         def __init__(self):
@@ -357,17 +343,10 @@ def test_realtime_backend_compares_stitched_vs_complete(monkeypatch):
     chunk_texts: list[str] = []
     full_audio_transcribed = False
 
-    def fake_audio_capture_factory(sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
-        return FakeAudioCaptureManager(
-            audio=audio,
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=collect_full_audio,
-            frame_size=320,
-        )
-
-    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate, frame_size=320),
+    )
 
     class FakeConnect:
         def __init__(self):
