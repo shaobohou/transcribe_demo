@@ -163,7 +163,7 @@ def test_main_exits_when_refine_flag_enabled(monkeypatch):
     assert "--refine-with-context" in stderr.getvalue()
 
 
-def test_main_whisper_flow_prints_summary(monkeypatch):
+def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
     class FakeCollector:
         def __init__(self, stream):
             self.stream = stream
@@ -203,6 +203,7 @@ def test_main_whisper_flow_prints_summary(monkeypatch):
         compare_transcripts=True,
         refine_with_context=False,
         temp_file=None,
+        session_log_dir=str(temp_session_dir),
     ):
         main_entry(["prog"])
 
@@ -211,7 +212,7 @@ def test_main_whisper_flow_prints_summary(monkeypatch):
     assert "[COMPLETE AUDIO] complete audio text" in output
 
 
-def test_main_realtime_flow_without_comparison(monkeypatch):
+def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
     class FakeCollector:
         def __init__(self, stream):
             self.stream = stream
@@ -252,6 +253,7 @@ def test_main_realtime_flow_without_comparison(monkeypatch):
         api_key="dummy",
         compare_transcripts=False,
         refine_with_context=False,
+        session_log_dir=str(temp_session_dir),
     ):
         main_entry(["prog"])
 
