@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import queue as queue_module
-import tempfile
 import threading
 import time
 import wave
@@ -222,7 +221,7 @@ def test_whisper_backend_respects_time_limit(monkeypatch):
     assert result.full_audio_transcription is not None
 
 
-def test_whisper_backend_logs_session(monkeypatch):
+def test_whisper_backend_logs_session(monkeypatch, temp_session_dir: Path):
     """Test that Whisper backend properly logs session with all metadata."""
     audio, sample_rate = _generate_synthetic_audio(duration_seconds=3.0)
     full_duration = len(audio) / sample_rate
@@ -257,74 +256,73 @@ def test_whisper_backend_logs_session(monkeypatch):
         chunks.append({"index": index, "text": text, "start": start, "end": end})
 
     # Create session logger with temp directory
-    with tempfile.TemporaryDirectory() as tmpdir:
-        session_logger = SessionLogger(
-            output_dir=Path(tmpdir),
-            sample_rate=sample_rate,
-            channels=1,
-            backend="whisper",
-            save_chunk_audio=True,
-            session_id="test_whisper_session",
-        )
+    session_logger = SessionLogger(
+        output_dir=temp_session_dir,
+        sample_rate=sample_rate,
+        channels=1,
+        backend="whisper",
+        save_chunk_audio=True,
+        session_id="test_whisper_session",
+    )
 
-        result = whisper_backend.run_whisper_transcriber(
-            model_name="fixture",
-            sample_rate=sample_rate,
-            channels=1,
-            temp_file=None,
-            ca_cert=None,
-            insecure_downloads=False,
-            device_preference="cpu",
-            require_gpu=False,
-            chunk_consumer=capture_chunk,
-            vad_aggressiveness=2,
-            vad_min_silence_duration=0.2,
-            vad_min_speech_duration=0.05,
-            vad_speech_pad_duration=0.1,
-            max_chunk_duration=5.0,
-            compare_transcripts=True,
-            max_capture_duration=time_limit,
-            language="en",
-            session_logger=session_logger,
-            min_log_duration=0.0,
-        )
+    result = whisper_backend.run_whisper_transcriber(
+        model_name="fixture",
+        sample_rate=sample_rate,
+        channels=1,
+        temp_file=None,
+        ca_cert=None,
+        insecure_downloads=False,
+        device_preference="cpu",
+        require_gpu=False,
+        chunk_consumer=capture_chunk,
+        vad_aggressiveness=2,
+        vad_min_silence_duration=0.2,
+        vad_min_speech_duration=0.05,
+        vad_speech_pad_duration=0.1,
+        max_chunk_duration=5.0,
+        compare_transcripts=True,
+        max_capture_duration=time_limit,
+        language="en",
+        session_logger=session_logger,
+        min_log_duration=0.0,
+    )
 
-        # Create stitched transcription
-        stitched = " ".join(chunk["text"] for chunk in chunks)
+    # Create stitched transcription
+    stitched = " ".join(chunk["text"] for chunk in chunks)
 
-        # Finalize session
-        session_logger.finalize(
-            capture_duration=result.capture_duration,
-            full_audio_transcription=result.full_audio_transcription,
-            stitched_transcription=stitched,
-            extra_metadata=result.metadata,
-            min_duration=0.0,
-        )
+    # Finalize session
+    session_logger.finalize(
+        capture_duration=result.capture_duration,
+        full_audio_transcription=result.full_audio_transcription,
+        stitched_transcription=stitched,
+        extra_metadata=result.metadata,
+        min_duration=0.0,
+    )
 
-        # Verify session files were created
-        session_dir = session_logger.session_dir
-        assert session_dir.exists()
-        assert (session_dir / "session.json").exists()
-        assert (session_dir / "full_audio.flac").exists()
-        assert (session_dir / "README.txt").exists()
+    # Verify session files were created
+    session_dir = session_logger.session_dir
+    assert session_dir.exists()
+    assert (session_dir / "session.json").exists()
+    assert (session_dir / "full_audio.flac").exists()
+    assert (session_dir / "README.txt").exists()
 
-        # Verify session.json contains correct data
-        with open(session_dir / "session.json", "r") as f:
-            session_data = json.load(f)
+    # Verify session.json contains correct data
+    with open(session_dir / "session.json", "r") as f:
+        session_data = json.load(f)
 
-        assert session_data["metadata"]["backend"] == "whisper"
-        assert session_data["metadata"]["sample_rate"] == sample_rate
-        assert session_data["metadata"]["total_chunks"] == len(chunks)
-        assert session_data["metadata"]["model"] == "fixture"
-        assert session_data["metadata"]["vad_aggressiveness"] == 2
-        assert session_data["metadata"]["full_audio_transcription"] is not None
-        assert session_data["metadata"]["stitched_transcription"] == stitched
+    assert session_data["metadata"]["backend"] == "whisper"
+    assert session_data["metadata"]["sample_rate"] == sample_rate
+    assert session_data["metadata"]["total_chunks"] == len(chunks)
+    assert session_data["metadata"]["model"] == "fixture"
+    assert session_data["metadata"]["vad_aggressiveness"] == 2
+    assert session_data["metadata"]["full_audio_transcription"] is not None
+    assert session_data["metadata"]["stitched_transcription"] == stitched
 
-        # Verify chunks are logged
-        assert len(session_data["chunks"]) == len(chunks)
-        for i, chunk in enumerate(session_data["chunks"]):
-            assert chunk["index"] == i
-            assert chunk["text"] == chunks[i]["text"]
+    # Verify chunks are logged
+    assert len(session_data["chunks"]) == len(chunks)
+    for i, chunk in enumerate(session_data["chunks"]):
+        assert chunk["index"] == i
+        assert chunk["text"] == chunks[i]["text"]
 
 
 class FakeWebSocket:
@@ -449,7 +447,7 @@ def test_realtime_backend_respects_time_limit(monkeypatch):
 
 @pytest.mark.integration
 @pytest.mark.integration
-def test_realtime_backend_logs_session(monkeypatch):
+def test_realtime_backend_logs_session(monkeypatch, temp_session_dir: Path):
     """Test that Realtime backend properly logs session with all metadata."""
     audio, sample_rate = _generate_synthetic_audio(duration_seconds=3.0)
     full_duration = len(audio) / sample_rate
@@ -495,62 +493,61 @@ def test_realtime_backend_logs_session(monkeypatch):
     )
 
     # Create session logger with temp directory
-    with tempfile.TemporaryDirectory() as tmpdir:
-        session_logger = SessionLogger(
-            output_dir=Path(tmpdir),
-            sample_rate=sample_rate,
-            channels=1,
-            backend="realtime",
-            save_chunk_audio=False,  # Realtime doesn't save chunk audio
-            session_id="test_realtime_session",
-        )
+    session_logger = SessionLogger(
+        output_dir=temp_session_dir,
+        sample_rate=sample_rate,
+        channels=1,
+        backend="realtime",
+        save_chunk_audio=False,  # Realtime doesn't save chunk audio
+        session_id="test_realtime_session",
+    )
 
-        result = realtime_backend.run_realtime_transcriber(
-            api_key="test-key",
-            endpoint="wss://example.com",
-            model="gpt-realtime-mini",
-            sample_rate=sample_rate,
-            channels=1,
-            chunk_duration=0.2,
-            instructions="transcribe precisely",
-            insecure_downloads=False,
-            chunk_consumer=collect_chunk,
-            compare_transcripts=True,
-            max_capture_duration=time_limit,
-            language="en",
-            session_logger=session_logger,
-            min_log_duration=0.0,
-        )
+    result = realtime_backend.run_realtime_transcriber(
+        api_key="test-key",
+        endpoint="wss://example.com",
+        model="gpt-realtime-mini",
+        sample_rate=sample_rate,
+        channels=1,
+        chunk_duration=0.2,
+        instructions="transcribe precisely",
+        insecure_downloads=False,
+        chunk_consumer=collect_chunk,
+        compare_transcripts=True,
+        max_capture_duration=time_limit,
+        language="en",
+        session_logger=session_logger,
+        min_log_duration=0.0,
+    )
 
-        # Create stitched transcription
-        stitched = " ".join(chunk_texts)
+    # Create stitched transcription
+    stitched = " ".join(chunk_texts)
 
-        # Finalize session
-        session_logger.finalize(
-            capture_duration=result.capture_duration,
-            full_audio_transcription="Full realtime transcription",
-            stitched_transcription=stitched,
-            extra_metadata=result.metadata,
-            min_duration=0.0,
-        )
+    # Finalize session
+    session_logger.finalize(
+        capture_duration=result.capture_duration,
+        full_audio_transcription="Full realtime transcription",
+        stitched_transcription=stitched,
+        extra_metadata=result.metadata,
+        min_duration=0.0,
+    )
 
-        # Verify session files were created
-        session_dir = session_logger.session_dir
-        assert session_dir.exists()
-        assert (session_dir / "session.json").exists()
-        assert (session_dir / "full_audio.flac").exists()
-        assert (session_dir / "README.txt").exists()
+    # Verify session files were created
+    session_dir = session_logger.session_dir
+    assert session_dir.exists()
+    assert (session_dir / "session.json").exists()
+    assert (session_dir / "full_audio.flac").exists()
+    assert (session_dir / "README.txt").exists()
 
-        # Verify session.json contains correct data
-        with open(session_dir / "session.json", "r") as f:
-            session_data = json.load(f)
+    # Verify session.json contains correct data
+    with open(session_dir / "session.json", "r") as f:
+        session_data = json.load(f)
 
-        assert session_data["metadata"]["backend"] == "realtime"
-        assert session_data["metadata"]["sample_rate"] == sample_rate
-        assert session_data["metadata"]["total_chunks"] == len(chunk_texts)
-        assert session_data["metadata"]["model"] == "gpt-realtime-mini"
-        assert session_data["metadata"]["full_audio_transcription"] == "Full realtime transcription"
-        assert session_data["metadata"]["stitched_transcription"] == stitched
+    assert session_data["metadata"]["backend"] == "realtime"
+    assert session_data["metadata"]["sample_rate"] == sample_rate
+    assert session_data["metadata"]["total_chunks"] == len(chunk_texts)
+    assert session_data["metadata"]["model"] == "gpt-realtime-mini"
+    assert session_data["metadata"]["full_audio_transcription"] == "Full realtime transcription"
+    assert session_data["metadata"]["stitched_transcription"] == stitched
 
 
 @pytest.mark.integration
@@ -623,7 +620,7 @@ def test_realtime_backend_compares_stitched_vs_complete(monkeypatch):
     assert len(chunk_texts) > 0
 
 
-def test_session_logger_respects_min_duration(monkeypatch):
+def test_session_logger_respects_min_duration(monkeypatch, temp_session_dir: Path):
     """Test that SessionLogger discards sessions below minimum duration."""
     audio, sample_rate = _generate_synthetic_audio(duration_seconds=2.0)
     short_duration = 2.0  # Short capture - just enough for testing
@@ -656,48 +653,47 @@ def test_session_logger_respects_min_duration(monkeypatch):
         chunks.append({"index": index, "text": text})
 
     # Create session logger with temp directory
-    with tempfile.TemporaryDirectory() as tmpdir:
-        session_logger = SessionLogger(
-            output_dir=Path(tmpdir),
-            sample_rate=sample_rate,
-            channels=1,
-            backend="whisper",
-            save_chunk_audio=False,  # Don't save chunk audio to speed up test
-            session_id="test_short_session",
-        )
+    session_logger = SessionLogger(
+        output_dir=temp_session_dir,
+        sample_rate=sample_rate,
+        channels=1,
+        backend="whisper",
+        save_chunk_audio=False,  # Don't save chunk audio to speed up test
+        session_id="test_short_session",
+    )
 
-        result = whisper_backend.run_whisper_transcriber(
-            model_name="fixture",
-            sample_rate=sample_rate,
-            channels=1,
-            temp_file=None,
-            ca_cert=None,
-            insecure_downloads=False,
-            device_preference="cpu",
-            require_gpu=False,
-            chunk_consumer=capture_chunk,
-            vad_aggressiveness=0,
-            vad_min_silence_duration=0.1,
-            vad_min_speech_duration=0.05,
-            vad_speech_pad_duration=0.0,
-            max_chunk_duration=5.0,
-            compare_transcripts=False,
-            max_capture_duration=short_duration,
-            language="en",
-            session_logger=session_logger,
-            min_log_duration=100.0,  # Require 100s minimum
-        )
+    result = whisper_backend.run_whisper_transcriber(
+        model_name="fixture",
+        sample_rate=sample_rate,
+        channels=1,
+        temp_file=None,
+        ca_cert=None,
+        insecure_downloads=False,
+        device_preference="cpu",
+        require_gpu=False,
+        chunk_consumer=capture_chunk,
+        vad_aggressiveness=0,
+        vad_min_silence_duration=0.1,
+        vad_min_speech_duration=0.05,
+        vad_speech_pad_duration=0.0,
+        max_chunk_duration=5.0,
+        compare_transcripts=False,
+        max_capture_duration=short_duration,
+        language="en",
+        session_logger=session_logger,
+        min_log_duration=100.0,  # Require 100s minimum
+    )
 
-        session_dir = session_logger.session_dir
+    session_dir = session_logger.session_dir
 
-        # Finalize with min_duration requirement
-        session_logger.finalize(
-            capture_duration=result.capture_duration,
-            full_audio_transcription=None,
-            stitched_transcription=" ".join(chunk["text"] for chunk in chunks),
-            extra_metadata=result.metadata,
-            min_duration=100.0,  # Session too short
-        )
+    # Finalize with min_duration requirement
+    session_logger.finalize(
+        capture_duration=result.capture_duration,
+        full_audio_transcription=None,
+        stitched_transcription=" ".join(chunk["text"] for chunk in chunks),
+        extra_metadata=result.metadata,
+        min_duration=100.0,  # Session too short
+    )
 
-        # Verify that session directory was deleted
-        assert not session_dir.exists()
+    # Verify that session directory was deleted
+    assert not session_dir.exists()

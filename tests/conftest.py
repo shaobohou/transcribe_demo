@@ -7,7 +7,9 @@ in CI environments where no audio hardware is available.
 from __future__ import annotations
 
 import sys
+import tempfile
 import types
+from pathlib import Path
 
 import pytest
 
@@ -111,3 +113,20 @@ def mock_stdin_for_audio_capture(monkeypatch):
     monkeypatch.setattr(sys, 'stdin', MockStdin())
 
 
+@pytest.fixture
+def temp_session_dir():
+    """
+    Provide a temporary directory for session logging in tests.
+
+    The directory is automatically cleaned up after the test completes,
+    ensuring no session logs are left on disk after tests run.
+
+    Usage:
+        def test_something(temp_session_dir):
+            session_logger = SessionLogger(
+                output_dir=temp_session_dir,
+                ...
+            )
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir)
