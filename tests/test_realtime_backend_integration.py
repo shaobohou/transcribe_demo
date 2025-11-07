@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 import json
-import queue as queue_module
-import threading
-import time
 
-import numpy as np
 import pytest
 
-from conftest import load_test_fixture
+from conftest import create_fake_audio_capture_factory, load_test_fixture
 from transcribe_demo import realtime_backend
 
 
@@ -19,58 +15,11 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
     chunk_texts: list[str] = []
     fake_ws_holder: dict[str, "FakeWebSocket"] = {}
 
-    # Simplified FakeAudioCaptureManager for this specific test
-    class FakeAudioCaptureManager:
-        def __init__(self, sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
-            self.sample_rate = sample_rate
-            self.channels = channels
-            self.max_capture_duration = max_capture_duration
-            self.collect_full_audio = collect_full_audio
-            self.audio_queue = queue_module.Queue()
-            self.stop_event = threading.Event()
-            self.capture_limit_reached = threading.Event()
-            self._full_audio_chunks = []
-            self._feeder_thread = None
-
-        def _feed_audio(self):
-            frame_size = 320  # 20ms at 16kHz
-            for start in range(0, len(audio), frame_size):
-                if self.stop_event.is_set():
-                    break
-                chunk = audio[start : start + frame_size]
-                if not chunk.size:
-                    continue
-                indata = chunk.astype(np.float32).reshape(-1, 1)
-                self.audio_queue.put(indata)
-                mono = indata.mean(axis=1).astype(np.float32)
-                self._full_audio_chunks.append(mono)
-            self.audio_queue.put(None)
-            time.sleep(0.5)
-            self.stop()
-
-        def start(self):
-            self._feeder_thread = threading.Thread(target=self._feed_audio, daemon=True)
-            self._feeder_thread.start()
-
-        def wait_until_stopped(self):
-            self.stop_event.wait()
-
-        def stop(self):
-            self.stop_event.set()
-
-        def close(self):
-            if self._feeder_thread and self._feeder_thread.is_alive():
-                self._feeder_thread.join(timeout=1.0)
-
-        def get_full_audio(self):
-            if not self._full_audio_chunks:
-                return np.zeros(0, dtype=np.float32)
-            return np.concatenate(self._full_audio_chunks)
-
-        def get_capture_duration(self):
-            return len(audio) / sample_rate
-
-    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", FakeAudioCaptureManager)
+    # Use helper to create fake audio capture manager
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate, frame_size=320),  # 20ms for realtime
+    )
 
     # Custom FakeWebSocket for this test with specific events
     class FakeWebSocket:

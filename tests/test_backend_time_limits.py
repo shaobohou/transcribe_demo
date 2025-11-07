@@ -7,7 +7,7 @@ import json
 import numpy as np
 import pytest
 
-from conftest import FakeAudioCaptureManager, FakeWebSocket, generate_synthetic_audio
+from conftest import FakeWebSocket, create_fake_audio_capture_factory, generate_synthetic_audio
 from transcribe_demo import realtime_backend, whisper_backend
 from transcribe_demo.session_logger import SessionLogger
 
@@ -33,17 +33,11 @@ def test_whisper_backend_respects_time_limit(monkeypatch):
 
     monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
 
-    # Create fake audio capture manager with time limit
-    def fake_audio_capture_factory(sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
-        return FakeAudioCaptureManager(
-            audio=audio,
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=collect_full_audio,
-        )
-
-    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
+    # Use helper to create fake audio capture manager
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
+    )
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append({"index": index, "text": text, "start": start, "end": end})
@@ -99,16 +93,10 @@ def test_whisper_backend_logs_session(monkeypatch, temp_session_dir):
 
     monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
 
-    def fake_audio_capture_factory(sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
-        return FakeAudioCaptureManager(
-            audio=audio,
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=collect_full_audio,
-        )
-
-    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate),
+    )
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append({"index": index, "text": text, "start": start, "end": end})
@@ -447,16 +435,10 @@ def test_session_logger_respects_min_duration(monkeypatch, temp_session_dir):
 
     monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
 
-    def fake_audio_capture_factory(sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
-        return FakeAudioCaptureManager(
-            audio=audio,
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=collect_full_audio,
-        )
-
-    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", fake_audio_capture_factory)
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate),
+    )
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append({"index": index, "text": text})

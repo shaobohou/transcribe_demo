@@ -6,11 +6,17 @@ in CI environments where no audio hardware is available.
 
 from __future__ import annotations
 
+import json
+import queue as queue_module
 import sys
 import tempfile
+import threading
+import time
 import types
+import wave
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 # Mock sounddevice BEFORE any test modules are imported
@@ -133,15 +139,6 @@ def temp_session_dir():
 
 
 # Shared test fixtures and helpers
-
-
-import json
-import queue as queue_module
-import threading
-import time
-import wave
-
-import numpy as np
 
 
 class FakeAudioCaptureManager:
@@ -331,3 +328,36 @@ def generate_synthetic_audio(duration_seconds: float = 3.0, sample_rate: int = 1
     audio = carrier * modulation * 0.3  # Scale to reasonable amplitude
 
     return audio.astype(np.float32), sample_rate
+
+
+def create_fake_audio_capture_factory(audio: np.ndarray, sample_rate: int, frame_size: int = 480):
+    """
+    Create a factory function for FakeAudioCaptureManager.
+
+    This helper reduces boilerplate when monkeypatching AudioCaptureManager in tests.
+
+    Args:
+        audio: Audio data to feed through the fake manager
+        sample_rate: Sample rate of the audio
+        frame_size: Frame size for chunking (default 480 for Whisper, use 320 for Realtime)
+
+    Returns:
+        Factory function that creates FakeAudioCaptureManager instances
+
+    Example:
+        >>> audio, sample_rate = generate_synthetic_audio()
+        >>> factory = create_fake_audio_capture_factory(audio, sample_rate)
+        >>> monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", factory)
+    """
+
+    def factory(sample_rate_param, channels, max_capture_duration=0.0, collect_full_audio=True):
+        return FakeAudioCaptureManager(
+            audio=audio,
+            sample_rate=sample_rate_param,
+            channels=channels,
+            max_capture_duration=max_capture_duration,
+            collect_full_audio=collect_full_audio,
+            frame_size=frame_size,
+        )
+
+    return factory

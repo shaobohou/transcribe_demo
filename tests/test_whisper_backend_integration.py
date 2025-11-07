@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import queue as queue_module
-import threading
-import time
-
 import numpy as np
 import pytest
 
-from conftest import load_test_fixture
+from conftest import create_fake_audio_capture_factory, load_test_fixture
 from transcribe_demo import whisper_backend
 
 
@@ -33,64 +29,11 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
 
     monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
 
-    frame_size = 480  # 30ms for 16kHz
-
-    # Monkeypatch AudioCaptureManager to feed test data
-    class FakeAudioCaptureManager:
-        def __init__(self, sample_rate, channels, max_capture_duration=0.0, collect_full_audio=True):
-            self.sample_rate = sample_rate
-            self.channels = channels
-            self.max_capture_duration = max_capture_duration
-            self.collect_full_audio = collect_full_audio
-            self.audio_queue = whisper_backend.queue.Queue()
-            self.stop_event = threading.Event()
-            self.capture_limit_reached = threading.Event()
-            self._full_audio_chunks = []
-            self._feeder_thread = None
-
-        def _feed_audio(self):
-            # Feed test audio into queue in a background thread
-            for start in range(0, len(audio), frame_size):
-                if self.stop_event.is_set():
-                    break
-                frame = audio[start : start + frame_size]
-                if not frame.size:
-                    continue
-                self.audio_queue.put(frame.reshape(-1, 1))
-                # Also collect for get_full_audio
-                self._full_audio_chunks.append(frame.copy())
-            # Signal end of stream
-            self.audio_queue.put(None)
-            # Give backend time to start processing before signaling stop
-            import time
-            time.sleep(0.5)
-            self.stop()
-
-        def start(self):
-            # Start feeding audio in background thread
-            self._feeder_thread = threading.Thread(target=self._feed_audio, daemon=True)
-            self._feeder_thread.start()
-
-        def wait_until_stopped(self):
-            # Wait until stop event is set
-            self.stop_event.wait()
-
-        def stop(self):
-            self.stop_event.set()
-
-        def close(self):
-            if self._feeder_thread and self._feeder_thread.is_alive():
-                self._feeder_thread.join(timeout=1.0)
-
-        def get_full_audio(self):
-            if not self._full_audio_chunks:
-                return np.zeros(0, dtype=np.float32)
-            return np.concatenate(self._full_audio_chunks)
-
-        def get_capture_duration(self):
-            return len(audio) / sample_rate
-
-    monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", FakeAudioCaptureManager)
+    # Use helper to create fake audio capture manager
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
+    )
 
     def capture_chunk(index, text, start, end, inference_seconds):
         chunks.append(
