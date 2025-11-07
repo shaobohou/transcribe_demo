@@ -412,6 +412,7 @@ uv run transcribe-demo --nocompare_transcripts
 
 ## See Also
 
-- **README.md** - User-facing documentation and usage examples
-- **CLAUDE.md** - Implementation rules and default values
-- **REFACTORING.md** - Architectural improvements and refactoring notes
+- **README.md**: User-facing documentation and usage examples
+- **DESIGN.md**: Architecture and design rationale
+- **CLAUDE.md**: Development workflow and critical implementation rules
+- **SESSION_REPLAY.md**: Session replay utility documentation

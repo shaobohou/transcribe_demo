@@ -2,7 +2,7 @@
 
 **⚠️ Update this file when changing: defaults, architecture, CLI args, or test strategy**
 
-User-facing docs are in README.md - this is for development only.
+Development workflow and critical implementation rules. See **DESIGN.md** for architecture, **TODO.md** for improvements, **README.md** for user docs.
 
 ## Common Commands
 
@@ -134,6 +134,10 @@ uv run ruff check        # Must pass
 - Respect `max_capture_duration` with `capture_limit_reached` flag
 - Add 1ms delay after limit to give backend time to process queued frames
 
-## Related Files
+## Related Documents
 
-- **REFACTORING.md**: Known refactoring opportunities
+- **DESIGN.md**: Architecture and design rationale
+- **TODO.md**: Implementation improvements and technical debt
+- **README.md**: User-facing documentation
+- **SESSION_LOGS.md**: Session log format
+- **SESSION_REPLAY.md**: Session replay utility

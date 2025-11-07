@@ -1,4 +1,10 @@
-# Refactoring Opportunities
+# TODO: Refactoring Opportunities
+
+This document tracks implementation-level refactoring opportunities, code quality improvements, and technical debt. For high-level design decisions and architectural rationale, see **DESIGN.md**. For development workflow and critical implementation rules, see **CLAUDE.md**.
+
+**⚠️ Important**: Line numbers in this document may drift as code evolves. Always verify line numbers against the current codebase before starting refactoring work.
+
+---
 
 ## When to Refactor
 
@@ -121,7 +127,7 @@ After successful refactoring:
 
 **Solutions:**
 - Extract to fixtures (conftest.py)
-- Add tests to REFACTORING.md testing section
+- Add tests to TODO.md testing section
 - Refactor for testability (dependency injection, smaller functions)
 
 ### Error Handling
@@ -138,90 +144,19 @@ After successful refactoring:
 
 ---
 
-## ✅ Completed Refactorings
-
-This section tracks refactorings that have been completed since this document was created.
-
-### ✅ SessionLogger Module (High Priority)
-
-**Status**: ✅ **COMPLETED**
-
-**Implementation**: `session_logger.py` (393 lines)
-
-**Features Implemented**:
-- WAV and FLAC support with compression
-- Diff tracking (`transcription_similarity`, `transcription_diffs`)
-- Chunk metadata with cleaned text
-- Organized directory structure by date: `{output_dir}/YYYY-MM-DD/session_{time}_{backend}/`
-- Min duration filtering (discards short sessions)
-- Comprehensive README generation with session metadata
-
-**Tests**: `test_session_logger.py` (219 lines) - comprehensive coverage
-
-**Benefits Realized**:
-- Rich debugging information preserved for every session
-- Audio preservation for post-analysis
-- Automatic comparison tracking
-- Clean separation from main transcription logic
-
----
-
-### ✅ AudioCaptureManager Module (Related to Priority 1.4)
-
-**Status**: ✅ **COMPLETED**
-
-**Implementation**: `audio_capture.py` (191 lines)
-
-**Features Implemented**:
-- Unified interface for both backends
-- Time limit enforcement
-- Full audio collection for comparison
-- Thread-safe stop coordination
-- Queue management
-- Capture duration tracking
-
-**Benefits Realized**:
-- DRY: Removed duplicated capture logic from both backends
-- Consistent behavior across whisper and realtime
-- Easier to test capture timing independently
-- Clear separation between audio input and transcription logic
-
----
-
-### ✅ Test Coverage Improvements (Priority 4)
-
-**Status**: ✅ **SIGNIFICANTLY IMPROVED**
-
-**New Test Files Added**:
-- `test_main_utils.py` (259 lines) - ChunkCollectorWithStitching, diff utilities
-- `test_session_logger.py` (219 lines) - SessionLogger functionality
-- `test_backend_time_limits.py` (698 lines) - Integration tests for both backends
-- `test_realtime_backend_clipping.py` (17 lines) - PCM conversion edge cases
-
-**Coverage Ratio**: ~82% (2,061 test lines for 2,516 source lines)
-
-**Benefits Realized**:
-- ChunkCollectorWithStitching now fully tested (formatting, stitching, cleaned text)
-- SessionLogger behavior verified (metadata, diffs, min duration, formats)
-- Backend integration thoroughly tested (time limits, logging, comparison)
-- PCM conversion edge cases covered (clipping, scaling)
-
-**Remaining Gaps** (see Priority 4.2):
-- Device selection edge cases (MPS failures, GPU requirement violations)
-- SSL context error scenarios
-- Audio resampling edge cases (very short input, extreme ratios)
-
----
-
 ## Priority 1: High Impact Refactoring
 
 ### 1.1 Extract Duplicate Realtime Session Configuration (realtime_backend.py)
 
-**Issue**: Identical OpenAI Realtime API session configuration appears twice (15+ lines duplicated).
+**Issue**: OpenAI Realtime API session configuration appears twice with slight variations (12+ lines duplicated).
 
 **Locations**:
-- `realtime_backend.py:128-140` (in `transcribe_full_audio_realtime`)
-- `realtime_backend.py:267-285` (in `run_realtime_transcriber`)
+- `realtime_backend.py:128-140` (in `transcribe_full_audio_realtime`) - no turn_detection
+- `realtime_backend.py:274-292` (in `run_realtime_transcriber`) - includes turn_detection
+
+**Note**: Configurations are now slightly different - the first lacks `turn_detection` section. They use a shared `transcription_config` variable but the session setup is still duplicated.
+
+**Additional Duplication**: `send_json` helper function is defined identically in both functions (`realtime_backend.py:122` and `realtime_backend.py:266`). This 4-line helper should be extracted to module level.
 
 **Current Code**:
 ```python
@@ -372,9 +307,13 @@ _print_final_stitched(sys.stdout, final)
 
 ### 1.3 Extract Device Selection Logic (whisper_backend.py)
 
-**Issue**: Device detection and selection logic (32 lines) is embedded in `run_whisper_transcriber()`.
+**Status**: ⚠️ **PARTIALLY COMPLETED** - Function extracted but not using dataclass pattern
 
-**Location**: `whisper_backend.py:163-194`
+**Issue**: Device detection and selection logic was embedded in `run_whisper_transcriber()`.
+
+**Current State**: Extracted to `load_whisper_model()` function (`whisper_backend.py:54-96`) which returns `tuple[whisper.Whisper, str, bool]`.
+
+**Original Location**: `whisper_backend.py:163-194` (outdated line numbers)
 
 **Proposed Solution**:
 ```python
@@ -505,11 +444,12 @@ class TranscriberSession:
 
 ### 1.5 Extract SSL Context Configuration (Both Backends)
 
-**Issue**: SSL context setup is duplicated in both backends.
+**Issue**: SSL context setup is duplicated in both backends and within realtime_backend itself.
 
 **Locations**:
-- `whisper_backend.py:206-229`
-- `realtime_backend.py:190-194`
+- `whisper_backend.py:95-118` (environment variables + SSL context)
+- `realtime_backend.py:106-110` (SSL context only, in `transcribe_full_audio_realtime`)
+- `realtime_backend.py:253-257` (SSL context only, in `run_realtime_transcriber`, DUPLICATE)
 
 **Proposed Solution**:
 ```python
@@ -687,9 +627,9 @@ class WhisperTranscriptionWorker:
 
 ### 2.2 Decompose `run_whisper_transcriber()` (whisper_backend.py)
 
-**Issue**: Function is ~250 lines with multiple responsibilities.
+**Issue**: Function is ~339 lines with multiple responsibilities.
 
-**Location**: `whisper_backend.py:233-490`
+**Location**: `whisper_backend.py:244-582`
 
 **Responsibilities**:
 1. Device detection and setup
@@ -1180,6 +1120,43 @@ class TranscriptReceiver:
 - Each class is testable independently
 - Clearer control flow
 - Easier to modify individual components
+
+---
+
+### 2.5 Other Large Functions/Classes Requiring Attention
+
+**Scan Results** (2025-11-07): Several additional large functions/classes identified:
+
+1. **`SessionLogger` class** (`session_logger.py:67`): 348 lines
+   - Status: ✅ Already well-structured with clear methods
+   - No immediate action needed (previously completed refactoring)
+
+2. **`retranscribe_session()` function** (`session_replay.py:238`): 253 lines
+   - Handles loading, retranscribing, and saving sessions
+   - Could benefit from extraction of save logic to helper function
+   - Priority: Low (complex but linear flow)
+
+3. **`main()` function** (`main.py:514`): 240 lines
+   - CLI orchestration and backend selection
+   - Could extract backend initialization to separate functions
+   - Priority: Medium (affects readability but not frequently modified)
+
+4. **`transcribe_full_audio_realtime()` function** (`realtime_backend.py:77`): 132 lines
+   - Async transcription of full audio
+   - Could extract message handling logic
+   - Priority: Low (mostly async boilerplate)
+
+5. **`ChunkCollectorWithStitching` class** (`main.py:193`): 149 lines
+   - Chunk collection and display
+   - Related to item 2.2 (duplicate section number - needs fixing)
+   - Priority: Already documented
+
+6. **`load_whisper_model()` function** (`whisper_backend.py:54`): 121 lines
+   - Device detection + model loading
+   - Related to item 1.3 (partially completed)
+   - Priority: Already documented
+
+**Note**: Functions over 100 lines aren't necessarily problematic if they have linear flow and single responsibility. Priority should focus on functions with high cyclomatic complexity or multiple responsibilities.
 
 ---
 
@@ -1936,7 +1913,7 @@ if chunk_consumer:
 
 **Implementation Path**:
 1. Add dependency: `uv add silero-vad torch`
-2. Create `SileroVAD` class in `whisper_backend.py` (see TODO comment at line 32)
+2. Create `SileroVAD` class in `whisper_backend.py` (see TODO comment at line 124)
 3. Add CLI arguments: `--vad-backend {webrtc,silero}` and `--vad-threshold FLOAT`
 4. Update `run_whisper_transcriber()` to instantiate appropriate VAD class based on backend choice
 
@@ -1986,19 +1963,6 @@ uv run transcribe-demo --vad-backend silero --vad-threshold 0.8
 ---
 
 ## Summary and Prioritized Action Plan
-
-### Recent Progress (✅ Completed)
-
-The codebase has made significant progress with these major refactorings completed:
-
-1. **SessionLogger Module** - Comprehensive session persistence with metadata, diffs, and audio preservation
-2. **AudioCaptureManager Module** - Unified audio capture interface for both backends
-3. **Test Coverage** - Increased to ~82% with focused unit and integration tests
-4. **Diff Tracking** - Automatic comparison and similarity scoring
-
-**Impact**: These completions have significantly improved code organization, testability, and debugging capabilities.
-
----
 
 ### Current State Assessment
 
@@ -2159,14 +2123,15 @@ Before beginning any refactoring:
 
 ---
 
-## Document Maintenance
+## Related Documents
 
-**Last Updated**: 2025-01-07
+- **DESIGN.md**: Architectural design decisions, feature rationale, and system design philosophy
+- **CLAUDE.md**: Development workflow, testing guidelines, critical implementation rules
+- **README.md**: User-facing documentation, setup, usage examples
+- **SESSION_LOGS.md**: Session log format specification
+- **SESSION_REPLAY.md**: Session replay utility documentation
 
-**Review Schedule**: Review this document quarterly or after major feature additions
-
-**How to Update**:
-1. Mark completed items with ✅ and move to "Completed Refactorings" section
-2. Add new opportunities to appropriate priority section
-3. Update line numbers if they've shifted
-4. Keep code examples current with actual implementation
+**Document Boundaries**:
+- **DESIGN.md** answers "why did we design it this way?" (architecture, design rationale)
+- **TODO.md** (this doc) answers "what should we improve?" (implementation opportunities, technical debt)
+- **CLAUDE.md** answers "how do we work on this?" (workflow, testing strategy, critical rules)

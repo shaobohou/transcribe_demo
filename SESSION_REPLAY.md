@@ -370,6 +370,7 @@ This allows you to easily track which sessions are retranscriptions and compare 
 
 ## See Also
 
-- **SESSION_LOGS.md** - Detailed format specification for session logs
-- **README.md** - Main documentation and usage guide
-- **CLAUDE.md** - Development guidelines and implementation notes
+- **SESSION_LOGS.md**: Session log format specification
+- **README.md**: User-facing documentation and usage examples
+- **DESIGN.md**: Architecture and design rationale
+- **CLAUDE.md**: Development workflow and critical implementation rules

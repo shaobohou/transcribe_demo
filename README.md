@@ -124,7 +124,7 @@ uv run transcribe-demo --nocompare_transcripts
 uv run transcribe-demo --max_capture_duration 60 --nocompare_transcripts
 ```
 
-**Note**: When `--compare_transcripts` is enabled (default), the program captures audio for post-session comparison. For Realtime API, this doubles your API usage cost.
+**Note**: Comparison is enabled by default. For Realtime API, this doubles API usage. See **[DESIGN.md](DESIGN.md#diff-tracking-design)** for rationale.
 
 ### Language Control
 
@@ -188,7 +188,7 @@ uv run transcribe-demo --min_log_duration 30
 uv run transcribe-demo --min_log_duration 0
 ```
 
-**Note**: Sessions shorter than `--min_log_duration` are automatically discarded to avoid cluttering logs with test runs.
+**Note**: Sessions shorter than `--min_log_duration` are automatically discarded to avoid cluttering logs. See **[DESIGN.md](DESIGN.md#min-duration-filtering)** for rationale.
 
 #### Session Replay Utility
 
@@ -223,44 +223,25 @@ The Whisper backend uses WebRTC Voice Activity Detection (VAD) to intelligently 
 
 1. Audio is captured in real-time from your microphone
 2. VAD analyzes 30ms frames to detect speech vs. silence
-3. Chunks are created when:
-   - Minimum speech duration is reached (default 0.25s), AND
-   - Continuous silence is detected (default 0.2s), OR
-   - Maximum chunk duration is reached (default 60s)
+3. Chunks are created when silence is detected or max duration is reached
 4. Whisper transcribes each chunk using the `--language` setting (English by default)
 5. Chunks are intelligently stitched with automatic punctuation cleanup at boundaries
 
-This approach minimizes transcription errors by chunking at natural pauses instead of arbitrary time intervals.
+This minimizes transcription errors by chunking at natural pauses instead of arbitrary time intervals.
+
+See **[DESIGN.md](DESIGN.md#vad-based-chunking-strategy)** for detailed design rationale and parameter defaults.
 
 ### Timeout Behavior
 
-**When the time limit is reached, capture stops immediately and all buffered audio is transcribed, including incomplete chunks.**
+When the time limit is reached, capture stops immediately and all buffered audio is transcribed, including incomplete chunks. This ensures zero data loss—audio captured before the timeout is never discarded.
 
-This ensures zero data loss—the chunk that pushes over the timeout limit is included in the transcription:
-
-```
-Time:  2.0s         2.1s         2.2s         2.3s (timeout)   2.4s
-       |            |            |            |                |
-Device: [chunk1] -> [chunk2] -> [chunk3] -> [chunk4]         [chunk5]
-       |            |            |            |                |
-Queue:  [put]       [put]       [put]       [put+None]       [rejected]
-       |            |            |            |                |
-Buffer: [add]       [add]       [add]       [add]
-                                             [TRANSCRIBE ALL]
-```
-
-Audio arriving after the timeout (chunk5) is discarded, but all previously captured audio is transcribed immediately without waiting for VAD silence detection or minimum chunk size requirements.
+See **[DESIGN.md](DESIGN.md#timeout-behavior-design)** for implementation details.
 
 ### Output Format
 
-Each chunk displays:
-- Chunk number
-- Absolute timestamp from session start
-- Audio duration
-- Inference time (Whisper backend only)
-- Transcribed text
+Each chunk displays chunk number, timestamp, duration, inference time (Whisper only), and transcribed text. Stitched results are shown every 3 chunks and at session end.
 
-Stitched results are shown every 3 chunks and at the end of the session.
+See **[DESIGN.md](DESIGN.md#output-display-strategy)** for display strategy rationale.
 
 ## Testing
 
@@ -281,7 +262,10 @@ uv run pytest -v
 - **whisper_backend.py**: Local Whisper transcription with WebRTC VAD
 - **realtime_backend.py**: OpenAI Realtime API integration via WebSocket
 
+See **[DESIGN.md](DESIGN.md#architecture-overview)** for detailed architecture and design decisions.
+
 ## Development
 
-- See `CLAUDE.md` for key implementation rules and default values
-- See `REFACTORING.md` for detailed refactoring opportunities and architectural improvements
+- **[DESIGN.md](DESIGN.md)**: Architectural design decisions and feature rationale
+- **[CLAUDE.md](CLAUDE.md)**: Development workflow and critical implementation rules
+- **[TODO.md](TODO.md)**: Implementation improvements and technical debt
