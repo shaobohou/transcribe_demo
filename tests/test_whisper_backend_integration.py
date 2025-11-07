@@ -5,6 +5,7 @@ import wave
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from transcribe_demo import whisper_backend
 from transcribe_demo import audio_capture
@@ -22,6 +23,7 @@ def _load_fixture() -> tuple[np.ndarray, int]:
     return audio / 32768.0, rate
 
 
+@pytest.mark.integration
 def test_run_whisper_transcriber_processes_audio(monkeypatch):
     audio, sample_rate = _load_fixture()
     chunks: list[dict[str, float | str | None]] = []
