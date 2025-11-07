@@ -16,7 +16,7 @@ import torch
 import webrtcvad
 import whisper
 
-from transcribe_demo import audio_capture
+from transcribe_demo import audio_capture as audio_capture_lib
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -277,7 +277,7 @@ def run_whisper_transcriber(
     session_start_time = time.perf_counter()
 
     # Initialize audio capture manager
-    audio_capture_manager = audio_capture.AudioCaptureManager(
+    audio_capture_manager = audio_capture_lib.AudioCaptureManager(
         sample_rate=sample_rate,
         channels=channels,
         max_capture_duration=max_capture_duration,
