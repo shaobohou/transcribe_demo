@@ -190,6 +190,31 @@ uv run transcribe-demo --min_log_duration 0
 
 **Note**: Sessions shorter than `--min_log_duration` are automatically discarded to avoid cluttering logs with test runs.
 
+#### Session Replay Utility
+
+List, inspect, and retranscribe previously logged sessions with different settings or backends:
+
+```bash
+# List all logged sessions
+uv run transcribe-session --command=list
+
+# Show details of a specific session
+uv run transcribe-session --command=show --session_path=session_logs/2025-11-07/session_143052_whisper
+
+# Retranscribe with different VAD settings
+uv run transcribe-session --command=retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --model=small \
+  --vad_aggressiveness=3
+
+# Compare Whisper vs Realtime API
+uv run transcribe-session --command=retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=realtime
+```
+
+See **[SESSION_REPLAY.md](SESSION_REPLAY.md)** for complete documentation on listing, loading, and retranscribing sessions.
+
 ## How It Works
 
 ### VAD-Based Chunking
