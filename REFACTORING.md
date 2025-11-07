@@ -1171,6 +1171,38 @@ class TranscribeConfig:
 - Type-safe with dataclasses
 - Clear structure
 
+### 3.3 Decouple Abseil Flags From Runtime Modules (main.py)
+
+**Issue**: Every `flags.DEFINE_*` call runs at import time in `main.py:15-188`, which means simply importing `transcribe_demo.main` mutates global Abseil state. Tests (`tests/test_main_utils.py:12-21`) must manually call `FLAGS(["pytest"], known_only=True)` to avoid `DuplicateFlagError`, and any library code that wants to reuse `ChunkCollectorWithStitching` or the comparison helpers must also drag in the CLI flag globals. The rest of the file (`main.py:320-740`) reads `FLAGS` directly, so there is no way to construct configurations programmatically.
+
+**Proposed Solution**:
+1. Move all CLI flag registration into a dedicated module (e.g., `transcribe_demo/cli_flags.py`) that exposes `def register_flags(flag_holder: flags.FlagValues) -> None`. Only the executable path should import Abseil.
+2. Add a `parse_cli_config(argv: Sequence[str]) -> TranscribeConfig` helper that converts the parsed flag values into the dataclasses outlined in §3.2. This helper should live in a regular module (no Abseil dependency) so tests can create configs directly.
+3. Update `cli_main()` to be a thin wrapper:
+   ```python
+   # cli.py
+   from absl import app, flags
+   from .config import parse_cli_config
+   from .runner import run_transcribe_session
+
+   register_flags(flags.FLAGS)
+
+   def main(argv):
+       config = parse_cli_config(flags.FLAGS)
+       run_transcribe_session(config)
+
+   if __name__ == "__main__":
+       app.run(main)
+   ```
+   The new `run_transcribe_session()` function should contain the current backend-selection logic and accept a `TranscribeConfig`, making it importable without Abseil.
+4. Update tests to import `run_transcribe_session()` (or the backend-specific helpers) instead of mutating `FLAGS`. This removes the `FLAGS(["pytest"], known_only=True)` workaround entirely.
+
+**Benefits**:
+- Cleaner separation between CLI parsing and business logic.
+- Importing `transcribe_demo.main` no longer has side effects, which simplifies type checking and tooling.
+- Tests and future GUIs/REST endpoints can instantiate `TranscribeConfig` directly without depending on Abseil.
+- Eliminates sporadic `DuplicateFlagError` issues when multiple tests import the module.
+
 ---
 
 ## Priority 4: Testing Improvements
@@ -1375,6 +1407,23 @@ def configure_logging(verbosity: int):
 - Structured logging
 - Can redirect to file
 - Standard Python practice
+
+### 5.4 Surface Cleaned Chunk Text During Logging (ChunkCollector + SessionLogger)
+
+**Issue**: `session_logger.log_chunk()` is called without `cleaned_text`, so each chunk is stored with the raw transcript only. After the backend returns, `main.py:606-615` iterates over `collector.get_cleaned_chunks()` and calls `session_logger.update_chunk_cleaned_text()` to backfill the cleaned text. This means:
+- If the process exits early (Ctrl+C, crash), the session log never receives cleaned text.
+- We traverse the entire chunk list twice even though `ChunkCollectorWithStitching` already knows the cleaned text while emitting each chunk.
+- The `SessionLogger` API exposes a mutating `update_chunk_cleaned_text()` method solely to compensate for this delayed write.
+
+**Proposed Solution**:
+1. Have `ChunkCollectorWithStitching` compute and store the cleaned text alongside each `TranscriptionChunk` when `_clean_chunk_text()` is called. Expose it via the chunk record rather than recomputing later.
+2. Pass the cleaned text to `session_logger.log_chunk(..., cleaned_text=cleaned)` immediately inside both backends (`whisper_backend.py:499` and `realtime_backend.py:438`). This allows JSON serialization to include the cleaned form even if the run stops mid-session.
+3. Remove `SessionLogger.update_chunk_cleaned_text()` entirely; callers no longer need a second pass over the chunks section in `main.py`.
+
+**Benefits**:
+- Session logs always contain both raw and cleaned text per chunk, even if the session is interrupted.
+- Eliminates redundant O(n) passes over the chunk list and the extra logger mutation API.
+- Simplifies the main control flow (no post-run loop just to backfill data) and makes the logging path easier to test.
 
 
 

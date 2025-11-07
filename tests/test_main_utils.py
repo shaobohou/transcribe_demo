@@ -176,6 +176,9 @@ def test_main_whisper_flow_prints_summary(monkeypatch):
         def get_final_stitched(self):
             return "stitched text"
 
+        def get_cleaned_chunks(self):
+            return [(i, text) for i, (_, text, _, _, _) in enumerate(self.calls)]
+
     class DummyResult:
         def __init__(self):
             self.full_audio_transcription = "complete audio text"
@@ -218,6 +221,9 @@ def test_main_realtime_flow_without_comparison(monkeypatch):
 
         def get_final_stitched(self):
             return "realtime stitched"
+
+        def get_cleaned_chunks(self):
+            return []
 
     class DummyRealtimeResult:
         def __init__(self):

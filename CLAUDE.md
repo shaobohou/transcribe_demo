@@ -7,10 +7,10 @@ User-facing docs are in README.md - this is for development only.
 ## Common Commands
 
 ```bash
-uv sync                           # Install dependencies
-uv run transcribe-demo            # Run with default settings (turbo + VAD)
-uv run pytest                     # Run all tests (pre-commit hook enforces)
-uv run pytest tests/test_vad.py   # Run VAD tests only
+uv sync                                 # Install dependencies
+uv run transcribe-demo                  # Run with default settings (turbo + VAD)
+uv run python -m pytest                 # Run all tests (pre-commit hook enforces)
+uv run python -m pytest tests/test_vad.py  # Run VAD tests only
 ```
 
 ## Development Workflow
@@ -31,7 +31,7 @@ git checkout -b fix/bug-description
 - Refactor: `refactor/what-you-refactor`
 
 **Before creating a PR:**
-1. Ensure all tests pass: `uv run pytest`
+1. Ensure all tests pass: `uv run python -m pytest`
 2. Type checking passes: `uv run pyright`
 3. Linting passes: `uv run ruff check`
 4. Commit and push your branch: `git push -u origin your-branch-name`
@@ -82,10 +82,41 @@ Realtime backend has fixed 2.0s chunks - NOT configurable.
 ## Testing
 
 **YOU MUST** run tests before commits - pre-commit hook enforces this.
-When modifying VAD logic, add test cases to `tests/test_vad.py`.
-Always run `uv run pyright` to confirm the type checker is clean before submitting changes.
-Use PEP 585 generics (`list[str]`, `dict[str, int]`) instead of `typing.List`/`typing.Dict`, and prefer union syntax (`str | None`) over `typing.Optional`.
-Treat linting and formatting as mandatory test steps; keep `uv run ruff check` (and any repo-specific formatters) passing before submitting changes.
+
+### Test Types
+- **Unit tests** (~0.1s): `test_vad.py`, `test_main_utils.py`, backend utils
+- **Integration tests** (2-3s): `test_backend_time_limits.py`, backend integration tests
+
+### Critical Testing Gotchas
+
+**VAD + Time Limits = Flaky Tests**
+- VAD chunking is unpredictable - avoid combining with strict time limits
+- Use synthetic audio: `_generate_synthetic_audio(duration_seconds=2.0)`
+- Keep `max_chunk_duration` high (≥10s) to prevent premature splits
+- Test VAD behavior separately from timing
+
+**Time Limits vs User Stop**
+- These use the SAME mechanism (stop_event) - don't test user stop separately
+
+**Compare Transcripts**
+- Test with realtime backend only (stable fixed chunks)
+- Whisper + VAD is flaky due to unpredictable chunk timing
+
+### Writing Fast Tests
+- Use synthetic audio, not real files
+- Disable extras: `save_chunk_audio=False`
+- Never add `time.sleep()` in test infrastructure
+- Keep audio duration minimal (2-4s)
+- Run 3-5 times to check for flakiness
+
+### Before Committing
+```bash
+uv run python -m pytest  # All tests must pass
+uv run pyright           # Must be clean (0 errors)
+uv run ruff check        # Must pass
+```
+
+**Code style:** Use `list[str]` not `List[str]`, use `str | None` not `Optional[str]`
 
 ## Related Files
 
