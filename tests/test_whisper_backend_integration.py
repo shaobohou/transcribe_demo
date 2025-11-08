@@ -138,6 +138,4 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
     captured_audio = manager.get_full_audio()
     assert captured_audio.size > 0, "No audio was captured"
     # Audio should match the original input (possibly with minor floating point differences)
-    assert np.allclose(captured_audio, audio, rtol=1e-5, atol=1e-6), (
-        "Captured audio does not match original input"
-    )
+    assert np.allclose(captured_audio, audio, rtol=1e-5, atol=1e-6), "Captured audio does not match original input"

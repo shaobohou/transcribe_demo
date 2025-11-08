@@ -31,10 +31,10 @@ class MockInputStream:
 
     def __init__(self, *args, **kwargs):
         # Store callback for potential inspection
-        self.callback = kwargs.get('callback', None)
-        self.channels = kwargs.get('channels', 1)
-        self.samplerate = kwargs.get('samplerate', 16000)
-        self.dtype = kwargs.get('dtype', 'float32')
+        self.callback = kwargs.get("callback", None)
+        self.channels = kwargs.get("channels", 1)
+        self.samplerate = kwargs.get("samplerate", 16000)
+        self.dtype = kwargs.get("dtype", "float32")
 
     def start(self):
         """Mock start - does nothing."""
@@ -63,6 +63,7 @@ class MockInputStream:
 # Mock PortAudioError exception - this needs to be a real exception class
 class MockPortAudioError(Exception):
     """Mock exception for PortAudio errors."""
+
     pass
 
 
@@ -72,7 +73,7 @@ class FakeSoundDeviceModule(types.ModuleType):
     """Fake sounddevice module for testing without audio hardware."""
 
     def __init__(self):
-        super().__init__('sounddevice')
+        super().__init__("sounddevice")
         self.InputStream = MockInputStream
         self.PortAudioError = MockPortAudioError
 
@@ -90,8 +91,8 @@ class FakeSoundDeviceModule(types.ModuleType):
 # collection begins. This ensures sounddevice is already mocked when test modules
 # import backend code (which imports audio_capture, which imports sounddevice).
 mock_sd = FakeSoundDeviceModule()
-sys.modules['sounddevice'] = mock_sd
-sys.modules['sd'] = mock_sd  # Also mock 'sd' in case it's imported differently
+sys.modules["sounddevice"] = mock_sd
+sys.modules["sd"] = mock_sd  # Also mock 'sd' in case it's imported differently
 
 # NOTE: We do NOT replace AudioCaptureManager here. Backend modules import the
 # audio_capture module (not the class directly) with:
@@ -110,12 +111,13 @@ def mock_stdin_for_audio_capture(monkeypatch):
     that would block on input() in CI environments. Applies to all tests
     automatically via autouse=True.
     """
+
     # Create a mock stdin that always reports it's not a TTY
     class MockStdin:
         def isatty(self):
             return False
 
-    monkeypatch.setattr(sys, 'stdin', MockStdin())
+    monkeypatch.setattr(sys, "stdin", MockStdin())
 
 
 @pytest.fixture
