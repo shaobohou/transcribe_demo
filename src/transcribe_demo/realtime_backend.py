@@ -467,6 +467,9 @@ def run_realtime_transcriber(
                                     break
 
                                 if audio_capture.stop_event.is_set():
+                                    # Flush any remaining partials before stopping
+                                    if partials:
+                                        flush_remaining_partials()
                                     break
 
                                 payload = json.loads(message)
