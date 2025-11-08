@@ -11,6 +11,10 @@ uv sync                                 # Install dependencies
 uv run transcribe-demo                  # Run with default settings (turbo + VAD)
 uv run python -m pytest                 # Run all tests (pre-commit hook enforces)
 uv run python -m pytest tests/test_vad.py  # Run VAD tests only
+
+# CPU-only torch (avoids CUDA downloads, matches CI behavior)
+python3 -m venv .venv
+.venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple -e ".[dev]"
 ```
 
 ## Development Workflow
@@ -133,6 +137,15 @@ uv run ruff check        # Must pass
 - Set `stop_event` after feeding audio (prevents hanging in `wait_until_stopped()`)
 - Respect `max_capture_duration` with `capture_limit_reached` flag
 - Add 1ms delay after limit to give backend time to process queued frames
+
+**CPU-only PyTorch for CI (Avoid CUDA Dependencies):**
+- CI uses regular pip (not uv) with PyTorch's CPU index to avoid downloading CUDA dependencies entirely
+- Command: `.venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple -e ".[dev]"`
+- Why pip not uv? uv doesn't properly support PyTorch's custom package index
+- `--index-url` makes PyTorch CPU index primary, `--extra-index-url` adds PyPI for other packages
+- This completely avoids ~3GB of CUDA downloads, installing only ~200MB CPU-only torch
+- Tests run on CPU with mocked audio hardware (see mocking strategy above)
+- For local development with GPU, use regular `uv sync` which installs GPU-enabled torch from PyPI
 
 ## Related Documentation
 
