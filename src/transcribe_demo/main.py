@@ -343,6 +343,21 @@ def _normalize_whitespace(text: str) -> str:
     return " ".join(text.split())
 
 
+def _print_final_stitched(stream: TextIO, text: str) -> None:
+    """Print final stitched transcription with appropriate formatting."""
+    if not text:
+        return
+
+    use_color = getattr(stream, "isatty", lambda: False)()
+    if use_color:
+        green = "\x1b[32m"
+        reset = "\x1b[0m"
+        bold = "\x1b[1m"
+        print(f"\n{bold}{green}[FINAL STITCHED]{reset} {text}\n", file=stream)
+    else:
+        print(f"\n[FINAL STITCHED] {text}\n", file=stream)
+
+
 def compute_transcription_diff(
     stitched_text: str, complete_text: str
 ) -> tuple[float, list[dict[str, str]]]:
@@ -639,18 +654,7 @@ def main(argv: list[str]) -> None:
                 print_transcription_summary(sys.stdout, final, complete_audio_text)
             else:
                 # Just show final stitched result without comparison
-                if final:
-                    use_color = sys.stdout.isatty()
-                    if use_color:
-                        green = "\x1b[32m"
-                        reset = "\x1b[0m"
-                        bold = "\x1b[1m"
-                        print(
-                            f"\n{bold}{green}[FINAL STITCHED]{reset} {final}\n",
-                            file=sys.stdout,
-                        )
-                    else:
-                        print(f"\n[FINAL STITCHED] {final}\n", file=sys.stdout)
+                _print_final_stitched(sys.stdout, final)
         return
 
     api_key = FLAGS.api_key or os.getenv("OPENAI_API_KEY")
@@ -734,21 +738,7 @@ def main(argv: list[str]) -> None:
             print_transcription_summary(sys.stdout, final, complete_audio_text)
         else:
             # Just show final stitched result without comparison
-            if final:
-                use_color = sys.stdout.isatty()
-                green = ""
-                reset = ""
-                bold = ""
-                if use_color:
-                    green = "\x1b[32m"
-                    reset = "\x1b[0m"
-                    bold = "\x1b[1m"
-                    print(
-                        f"\n{bold}{green}[FINAL STITCHED]{reset} {final}\n",
-                        file=sys.stdout,
-                    )
-                else:
-                    print(f"\n[FINAL STITCHED] {final}\n", file=sys.stdout)
+            _print_final_stitched(sys.stdout, final)
 
 
 def cli_main() -> None:
