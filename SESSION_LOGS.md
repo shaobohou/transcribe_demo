@@ -410,9 +410,6 @@ uv run transcribe-demo --nocompare_transcripts
 - Metadata for model, device, VAD parameters
 - Human-readable README.txt
 
-## See Also
+## Related Documentation
 
-- **README.md**: User-facing documentation and usage examples
-- **DESIGN.md**: Architecture and design rationale
-- **CLAUDE.md**: Development workflow and critical implementation rules
-- **SESSION_REPLAY.md**: Session replay utility documentation
+See [SITEMAP.md](SITEMAP.md) for a complete guide to all documentation.

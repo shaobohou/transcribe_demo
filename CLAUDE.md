@@ -134,10 +134,6 @@ uv run ruff check        # Must pass
 - Respect `max_capture_duration` with `capture_limit_reached` flag
 - Add 1ms delay after limit to give backend time to process queued frames
 
-## Related Documents
+## Related Documentation
 
-- **DESIGN.md**: Architecture and design rationale
-- **TODO.md**: Implementation improvements and technical debt
-- **README.md**: User-facing documentation
-- **SESSION_LOGS.md**: Session log format
-- **SESSION_REPLAY.md**: Session replay utility
+See [SITEMAP.md](SITEMAP.md) for a complete guide to all documentation.
