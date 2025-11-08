@@ -30,16 +30,16 @@ jobs:
 
     - name: Install dependencies with CPU-only PyTorch
       run: |
-        # Create venv with uv
+        # Create venv with uv (fast)
         uv venv
-        # Use regular pip (not uv pip) with torch CPU index - uv doesn't support PyTorch index well
+        # Use regular pip with torch CPU index - uv doesn't support PyTorch index well
         .venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple -e ".[dev]"
 
     - name: Run tests
-      run: uv run pytest -v --timeout=30 --timeout-method=thread
+      run: .venv/bin/pytest -v --timeout=30 --timeout-method=thread
 
     - name: Run type checker
-      run: uv run pyright
+      run: .venv/bin/pyright
 
     - name: Run linter
-      run: uv run ruff check
+      run: .venv/bin/ruff check
