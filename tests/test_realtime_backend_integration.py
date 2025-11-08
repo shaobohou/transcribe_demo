@@ -32,6 +32,15 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
         async def send(self, message: str) -> None:
             self.sent_messages.append(json.loads(message))
 
+        async def recv(self):
+            """Receive method compatible with websockets.recv() API."""
+            import asyncio
+
+            if not self._events:
+                # Block forever to trigger timeout
+                await asyncio.sleep(1000)
+            return json.dumps(self._events.pop(0))
+
         def __aiter__(self):
             return self
 
