@@ -1,0 +1,27 @@
+[project]
+name = "transcribe-demo-ci"
+version = "0.0.0"
+description = "CI harness for transcribe-demo CPU sync"
+requires-python = ">=3.12"
+dependencies = [
+    "transcribe-demo @ file:///workspace/transcribe_demo",
+    "torch==2.9.0+cpu",
+    "triton @ file:///workspace/transcribe_demo/vendor/triton-cpu-stub",
+    "pytest>=8.4.2",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.3.1",
+    "ruff>=0.5.5",
+    "pyright>=1.1.370"
+]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "supplemental"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

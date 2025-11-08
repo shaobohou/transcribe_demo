@@ -23,6 +23,24 @@ Built with the `uv` Python project manager.
 uv sync
 ```
 
+### CPU-only environments (CI, sandboxes)
+
+Fresh CI machines and other ephemeral environments can avoid downloading CUDA
+artifacts by using the dedicated CPU workspace found in `ci/pyproject.toml`:
+
+```bash
+uv sync --project ci --refresh
+# run tooling/tests against the CPU env
+uv --project ci run ruff check
+uv --project ci run python -m pytest
+```
+
+This workspace pins `torch==2.9.0+cpu`, installs the `vendor/triton-cpu-stub`
+package, and pulls from the PyTorch CPU wheel index so dependency resolution
+remains lightweight. Local development should keep using the default
+`uv sync`, which resolves the official PyPI `torch` and `triton` wheels for full
+GPU support.
+
 ## Usage
 
 ### Local Whisper Backend (Default)
