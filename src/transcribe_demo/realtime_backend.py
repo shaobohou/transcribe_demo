@@ -409,6 +409,46 @@ def run_realtime_transcriber(
                         committed_received = False
                         post_commit_timeout = 5.0  # Wait 5 seconds after commit for final transcriptions
 
+                        def flush_remaining_partials() -> None:
+                            """Flush any remaining partial transcriptions that haven't been completed."""
+                            for item_id, partial_text in list(partials.items()):
+                                final_text = partial_text.strip()
+                                if not final_text:
+                                    continue
+
+                                # Track absolute timestamp from session start
+                                with chunk_counter_lock:
+                                    chunk_start = cumulative_time[0]
+                                    chunk_end = time.perf_counter() - session_start_time
+                                    cumulative_time[0] = chunk_end
+                                    current_chunk_index = chunk_counter[0]
+                                    chunk_counter[0] += 1
+
+                                if chunk_consumer:
+                                    chunk_consumer(
+                                        chunk_index=current_chunk_index,
+                                        text=final_text,
+                                        absolute_start=chunk_start,
+                                        absolute_end=chunk_end,
+                                        inference_seconds=None,  # Signals realtime mode
+                                    )
+                                else:
+                                    label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
+                                    print(f"{label} {final_text}", flush=True)
+
+                                chunk_texts.append(final_text)
+
+                                # Log to session logger if enabled
+                                if session_logger is not None:
+                                    session_logger.log_chunk(
+                                        index=current_chunk_index,
+                                        text=final_text,
+                                        start_time=chunk_start,
+                                        end_time=chunk_end,
+                                        inference_seconds=None,
+                                        audio=None,
+                                    )
+
                         try:
                             while True:
                                 try:
@@ -418,83 +458,12 @@ def run_realtime_transcriber(
                                 except asyncio.TimeoutError:
                                     # After commit, if we timeout waiting for more messages, flush any remaining partials
                                     if committed_received and partials:
-                                        # Server VAD didn't complete these chunks, but we have partial transcriptions
-                                        for item_id, partial_text in list(partials.items()):
-                                            final_text = partial_text.strip()
-                                            if not final_text:
-                                                continue
-
-                                            # Track absolute timestamp from session start
-                                            with chunk_counter_lock:
-                                                chunk_start = cumulative_time[0]
-                                                chunk_end = time.perf_counter() - session_start_time
-                                                cumulative_time[0] = chunk_end
-                                                current_chunk_index = chunk_counter[0]
-                                                chunk_counter[0] += 1
-
-                                            if chunk_consumer:
-                                                chunk_consumer(
-                                                    chunk_index=current_chunk_index,
-                                                    text=final_text,
-                                                    absolute_start=chunk_start,
-                                                    absolute_end=chunk_end,
-                                                    inference_seconds=None,  # Signals realtime mode
-                                                )
-                                            else:
-                                                label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
-                                                print(f"{label} {final_text}", flush=True)
-
-                                            chunk_texts.append(final_text)
-
-                                            # Log to session logger if enabled
-                                            if session_logger is not None:
-                                                session_logger.log_chunk(
-                                                    index=current_chunk_index,
-                                                    text=final_text,
-                                                    start_time=chunk_start,
-                                                    end_time=chunk_end,
-                                                    inference_seconds=None,
-                                                    audio=None,
-                                                )
+                                        flush_remaining_partials()
                                     break
                                 except websockets.ConnectionClosed:
                                     # Flush any remaining partials on connection close
                                     if partials:
-                                        for item_id, partial_text in list(partials.items()):
-                                            final_text = partial_text.strip()
-                                            if not final_text:
-                                                continue
-
-                                            with chunk_counter_lock:
-                                                chunk_start = cumulative_time[0]
-                                                chunk_end = time.perf_counter() - session_start_time
-                                                cumulative_time[0] = chunk_end
-                                                current_chunk_index = chunk_counter[0]
-                                                chunk_counter[0] += 1
-
-                                            if chunk_consumer:
-                                                chunk_consumer(
-                                                    chunk_index=current_chunk_index,
-                                                    text=final_text,
-                                                    absolute_start=chunk_start,
-                                                    absolute_end=chunk_end,
-                                                    inference_seconds=None,
-                                                )
-                                            else:
-                                                label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
-                                                print(f"{label} {final_text}", flush=True)
-
-                                            chunk_texts.append(final_text)
-
-                                            if session_logger is not None:
-                                                session_logger.log_chunk(
-                                                    index=current_chunk_index,
-                                                    text=final_text,
-                                                    start_time=chunk_start,
-                                                    end_time=chunk_end,
-                                                    inference_seconds=None,
-                                                    audio=None,
-                                                )
+                                        flush_remaining_partials()
                                     break
 
                                 if audio_capture.stop_event.is_set():
