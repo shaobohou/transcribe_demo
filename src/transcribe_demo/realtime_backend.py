@@ -163,11 +163,24 @@ def transcribe_full_audio_realtime(
 
             await send_json({"type": "input_audio_buffer.commit"})
 
+            committed_received = False
+            post_commit_timeout = 5.0  # Wait 5 seconds after commit for final transcriptions
+
             while True:
                 try:
-                    message = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                    # Use timeout after commit to detect when server is done sending transcriptions
+                    timeout = post_commit_timeout if committed_received else 2.0
+                    message = await asyncio.wait_for(ws.recv(), timeout=timeout)
                 except asyncio.TimeoutError:
-                    if completed and not partials:
+                    # After commit, if we timeout and have partials but no completed, flush partials
+                    if committed_received and partials:
+                        # Server VAD didn't complete these chunks, use partial transcriptions
+                        for item_id, partial_text in partials.items():
+                            final_text = partial_text.strip()
+                            if final_text and (not completed or final_text != completed[-1]):
+                                completed.append(final_text)
+                        break
+                    elif completed and not partials:
                         break
                     continue
 
@@ -193,6 +206,8 @@ def transcribe_full_audio_realtime(
                         processed_items.add(item_id)
                         partials.pop(item_id, None)
                 elif event_type == "session.input_audio_buffer.committed":
+                    # Mark that commit was received, start timeout for final transcriptions
+                    committed_received = True
                     if completed and not partials:
                         break
                 elif event_type == "session.closed":
@@ -391,8 +406,97 @@ def run_realtime_transcriber(
                             raise
 
                     async def receiver() -> None:
+                        committed_received = False
+                        post_commit_timeout = 5.0  # Wait 5 seconds after commit for final transcriptions
+
                         try:
-                            async for message in ws:
+                            while True:
+                                try:
+                                    # Use timeout after commit to detect when server is done sending transcriptions
+                                    timeout = post_commit_timeout if committed_received else None
+                                    message = await asyncio.wait_for(ws.recv(), timeout=timeout)
+                                except asyncio.TimeoutError:
+                                    # After commit, if we timeout waiting for more messages, flush any remaining partials
+                                    if committed_received and partials:
+                                        # Server VAD didn't complete these chunks, but we have partial transcriptions
+                                        for item_id, partial_text in list(partials.items()):
+                                            final_text = partial_text.strip()
+                                            if not final_text:
+                                                continue
+
+                                            # Track absolute timestamp from session start
+                                            with chunk_counter_lock:
+                                                chunk_start = cumulative_time[0]
+                                                chunk_end = time.perf_counter() - session_start_time
+                                                cumulative_time[0] = chunk_end
+                                                current_chunk_index = chunk_counter[0]
+                                                chunk_counter[0] += 1
+
+                                            if chunk_consumer:
+                                                chunk_consumer(
+                                                    chunk_index=current_chunk_index,
+                                                    text=final_text,
+                                                    absolute_start=chunk_start,
+                                                    absolute_end=chunk_end,
+                                                    inference_seconds=None,  # Signals realtime mode
+                                                )
+                                            else:
+                                                label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
+                                                print(f"{label} {final_text}", flush=True)
+
+                                            chunk_texts.append(final_text)
+
+                                            # Log to session logger if enabled
+                                            if session_logger is not None:
+                                                session_logger.log_chunk(
+                                                    index=current_chunk_index,
+                                                    text=final_text,
+                                                    start_time=chunk_start,
+                                                    end_time=chunk_end,
+                                                    inference_seconds=None,
+                                                    audio=None,
+                                                )
+                                    break
+                                except websockets.ConnectionClosed:
+                                    # Flush any remaining partials on connection close
+                                    if partials:
+                                        for item_id, partial_text in list(partials.items()):
+                                            final_text = partial_text.strip()
+                                            if not final_text:
+                                                continue
+
+                                            with chunk_counter_lock:
+                                                chunk_start = cumulative_time[0]
+                                                chunk_end = time.perf_counter() - session_start_time
+                                                cumulative_time[0] = chunk_end
+                                                current_chunk_index = chunk_counter[0]
+                                                chunk_counter[0] += 1
+
+                                            if chunk_consumer:
+                                                chunk_consumer(
+                                                    chunk_index=current_chunk_index,
+                                                    text=final_text,
+                                                    absolute_start=chunk_start,
+                                                    absolute_end=chunk_end,
+                                                    inference_seconds=None,
+                                                )
+                                            else:
+                                                label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
+                                                print(f"{label} {final_text}", flush=True)
+
+                                            chunk_texts.append(final_text)
+
+                                            if session_logger is not None:
+                                                session_logger.log_chunk(
+                                                    index=current_chunk_index,
+                                                    text=final_text,
+                                                    start_time=chunk_start,
+                                                    end_time=chunk_end,
+                                                    inference_seconds=None,
+                                                    audio=None,
+                                                )
+                                    break
+
                                 if audio_capture.stop_event.is_set():
                                     break
 
@@ -454,14 +558,16 @@ def run_realtime_transcriber(
                                     if item_id:
                                         partials.pop(item_id, None)
 
+                                elif event_type == "session.input_audio_buffer.committed":
+                                    # Mark that commit was received, start timeout for final transcriptions
+                                    committed_received = True
+
                                 elif event_type == "error":
                                     message_text = payload.get("error") or payload.get("message") or payload
                                     print(f"\nRealtime error: {message_text}", file=sys.stderr)
                                 elif event_type == "error.session":
                                     message_text = payload.get("message") or payload
                                     print(f"\nRealtime session error: {message_text}", file=sys.stderr)
-                        except websockets.ConnectionClosed:
-                            pass
                         except Exception as e:
                             print(f"Receiver error: {e}", file=sys.stderr)
                             raise
