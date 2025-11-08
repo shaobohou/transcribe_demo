@@ -37,13 +37,13 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
         create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
     )
 
-    def capture_chunk(index, text, start, end, inference_seconds):
+    def capture_chunk(*, chunk_index, text, absolute_start, absolute_end, inference_seconds):
         chunks.append(
             {
-                "index": index,
+                "index": chunk_index,
                 "text": text,
-                "start": start,
-                "end": end,
+                "start": absolute_start,
+                "end": absolute_end,
                 "inference": inference_seconds,
             }
         )
@@ -119,7 +119,7 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
         insecure_downloads=False,
         device_preference="cpu",
         require_gpu=False,
-        chunk_consumer=lambda *args: None,
+        chunk_consumer=lambda **kwargs: None,
         vad_aggressiveness=0,
         vad_min_silence_duration=0.2,
         vad_min_speech_duration=0.05,

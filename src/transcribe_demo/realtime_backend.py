@@ -75,7 +75,7 @@ def _run_async(coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
 
 
 async def _send_json(
-    ws: websockets.WebSocketClientProtocol,
+    ws: Any,
     lock: asyncio.Lock,
     payload: dict[str, object],
 ) -> None:

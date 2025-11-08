@@ -9,7 +9,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import torch
@@ -17,6 +17,7 @@ import webrtcvad
 import whisper
 
 from transcribe_demo import audio_capture as audio_capture_lib
+from transcribe_demo.realtime_backend import ChunkConsumer
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -250,7 +251,7 @@ def run_whisper_transcriber(
     insecure_downloads: bool,
     device_preference: str,
     require_gpu: bool,
-    chunk_consumer: Callable[[int, str, float, float, float | None], None] | None = None,
+    chunk_consumer: ChunkConsumer | None = None,
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,
@@ -485,11 +486,11 @@ def run_whisper_transcriber(
 
                 if chunk_consumer is not None:
                     chunk_consumer(
-                        chunk_index,
-                        text,
-                        chunk_absolute_start,
-                        chunk_absolute_end,
-                        inference_duration,
+                        chunk_index=chunk_index,
+                        text=text,
+                        absolute_start=chunk_absolute_start,
+                        absolute_end=chunk_absolute_end,
+                        inference_seconds=inference_duration,
                     )
                 else:
                     print(

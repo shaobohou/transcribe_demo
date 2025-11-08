@@ -219,11 +219,12 @@ class ChunkCollectorWithStitching:
 
     def __call__(
         self,
+        *,
         chunk_index: int,
         text: str,
         absolute_start: float,
         absolute_end: float,
-        inference_seconds: float | None = None,
+        inference_seconds: float | None,
     ) -> None:
         if not text:
             return
