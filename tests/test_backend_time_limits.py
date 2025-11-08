@@ -466,6 +466,119 @@ def test_realtime_backend_compares_stitched_vs_complete(monkeypatch):
     assert len(chunk_texts) > 0
 
 
+@pytest.mark.integration
+def test_realtime_backend_flushes_partial_chunks_on_timeout(monkeypatch):
+    """
+    Test that Realtime backend flushes partial transcriptions when time limit is reached.
+
+    This specifically tests the fix for the issue where:
+    - Audio is sent and server receives delta events (partial transcriptions)
+    - But server-side VAD hasn't detected a speech pause yet
+    - Time limit is reached before a completed event is received
+    - Partial transcriptions should be flushed as final chunks
+    """
+    audio, sample_rate = generate_synthetic_audio(duration_seconds=2.0)
+    time_limit = 1.5
+
+    chunk_texts: list[str] = []
+
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate, frame_size=320),
+    )
+
+    class FakeWebSocketWithPartials:
+        """WebSocket that sends delta events but no completed events."""
+
+        def __init__(self):
+            self.sent_messages: list[dict] = []
+            self.closed = False
+            self._delta_count = 0
+            self._committed = False
+
+        async def send(self, message: str) -> None:
+            self.sent_messages.append(json.loads(message))
+
+        async def recv(self):
+            import asyncio
+
+            await asyncio.sleep(0.01)
+
+            # Send delta events (partial transcriptions)
+            if self._delta_count < 5:
+                self._delta_count += 1
+                return json.dumps(
+                    {
+                        "type": "conversation.item.input_audio_transcription.delta",
+                        "item_id": "partial-1",
+                        "delta": f"word{self._delta_count} ",
+                    }
+                )
+
+            # Send commit event
+            if not self._committed:
+                self._committed = True
+                return json.dumps({"type": "session.input_audio_buffer.committed"})
+
+            # After commit, wait forever (simulating no completed event)
+            # This will trigger the timeout and flush partials
+            await asyncio.sleep(100)
+
+        async def close(self, code: int = 1000, reason: str = "") -> None:
+            self.closed = True
+
+    class FakeConnect:
+        def __init__(self):
+            self._ws = FakeWebSocketWithPartials()
+
+        async def __aenter__(self):
+            return self._ws
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_connect(*args, **kwargs):
+        return FakeConnect()
+
+    monkeypatch.setattr(realtime_backend.websockets, "connect", fake_connect)
+
+    def collect_chunk(chunk_index, text, absolute_start, absolute_end, inference_seconds):
+        if text:
+            chunk_texts.append(text)
+
+    monkeypatch.setattr(
+        realtime_backend,
+        "transcribe_full_audio_realtime",
+        lambda *args, **kwargs: "Full transcription",
+    )
+
+    result = realtime_backend.run_realtime_transcriber(
+        api_key="test-key",
+        endpoint="wss://example.com",
+        model="gpt-realtime-mini",
+        sample_rate=sample_rate,
+        channels=1,
+        chunk_duration=0.2,
+        instructions="transcribe precisely",
+        insecure_downloads=False,
+        chunk_consumer=collect_chunk,
+        compare_transcripts=True,
+        max_capture_duration=time_limit,
+        language="en",
+    )
+
+    # Verify that we got at least one chunk from flushed partials
+    assert len(chunk_texts) > 0, "Expected partial transcriptions to be flushed as chunks"
+
+    # Verify the partial transcriptions were concatenated correctly
+    # The deltas were "word1 ", "word2 ", ... "word5 "
+    expected_text = "word1 word2 word3 word4 word5"
+    assert chunk_texts[0] == expected_text, f"Expected '{expected_text}', got '{chunk_texts[0]}'"
+
+    # Verify capture stopped around time limit
+    assert result.capture_duration <= time_limit * 1.5
+
+
 def test_session_logger_respects_min_duration(monkeypatch, temp_session_dir):
     """Test that SessionLogger discards sessions below minimum duration."""
     audio, sample_rate = generate_synthetic_audio(duration_seconds=2.0)
