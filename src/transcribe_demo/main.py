@@ -622,7 +622,7 @@ def main(argv: list[str]) -> None:
                 language=language_pref,
                 session_logger=session_logger,
                 min_log_duration=FLAGS.min_log_duration,
-                audio_file=Path(FLAGS.audio_file) if FLAGS.audio_file else None,
+                audio_file=FLAGS.audio_file,
                 playback_speed=FLAGS.playback_speed,
             )
         finally:
@@ -697,7 +697,7 @@ def main(argv: list[str]) -> None:
             language=language_pref,
             session_logger=session_logger,
             min_log_duration=FLAGS.min_log_duration,
-            audio_file=Path(FLAGS.audio_file) if FLAGS.audio_file else None,
+            audio_file=FLAGS.audio_file,
             playback_speed=FLAGS.playback_speed,
         )
     except KeyboardInterrupt:

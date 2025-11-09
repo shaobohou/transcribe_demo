@@ -215,3 +215,57 @@ def test_file_audio_source_url_with_string_path() -> None:
 
         # Clean up
         source.close()
+
+
+def test_url_not_corrupted_by_path() -> None:
+    """
+    Test that URLs are not corrupted when passed as strings.
+
+    Regression test for bug where Path(url) would normalize 'http://' to 'http:/'
+    by collapsing the double slash.
+    """
+    # Test case 1: Verify that Path() corrupts URLs (the bug)
+    test_url = "http://public.npr.org/test.mp3"
+    corrupted = str(Path(test_url))
+    assert "//" not in corrupted or corrupted == test_url, f"Path() should corrupt double-slash in URL: {corrupted}"
+    # On most systems, Path normalizes http:// to http:/
+    if corrupted != test_url:
+        assert "http:/" in corrupted and "http://" not in corrupted
+
+    # Test case 2: Verify FileAudioSource._is_url works correctly
+    with TemporaryDirectory() as tmpdir:
+        audio_file = Path(tmpdir) / "test.wav"
+        _create_test_audio_file(audio_file, 1.0, 16000)
+
+        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen:
+            # Create a mock response
+            mock_response = MagicMock()
+            mock_response.headers.get.return_value = "0"
+
+            # Read the actual audio file content
+            with open(audio_file, "rb") as f:
+                audio_content = f.read()
+
+            mock_response.read.side_effect = [audio_content, b""]
+            mock_response.__enter__.return_value = mock_response
+            mock_response.__exit__.return_value = False
+            mock_urlopen.return_value = mock_response
+
+            # Test with URL as string (correct approach)
+            source = FileAudioSource(
+                audio_file=test_url,  # Pass as string, NOT Path(test_url)
+                sample_rate=16000,
+                channels=1,
+                playback_speed=10.0,
+            )
+
+            # Verify URL detection worked
+            assert source._is_url(test_url), "URL should be detected"
+
+            # Verify the exact URL was passed to urlopen (not corrupted)
+            mock_urlopen.assert_called_once()
+            actual_url = mock_urlopen.call_args[0][0]
+            assert actual_url == test_url, f"URL should not be corrupted: expected '{test_url}', got '{actual_url}'"
+            assert "http://" in actual_url, "Double slash should be preserved"
+
+            source.close()
