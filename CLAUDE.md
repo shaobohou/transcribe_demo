@@ -12,7 +12,7 @@ uv run transcribe-demo                  # Run with default settings (turbo + VAD
 uv run python -m pytest                 # Run all tests (pre-commit hook enforces)
 uv run python -m pytest tests/test_vad.py  # Run VAD tests only
 uv sync --project ci --refresh              # CPU-only sync for CI/sandboxes
-uv --project ci run transcribe-demo --audio-file audio.mp3  # Run transcribe-demo in CPU-only mode
+uv --project ci run transcribe-demo --audio_file audio.mp3  # Run transcribe-demo in CPU-only mode
 uv --project ci run python -m pytest        # Run tests inside the CPU-only env
 ```
 
@@ -75,13 +75,13 @@ git checkout -b fix/bug-description
 
 ### Device Selection
 - Auto-detection order: CUDA → MPS → CPU
-- `--require-gpu` flag aborts if no GPU detected
+- `--require_gpu` flag aborts if no GPU detected
 
 ### Audio Source Selection
 - Default: Microphone capture via `AudioCaptureManager`
-- Alternative: File/URL simulation via `FileAudioSource` with `--audio-file` flag
+- Alternative: File/URL simulation via `FileAudioSource` with `--audio_file` flag
 - Both implement same interface: `audio_queue`, `stop_event`, `get_full_audio()`, etc.
-- File source simulates real-time playback with configurable speed (`--playback-speed`)
+- File source simulates real-time playback with configurable speed (`--playback_speed`)
 
 ## When to Change Defaults
 
