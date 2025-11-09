@@ -2,3 +2,6 @@ uv.lock
 __pycache__/
 *.py[cod]
 session_logs/
+vendor/triton-cpu-stub/src/triton.egg-info/
+ci/.venv/
+ci/*.egg-info/

@@ -29,13 +29,13 @@ jobs:
         version: "latest"
 
     - name: Install dependencies
-      run: uv sync
+      run: uv sync --project ci --refresh
 
     - name: Run tests
-      run: uv run pytest -v --timeout=30 --timeout-method=thread
+      run: uv --project ci run pytest -v --timeout=30 --timeout-method=thread
 
     - name: Run type checker
-      run: uv run pyright
+      run: uv --project ci run pyright
 
     - name: Run linter
-      run: uv run ruff check
+      run: uv --project ci run ruff check
