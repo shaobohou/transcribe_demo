@@ -76,8 +76,9 @@ flags.DEFINE_integer(
 flags.DEFINE_string(
     "audio_file",
     None,
-    "Path to audio file for simulating live transcription (MP3, WAV, FLAC, etc.). "
-    "If provided, audio will be read from file instead of microphone.",
+    "Path or URL to audio file for simulating live transcription (MP3, WAV, FLAC, etc.). "
+    "Supports local files and HTTP/HTTPS URLs. "
+    "If provided, audio will be read from file/URL instead of microphone.",
 )
 flags.DEFINE_float(
     "playback_speed",

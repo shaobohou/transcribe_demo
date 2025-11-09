@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import queue
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 import numpy as np
 import soundfile as sf
@@ -14,17 +17,18 @@ import soundfile as sf
 
 class FileAudioSource:
     """
-    Simulates live audio capture by reading from an audio file and feeding chunks in real-time.
+    Simulates live audio capture by reading from an audio file or URL and feeding chunks in real-time.
 
     This class implements the same interface as AudioCaptureManager, making it a drop-in
     replacement for simulating live transcription from pre-recorded audio files.
 
     Supported formats: WAV, FLAC, MP3 (if libsndfile has MP3 support), OGG, and more.
+    Supports both local file paths and HTTP/HTTPS URLs.
     """
 
     def __init__(
         self,
-        audio_file: Path,
+        audio_file: Path | str,
         sample_rate: int,
         channels: int,
         max_capture_duration: float = 0.0,
@@ -35,14 +39,14 @@ class FileAudioSource:
         Initialize the file audio source.
 
         Args:
-            audio_file: Path to the audio file to read
+            audio_file: Path to the audio file or URL to download
             sample_rate: Target sample rate (audio will be resampled if needed)
             channels: Number of audio channels
             max_capture_duration: Maximum duration to read from file in seconds (0 = entire file)
             collect_full_audio: Whether to collect full audio for comparison
             playback_speed: Speed multiplier for playback (1.0 = real-time, 2.0 = 2x speed, etc.)
         """
-        self.audio_file = Path(audio_file)
+        self.audio_file_input = str(audio_file)
         self.sample_rate = sample_rate
         self.channels = channels
         self.max_capture_duration = max_capture_duration
@@ -65,22 +69,94 @@ class FileAudioSource:
         # Playback thread reference
         self._playback_thread: threading.Thread | None = None
 
+        # Temporary file for URL downloads
+        self._temp_file: Path | None = None
+
         # Load and prepare audio
         self._loaded_audio: np.ndarray | None = None
         self._loaded_sample_rate: int = 0
         self._load_audio()
 
+    def _is_url(self, path: str) -> bool:
+        """Check if the provided path is a URL."""
+        parsed = urlparse(path)
+        return parsed.scheme in ("http", "https")
+
+    def _download_from_url(self, url: str) -> Path:
+        """
+        Download audio file from URL to a temporary file.
+
+        Args:
+            url: URL to download from
+
+        Returns:
+            Path to the temporary file
+        """
+        print(f"Downloading audio from URL: {url}", file=sys.stderr)
+
+        # Determine file extension from URL
+        parsed_url = urlparse(url)
+        path_parts = parsed_url.path.split(".")
+        suffix = f".{path_parts[-1]}" if len(path_parts) > 1 and len(path_parts[-1]) <= 4 else ".audio"
+
+        # Create temporary file
+        temp_fd, temp_path = tempfile.mkstemp(suffix=suffix, prefix="transcribe_audio_")
+
+        try:
+            # Download the file
+            with urlopen(url, timeout=30) as response:
+                total_size = int(response.headers.get("content-length", 0))
+                downloaded = 0
+                chunk_size = 8192
+
+                with open(temp_fd, "wb") as f:
+                    while True:
+                        chunk = response.read(chunk_size)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        # Print progress for large files
+                        if total_size > 0 and downloaded % (chunk_size * 100) == 0:
+                            progress = (downloaded / total_size) * 100
+                            print(f"Download progress: {progress:.1f}%", file=sys.stderr, end="\r")
+
+            if total_size > 0:
+                print(f"Download complete: {downloaded / (1024 * 1024):.2f} MB", file=sys.stderr)
+
+            return Path(temp_path)
+
+        except Exception as e:
+            # Clean up temp file on error
+            try:
+                Path(temp_path).unlink()
+            except Exception:
+                pass
+            raise RuntimeError(f"Failed to download audio from URL {url}: {e}") from e
+
     def _load_audio(self) -> None:
         """Load audio file and prepare for playback."""
-        if not self.audio_file.exists():
-            raise FileNotFoundError(f"Audio file not found: {self.audio_file}")
+        # Check if input is a URL
+        if self._is_url(self.audio_file_input):
+            # Download to temporary file
+            self._temp_file = self._download_from_url(self.audio_file_input)
+            audio_path = self._temp_file
+            display_name = self.audio_file_input
+        else:
+            # Use as local file path
+            audio_path = Path(self.audio_file_input)
+            display_name = audio_path.name
+
+            if not audio_path.exists():
+                raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
         try:
             # Load audio using soundfile
-            audio, file_sample_rate = sf.read(str(self.audio_file), dtype="float32", always_2d=False)
+            audio, file_sample_rate = sf.read(str(audio_path), dtype="float32", always_2d=False)
 
             print(
-                f"Loaded audio file: {self.audio_file.name} "
+                f"Loaded audio: {display_name} "
                 f"({len(audio) / file_sample_rate:.2f}s @ {file_sample_rate}Hz)",
                 file=sys.stderr,
             )
@@ -109,7 +185,7 @@ class FileAudioSource:
             self._loaded_sample_rate = self.sample_rate
 
         except Exception as e:
-            raise RuntimeError(f"Failed to load audio file {self.audio_file}: {e}") from e
+            raise RuntimeError(f"Failed to load audio file {self.audio_file_input}: {e}") from e
 
     def _resample(self, audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
         """
@@ -262,6 +338,13 @@ class FileAudioSource:
         """Clean up resources."""
         if self._playback_thread is not None and self._playback_thread.is_alive():
             self._playback_thread.join(timeout=2.0)
+
+        # Clean up temporary file if it was downloaded from URL
+        if self._temp_file is not None:
+            try:
+                self._temp_file.unlink()
+            except Exception:
+                pass
 
     def get_full_audio(self) -> np.ndarray:
         """

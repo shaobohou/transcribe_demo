@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import soundfile as sf
@@ -147,3 +148,70 @@ def test_file_audio_source_nonexistent_file() -> None:
         assert False, "Should have raised FileNotFoundError"
     except FileNotFoundError as e:
         assert "not found" in str(e).lower()
+
+
+def test_file_audio_source_url_detection() -> None:
+    """Test that URL detection works correctly."""
+    with TemporaryDirectory() as tmpdir:
+        # Create a test audio file
+        audio_file = Path(tmpdir) / "test.wav"
+        _create_test_audio_file(audio_file, 1.0, 16000)
+
+        # Mock urlopen to avoid actual network requests
+        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen:
+            # Create a mock response
+            mock_response = MagicMock()
+            mock_response.headers.get.return_value = "0"
+
+            # Read the actual audio file content
+            with open(audio_file, "rb") as f:
+                audio_content = f.read()
+
+            # Make the mock return the audio content
+            mock_response.read.side_effect = [audio_content, b""]
+            mock_response.__enter__.return_value = mock_response
+            mock_response.__exit__.return_value = False
+            mock_urlopen.return_value = mock_response
+
+            # Test with HTTP URL
+            source = FileAudioSource(
+                audio_file="http://example.com/audio.mp3",
+                sample_rate=16000,
+                channels=1,
+                playback_speed=10.0,
+            )
+
+            # Verify URL was detected and download was attempted
+            mock_urlopen.assert_called_once()
+            call_args = mock_urlopen.call_args[0]
+            assert call_args[0] == "http://example.com/audio.mp3"
+
+            # Verify audio was loaded
+            assert source._loaded_audio is not None
+            assert len(source._loaded_audio) > 0
+
+            # Clean up
+            source.close()
+
+
+def test_file_audio_source_url_with_string_path() -> None:
+    """Test that string paths work as well as Path objects."""
+    with TemporaryDirectory() as tmpdir:
+        # Create a test audio file
+        audio_file = Path(tmpdir) / "test.wav"
+        _create_test_audio_file(audio_file, 1.0, 16000)
+
+        # Test with string path
+        source = FileAudioSource(
+            audio_file=str(audio_file),
+            sample_rate=16000,
+            channels=1,
+            playback_speed=10.0,
+        )
+
+        # Verify audio was loaded
+        assert source._loaded_audio is not None
+        assert len(source._loaded_audio) > 0
+
+        # Clean up
+        source.close()
