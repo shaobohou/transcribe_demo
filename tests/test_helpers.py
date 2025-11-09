@@ -132,6 +132,31 @@ class FakeWebSocket:
     async def send(self, message: str) -> None:
         self.sent_messages.append(json.loads(message))
 
+    async def recv(self):
+        """Receive method compatible with websockets.recv() API."""
+        import asyncio
+
+        await asyncio.sleep(0.01)
+
+        # Generate chunk transcription events
+        if self._chunk_count < self._num_chunks:
+            self._chunk_count += 1
+            return json.dumps(
+                {
+                    "type": "conversation.item.input_audio_transcription.completed",
+                    "item_id": f"item-{self._chunk_count}",
+                    "transcript": f"Realtime chunk {self._chunk_count}",
+                }
+            )
+
+        # After all chunks, signal commitment
+        if not self._session_committed:
+            self._session_committed = True
+            return json.dumps({"type": "session.input_audio_buffer.committed"})
+
+        # Block forever to trigger timeout (simulates waiting for more messages)
+        await asyncio.sleep(1000)
+
     def __aiter__(self):
         return self
 
