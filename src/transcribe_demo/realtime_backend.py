@@ -164,7 +164,7 @@ def transcribe_full_audio_realtime(
             await send_json({"type": "input_audio_buffer.commit"})
 
             committed_received = False
-            post_commit_timeout = 5.0  # Wait 5 seconds after commit for final transcriptions
+            post_commit_timeout = 1.0  # Wait 1 second after commit for final transcriptions
 
             while True:
                 try:
@@ -407,7 +407,7 @@ def run_realtime_transcriber(
 
                     async def receiver() -> None:
                         committed_received = False
-                        post_commit_timeout = 5.0  # Wait 5 seconds after commit for final transcriptions
+                        post_commit_timeout = 1.0  # Wait 1 second after commit for final transcriptions
 
                         def flush_remaining_partials() -> None:
                             """Flush any remaining partial transcriptions that haven't been completed."""
