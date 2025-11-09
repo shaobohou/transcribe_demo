@@ -651,6 +651,10 @@ def main(argv: list[str]) -> None:
             else:
                 # Just show final stitched result without comparison
                 _print_final_stitched(sys.stdout, final)
+
+            # Print actual captured audio duration
+            if whisper_result is not None:
+                print(f"Total captured audio duration: {whisper_result.capture_duration:.2f} seconds", file=sys.stderr)
         return
 
     api_key = FLAGS.api_key or os.getenv("OPENAI_API_KEY")
@@ -733,6 +737,10 @@ def main(argv: list[str]) -> None:
         else:
             # Just show final stitched result without comparison
             _print_final_stitched(sys.stdout, final)
+
+        # Print actual captured audio duration
+        if realtime_result is not None:
+            print(f"Total captured audio duration: {realtime_result.capture_duration:.2f} seconds", file=sys.stderr)
 
 
 def cli_main() -> None:
