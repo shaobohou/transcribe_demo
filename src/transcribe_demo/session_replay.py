@@ -455,6 +455,9 @@ def retranscribe_session(
                 language=backend_kwargs.get("language", "en"),
                 session_logger=session_logger,
                 min_log_duration=0.0,  # Always save retranscription
+                vad_threshold=backend_kwargs.get("vad_threshold", 0.3),
+                vad_prefix_padding_ms=backend_kwargs.get("vad_prefix_padding_ms", 200),
+                vad_silence_duration_ms=backend_kwargs.get("vad_silence_duration_ms", 300),
             )
 
             # Get final stitched transcription

@@ -163,6 +163,21 @@ flags.DEFINE_string(
     ),
     "Instruction prompt sent to the realtime model.",
 )
+flags.DEFINE_float(
+    "realtime_vad_threshold",
+    0.3,
+    "Realtime API server VAD threshold (0.0-1.0). Lower = more sensitive.",
+)
+flags.DEFINE_integer(
+    "realtime_vad_prefix_padding_ms",
+    200,
+    "Realtime API server VAD prefix padding in milliseconds. Audio included before speech starts.",
+)
+flags.DEFINE_integer(
+    "realtime_vad_silence_duration_ms",
+    300,
+    "Realtime API server VAD silence duration in milliseconds. Silence required before ending a turn.",
+)
 
 # Comparison and capture configuration
 flags.DEFINE_boolean(
@@ -699,6 +714,9 @@ def main(argv: list[str]) -> None:
             min_log_duration=FLAGS.min_log_duration,
             audio_file=FLAGS.audio_file,
             playback_speed=FLAGS.playback_speed,
+            vad_threshold=FLAGS.realtime_vad_threshold,
+            vad_prefix_padding_ms=FLAGS.realtime_vad_prefix_padding_ms,
+            vad_silence_duration_ms=FLAGS.realtime_vad_silence_duration_ms,
         )
     except KeyboardInterrupt:
         pass
@@ -725,6 +743,9 @@ def main(argv: list[str]) -> None:
                         instructions=FLAGS.realtime_instructions,
                         insecure_downloads=FLAGS.insecure_downloads,
                         language=language_pref,
+                        vad_threshold=FLAGS.realtime_vad_threshold,
+                        vad_prefix_padding_ms=FLAGS.realtime_vad_prefix_padding_ms,
+                        vad_silence_duration_ms=FLAGS.realtime_vad_silence_duration_ms,
                     )
                 except Exception as exc:
                     print(

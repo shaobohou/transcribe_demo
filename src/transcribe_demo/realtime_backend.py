@@ -82,6 +82,9 @@ def _create_session_update(
     transcription_config: dict[str, object],
     *,
     include_turn_detection: bool,
+    vad_threshold: float = 0.3,
+    vad_prefix_padding_ms: int = 200,
+    vad_silence_duration_ms: int = 300,
 ) -> dict[str, object]:
     """Build the session.update payload for realtime websocket communication."""
 
@@ -96,9 +99,9 @@ def _create_session_update(
     if include_turn_detection:
         session["turn_detection"] = {
             "type": "server_vad",
-            "threshold": 0.3,
-            "prefix_padding_ms": 200,
-            "silence_duration_ms": 300,
+            "threshold": vad_threshold,
+            "prefix_padding_ms": vad_prefix_padding_ms,
+            "silence_duration_ms": vad_silence_duration_ms,
         }
     return {"type": "session.update", "session": session}
 
@@ -124,6 +127,9 @@ def transcribe_full_audio_realtime(
     instructions: str,
     insecure_downloads: bool = False,
     language: str = "en",
+    vad_threshold: float = 0.3,
+    vad_prefix_padding_ms: int = 200,
+    vad_silence_duration_ms: int = 300,
 ) -> str:
     """
     Transcribe the entire audio buffer using the realtime backend.
@@ -148,6 +154,8 @@ def transcribe_full_audio_realtime(
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
+        else:
+            ssl_context = ssl.create_default_context()
 
         lock = asyncio.Lock()
         partials: dict[str, str] = {}
@@ -166,6 +174,9 @@ def transcribe_full_audio_realtime(
                     instructions,
                     transcription_config,
                     include_turn_detection=False,
+                    vad_threshold=vad_threshold,
+                    vad_prefix_padding_ms=vad_prefix_padding_ms,
+                    vad_silence_duration_ms=vad_silence_duration_ms,
                 ),
                 lock,
             )
@@ -271,6 +282,9 @@ def run_realtime_transcriber(
     min_log_duration: float = 0.0,
     audio_file: Path | None = None,
     playback_speed: float = 1.0,
+    vad_threshold: float = 0.3,
+    vad_prefix_padding_ms: int = 200,
+    vad_silence_duration_ms: int = 300,
 ) -> RealtimeTranscriptionResult:
     # Initialize audio source (either from file or microphone)
     if audio_file is not None:
@@ -315,6 +329,8 @@ def run_realtime_transcriber(
                 ssl_context = ssl.create_default_context()
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
+            else:
+                ssl_context = ssl.create_default_context()
 
             transcription_config: dict[str, object] = {"model": "whisper-1"}
             if language_value and language_value.lower() != "auto":
@@ -332,6 +348,9 @@ def run_realtime_transcriber(
                             instructions,
                             transcription_config,
                             include_turn_detection=True,
+                            vad_threshold=vad_threshold,
+                            vad_prefix_padding_ms=vad_prefix_padding_ms,
+                            vad_silence_duration_ms=vad_silence_duration_ms,
                         ),
                         lock,
                     )
