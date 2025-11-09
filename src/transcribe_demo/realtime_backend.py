@@ -90,7 +90,7 @@ def _create_session_update(
         "instructions": instructions,
         "input_audio_format": "pcm16",
         "input_audio_transcription": transcription_config,
-        "temperature": 0.6,
+        "temperature": 0.0,  # Calibrated to match Whisper backend's deterministic behavior
         "max_response_output_tokens": 4096,
     }
     if include_turn_detection:
