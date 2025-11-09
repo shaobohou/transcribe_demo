@@ -17,6 +17,7 @@ import webrtcvad
 import whisper
 
 from transcribe_demo import audio_capture as audio_capture_lib
+from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -261,6 +262,8 @@ def run_whisper_transcriber(
     language: str = "en",
     session_logger: SessionLogger | None = None,
     min_log_duration: float = 0.0,
+    audio_file: Path | None = None,
+    playback_speed: float = 1.0,
 ) -> WhisperTranscriptionResult:
     model, device, fp16 = load_whisper_model(
         model_name=model_name,
@@ -276,13 +279,23 @@ def run_whisper_transcriber(
     # Track wall-clock start of the transcription session for absolute timestamps
     session_start_time = time.perf_counter()
 
-    # Initialize audio capture manager
-    audio_capture = audio_capture_lib.AudioCaptureManager(
-        sample_rate=sample_rate,
-        channels=channels,
-        max_capture_duration=max_capture_duration,
-        collect_full_audio=compare_transcripts or (session_logger is not None),
-    )
+    # Initialize audio source (either from file or microphone)
+    if audio_file is not None:
+        audio_capture = FileAudioSource(
+            audio_file=audio_file,
+            sample_rate=sample_rate,
+            channels=channels,
+            max_capture_duration=max_capture_duration,
+            collect_full_audio=compare_transcripts or (session_logger is not None),
+            playback_speed=playback_speed,
+        )
+    else:
+        audio_capture = audio_capture_lib.AudioCaptureManager(
+            sample_rate=sample_rate,
+            channels=channels,
+            max_capture_duration=max_capture_duration,
+            collect_full_audio=compare_transcripts or (session_logger is not None),
+        )
 
     buffer = np.zeros(0, dtype=np.float32)
 

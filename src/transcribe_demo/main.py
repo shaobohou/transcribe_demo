@@ -73,6 +73,20 @@ flags.DEFINE_integer(
     1,
     "Number of microphone input channels.",
 )
+flags.DEFINE_string(
+    "audio_file",
+    None,
+    "Path or URL to audio file for simulating live transcription (MP3, WAV, FLAC, etc.). "
+    "Supports local files and HTTP/HTTPS URLs. "
+    "If provided, audio will be read from file/URL instead of microphone.",
+)
+flags.DEFINE_float(
+    "playback_speed",
+    1.0,
+    "Playback speed multiplier when using --audio-file (1.0 = real-time, 2.0 = 2x speed).",
+    lower_bound=0.1,
+    upper_bound=10.0,
+)
 
 # File configuration
 flags.DEFINE_string(
@@ -608,6 +622,8 @@ def main(argv: list[str]) -> None:
                 language=language_pref,
                 session_logger=session_logger,
                 min_log_duration=FLAGS.min_log_duration,
+                audio_file=FLAGS.audio_file,
+                playback_speed=FLAGS.playback_speed,
             )
         finally:
             final = collector.get_final_stitched()
@@ -681,6 +697,8 @@ def main(argv: list[str]) -> None:
             language=language_pref,
             session_logger=session_logger,
             min_log_duration=FLAGS.min_log_duration,
+            audio_file=FLAGS.audio_file,
+            playback_speed=FLAGS.playback_speed,
         )
     except KeyboardInterrupt:
         pass

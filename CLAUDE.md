@@ -52,6 +52,8 @@ git checkout -b fix/bug-description
 - **main.py**: `parse_args()` for CLI changes, `ChunkCollectorWithStitching` handles stitching logic
 - **whisper_backend.py**: `WebRTCVAD` class, `run_whisper_transcriber()` main loop
 - **realtime_backend.py**: `run_realtime_transcriber()` WebSocket streaming
+- **audio_capture.py**: `AudioCaptureManager` for microphone capture
+- **file_audio_source.py**: `FileAudioSource` for simulating live transcription from files/URLs
 
 ## Critical Implementation Rules
 
@@ -70,6 +72,12 @@ git checkout -b fix/bug-description
 ### Device Selection
 - Auto-detection order: CUDA → MPS → CPU
 - `--require-gpu` flag aborts if no GPU detected
+
+### Audio Source Selection
+- Default: Microphone capture via `AudioCaptureManager`
+- Alternative: File/URL simulation via `FileAudioSource` with `--audio-file` flag
+- Both implement same interface: `audio_queue`, `stop_event`, `get_full_audio()`, etc.
+- File source simulates real-time playback with configurable speed (`--playback-speed`)
 
 ## When to Change Defaults
 
@@ -93,7 +101,7 @@ Realtime backend has fixed 2.0s chunks - NOT configurable.
 **YOU MUST** run tests before commits - pre-commit hook enforces this.
 
 ### Test Types
-- **Unit tests** (~0.1s): `test_vad.py`, `test_main_utils.py`, backend utils
+- **Unit tests** (~0.1s): `test_vad.py`, `test_main_utils.py`, `test_file_audio_source.py`, backend utils
 - **Integration tests** (2-3s): `test_backend_time_limits.py`, backend integration tests
 
 ### Critical Testing Gotchas
@@ -117,6 +125,13 @@ Realtime backend has fixed 2.0s chunks - NOT configurable.
 - Never add `time.sleep()` in test infrastructure
 - Keep audio duration minimal (2-4s)
 - Run 3-5 times to check for flakiness
+- Use high `playback_speed` (10.0x) for FileAudioSource tests to avoid delays
+
+**Testing FileAudioSource with URLs:**
+- Mock `urllib.request.urlopen` to avoid actual network requests
+- Use `unittest.mock.patch("transcribe_demo.file_audio_source.urlopen")`
+- Create mock response with audio file content from temporary test file
+- Example in `test_file_audio_source.py::test_file_audio_source_url_detection`
 
 ### Before Committing
 ```bash
