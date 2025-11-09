@@ -13,10 +13,13 @@ import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 import websockets
+
+if TYPE_CHECKING:
+    import websockets.asyncio.client
 
 from transcribe_demo import audio_capture as audio_capture_lib
 from transcribe_demo.file_audio_source import FileAudioSource
@@ -66,8 +69,8 @@ class RealtimeTranscriptionResult:
 
 
 async def _send_json(
-    ws: Any,
-    payload: dict[str, object],
+    ws: websockets.asyncio.client.ClientConnection,
+    payload: dict[str, Any],
     lock: asyncio.Lock,
 ) -> None:
     """Send a JSON payload through the websocket using the provided lock."""
@@ -79,13 +82,13 @@ async def _send_json(
 
 def _create_session_update(
     instructions: str,
-    transcription_config: dict[str, object],
+    transcription_config: dict[str, Any],
     *,
     include_turn_detection: bool,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Build the session.update payload for realtime websocket communication."""
 
-    session: dict[str, object] = {
+    session: dict[str, Any] = {
         "modalities": ["text"],
         "instructions": instructions,
         "input_audio_format": "pcm16",
@@ -155,7 +158,7 @@ def transcribe_full_audio_realtime(
         processed_items: set[str] = set()
 
         language_value = (language or "").strip()
-        transcription_config: dict[str, object] = {"model": "whisper-1"}
+        transcription_config: dict[str, Any] = {"model": "whisper-1"}
         if language_value and language_value.lower() != "auto":
             transcription_config["language"] = language_value
 
@@ -316,7 +319,7 @@ def run_realtime_transcriber(
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
 
-            transcription_config: dict[str, object] = {"model": "whisper-1"}
+            transcription_config: dict[str, Any] = {"model": "whisper-1"}
             if language_value and language_value.lower() != "auto":
                 transcription_config["language"] = language_value
 

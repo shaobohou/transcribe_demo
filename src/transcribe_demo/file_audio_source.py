@@ -8,7 +8,9 @@ import sys
 import tempfile
 import threading
 import time
+import types
 from pathlib import Path
+from typing import Self
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -437,12 +439,17 @@ class FileAudioSource:
         with self._lock:
             return self._total_samples_captured / self.sample_rate
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> bool:
         """Context manager exit."""
         self.stop()
         self.close()
