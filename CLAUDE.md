@@ -94,6 +94,10 @@ git push -u origin your-branch-name
 3. **Punctuation stripping:** Don't modify without understanding VAD chunking implications.
 4. **Whisper testing:** VAD makes transcript tests flaky. Use Realtime for transcript comparison.
 5. **Realtime chunking:** Fixed 2.0s chunks, NOT configurable (no VAD).
+6. **SSL/Certificate issues:** For development/testing with corporate proxies or self-signed certs:
+   - Use `--ca_cert /path/to/cert.pem` for custom certificate bundles
+   - Use `--disable_ssl_verify` as last resort (insecure, not for production)
+   - Affects both model downloads and Realtime API WebSocket connections
 
 ## Testing
 
