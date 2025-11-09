@@ -12,6 +12,7 @@ uv run transcribe-demo                  # Run with default settings (turbo + VAD
 uv run python -m pytest                 # Run all tests (pre-commit hook enforces)
 uv run python -m pytest tests/test_vad.py  # Run VAD tests only
 uv sync --project ci --refresh              # CPU-only sync for CI/sandboxes
+uv --project ci run transcribe-demo --audio-file audio.mp3  # Run transcribe-demo in CPU-only mode
 uv --project ci run python -m pytest        # Run tests inside the CPU-only env
 ```
 
@@ -21,6 +22,9 @@ call `uv sync --project ci --refresh` (with subsequent `uv --project ci run ...`
 invocations) to avoid downloading CUDA artifacts; that workspace pins
 `torch==2.9.0+cpu` and installs the `vendor/triton-cpu-stub`. Do not use the CPU
 workspace for daily development.
+
+**IMPORTANT**: In sandboxes/CI, `uv run transcribe-demo` will download gigabytes
+of CUDA packages. Always use `uv --project ci run transcribe-demo` instead.
 
 ## Development Workflow
 

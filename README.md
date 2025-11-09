@@ -31,10 +31,16 @@ artifacts by using the dedicated CPU workspace found in `ci/pyproject.toml`:
 
 ```bash
 uv sync --project ci --refresh
-# run tooling/tests against the CPU env
+# Run transcribe-demo in CPU-only mode
+uv --project ci run transcribe-demo --audio-file audio.mp3
+# Run tooling/tests against the CPU env
 uv --project ci run ruff check
 uv --project ci run python -m pytest
 ```
+
+**Important**: All `uv run transcribe-demo` examples in this README will download
+CUDA packages on fresh environments. In sandboxes/CI, **always use**
+`uv --project ci run transcribe-demo` instead to avoid gigabyte downloads.
 
 This workspace pins `torch==2.9.0+cpu`, installs the `vendor/triton-cpu-stub`
 package, and pulls from the PyTorch CPU wheel index so dependency resolution

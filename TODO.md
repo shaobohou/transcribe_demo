@@ -1104,7 +1104,7 @@ class TranscriptReceiver:
 - `realtime_backend.py:110,430`: `0.3` - VAD threshold (duplicated in session config)
 - `realtime_backend.py:112,432`: `300` - Silence duration ms (duplicated)
 - `realtime_backend.py:111,431`: `200` - Prefix padding ms (duplicated)
-- `realtime_backend.py:93`: `0.0` - Temperature (calibrated to match Whisper's deterministic behavior)
+- `realtime_backend.py:93`: `0.6` - Temperature (duplicated)
 - `realtime_backend.py:94`: `4096` - Max tokens
 - `realtime_backend.py:276,275`: `0.1` - Async poll interval (many occurrences)
 - `whisper_backend.py:272`: `2.0` - Minimum chunk duration
