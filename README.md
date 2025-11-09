@@ -12,6 +12,7 @@ Built with the `uv` Python project manager.
 - **GPU Acceleration**: Auto-detects CUDA or Apple Metal (MPS) for faster inference
 - **Intelligent Stitching**: Cleans up punctuation at chunk boundaries for smooth transcription flow
 - **Dual Backend Support**: Choose between local Whisper or cloud-based Realtime API
+- **File & URL Support**: Simulate live transcription from audio files or URLs instead of microphone
 - **Transcript Comparison**: Compares chunked vs. full-audio transcription with detailed diff output
 - **Automatic Session Logging**: Every session is saved to disk with audio, transcriptions, and metadata
 - **Flexible Configuration**: Fine-tune VAD sensitivity, chunk duration, capture limits, and more
@@ -143,6 +144,37 @@ uv run transcribe-demo --max_capture_duration 60 --nocompare_transcripts
 ```
 
 **Note**: Comparison is enabled by default. For Realtime API, this doubles API usage. See **[DESIGN.md](DESIGN.md#diff-tracking-design)** for rationale.
+
+### Audio File Simulation
+
+Instead of capturing from a microphone, you can simulate live transcription from audio files or URLs. This is useful for testing, development, or processing pre-recorded audio:
+
+```bash
+# Transcribe from local audio file
+uv run transcribe-demo --audio-file path/to/audio.mp3
+
+# Transcribe from URL (supports HTTP/HTTPS)
+uv run transcribe-demo --audio-file http://example.com/audio.mp3
+
+# Example: NPR newscast
+uv run transcribe-demo --audio-file http://public.npr.org/anon.npr-mp3/npr/news/newscast.mp3
+
+# Control playback speed (default: 1.0 = real-time)
+uv run transcribe-demo --audio-file audio.wav --playback-speed 2.0    # 2x faster
+uv run transcribe-demo --audio-file audio.mp3 --playback-speed 0.5    # 2x slower
+
+# Works with all backends and configuration options
+uv run transcribe-demo --audio-file audio.flac --backend realtime
+uv run transcribe-demo --audio-file audio.wav --max-chunk-duration 30
+```
+
+**Supported formats**: WAV, FLAC, MP3, OGG, and any format supported by `libsndfile`.
+
+**How it works**:
+- Audio is loaded and resampled to target sample rate if needed
+- Chunks are fed with realistic timing to simulate live capture
+- URLs are automatically downloaded to temporary files (cleaned up after use)
+- Playback speed can be adjusted for faster testing or slower analysis
 
 ### Language Control
 
@@ -279,6 +311,8 @@ uv run pytest -v
 - **main.py**: Entry point and orchestration, chunk collection, stitching, and comparison
 - **whisper_backend.py**: Local Whisper transcription with WebRTC VAD
 - **realtime_backend.py**: OpenAI Realtime API integration via WebSocket
+- **audio_capture.py**: Microphone audio capture manager
+- **file_audio_source.py**: File/URL audio source for simulation
 
 See **[DESIGN.md](DESIGN.md#architecture-overview)** for detailed architecture and design decisions.
 

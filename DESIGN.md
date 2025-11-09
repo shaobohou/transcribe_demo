@@ -70,13 +70,20 @@ This document explains the key design decisions and architectural patterns in th
 │              │                       │                      │
 │              └───────────┬───────────┘                      │
 │                          ▼                                  │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │        audio_capture.py                             │   │
-│  │  AudioCaptureManager                                │   │
-│  │  - Queue management                                 │   │
-│  │  - Time limit enforcement                           │   │
-│  │  - Full audio collection                            │   │
-│  └─────────────────────────────────────────────────────┘   │
+│              ┌───────────────────────┐                      │
+│              │   Audio Source        │                      │
+│              │   (pluggable)         │                      │
+│              └───────────┬───────────┘                      │
+│                          │                                  │
+│         ┌────────────────┴────────────────┐                │
+│         ▼                                 ▼                │
+│  ┌──────────────────┐           ┌──────────────────────┐  │
+│  │ audio_capture.py │           │ file_audio_source.py │  │
+│  │ (Microphone)     │           │ (File/URL)           │  │
+│  │ - sounddevice    │           │ - soundfile          │  │
+│  │ - Real-time      │           │ - Download from URL  │  │
+│  │                  │           │ - Simulate playback  │  │
+│  └──────────────────┘           └──────────────────────┘  │
 │                          │                                  │
 │                          ▼                                  │
 │  ┌─────────────────────────────────────────────────────┐   │
@@ -103,9 +110,49 @@ This document explains the key design decisions and architectural patterns in th
 | `main.py` | Orchestration, CLI args, comparison | `ChunkCollectorWithStitching`, `cli_main()` |
 | `whisper_backend.py` | Local Whisper + VAD chunking | `WebRTCVAD`, `run_whisper_transcriber()` |
 | `realtime_backend.py` | OpenAI Realtime API streaming | `run_realtime_transcriber()` |
-| `audio_capture.py` | Unified audio input management | `AudioCaptureManager` |
+| `audio_capture.py` | Microphone audio capture | `AudioCaptureManager` |
+| `file_audio_source.py` | File/URL audio simulation | `FileAudioSource` |
 | `session_logger.py` | Session persistence | `SessionLogger` |
 | `session_replay.py` | Session loading & retranscription | `load_session()`, `retranscribe_session()` |
+
+### Audio Source Design
+
+**Problem**: Need to support both live microphone capture and file-based simulation for testing/development.
+
+**Solution**: Define a common interface that both `AudioCaptureManager` and `FileAudioSource` implement:
+
+```python
+class AudioSource(Protocol):
+    """Common interface for audio sources."""
+    audio_queue: queue.Queue[np.ndarray | None]
+    stop_event: threading.Event
+    capture_limit_reached: threading.Event
+
+    def start() -> None: ...
+    def stop() -> None: ...
+    def wait_until_stopped() -> None: ...
+    def close() -> None: ...
+    def get_full_audio() -> np.ndarray: ...
+    def get_capture_duration() -> float: ...
+```
+
+**AudioCaptureManager** (microphone):
+- Uses `sounddevice` for real-time audio capture
+- Feeds audio frames directly from hardware
+- User can press Enter or Ctrl+C to stop
+
+**FileAudioSource** (files/URLs):
+- Loads audio from local files or downloads from HTTP/HTTPS URLs
+- Simulates real-time playback by feeding chunks with realistic timing
+- Supports playback speed control (e.g., 2.0x for faster testing)
+- Automatically resamples audio to target sample rate
+- Cleans up temporary files for URL downloads
+
+**Key Benefits**:
+- Backends don't need to know if audio is live or simulated
+- Same chunking/transcription logic works for both sources
+- Easy to test with pre-recorded audio
+- Session replay can use either live or file sources
 
 ---
 
