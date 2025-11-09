@@ -358,9 +358,7 @@ def _print_final_stitched(stream: TextIO, text: str) -> None:
         print(f"\n[FINAL STITCHED] {text}\n", file=stream)
 
 
-def compute_transcription_diff(
-    stitched_text: str, complete_text: str
-) -> tuple[float, list[dict[str, str]]]:
+def compute_transcription_diff(stitched_text: str, complete_text: str) -> tuple[float, list[dict[str, str]]]:
     """
     Compute diff between stitched and complete transcriptions.
 
@@ -622,9 +620,7 @@ def main(argv: list[str]) -> None:
             similarity = None
             diff_snippets = None
             if whisper_result is not None and whisper_result.full_audio_transcription:
-                similarity, diff_snippets = compute_transcription_diff(
-                    final, whisper_result.full_audio_transcription
-                )
+                similarity, diff_snippets = compute_transcription_diff(final, whisper_result.full_audio_transcription)
 
             # Finalize session logging with both transcriptions
             if whisper_result is not None:
@@ -718,9 +714,7 @@ def main(argv: list[str]) -> None:
             similarity = None
             diff_snippets = None
             if full_audio_transcription:
-                similarity, diff_snippets = compute_transcription_diff(
-                    final, full_audio_transcription
-                )
+                similarity, diff_snippets = compute_transcription_diff(final, full_audio_transcription)
 
             session_logger.finalize(
                 capture_duration=realtime_result.capture_duration,

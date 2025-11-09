@@ -506,9 +506,7 @@ def test_retranscribe_session_realtime(temp_session_dir: Path, create_test_sessi
             consumer = kwargs["chunk_consumer"]
             consumer(0, "Realtime chunk 0.", 0.0, 2.0, None)
             consumer(1, "Realtime chunk 1.", 2.0, 4.0, None)
-        return FakeRealtimeResult(
-            capture_duration=5.0, metadata={"realtime_model": "gpt-realtime-mini"}
-        )
+        return FakeRealtimeResult(capture_duration=5.0, metadata={"realtime_model": "gpt-realtime-mini"})
 
     monkeypatch.setattr("transcribe_demo.realtime_backend.run_realtime_transcriber", fake_realtime_runner)
 
@@ -552,7 +550,9 @@ def test_retranscribe_session_invalid_backend(temp_session_dir: Path, create_tes
         )
 
 
-def test_retranscribe_session_realtime_missing_api_key(temp_session_dir: Path, create_test_session, monkeypatch) -> None:
+def test_retranscribe_session_realtime_missing_api_key(
+    temp_session_dir: Path, create_test_session, monkeypatch
+) -> None:
     """Test that realtime backend without API key raises error."""
     session_dir = create_test_session(session_id="test_session")
     loaded = load_session(session_dir)
@@ -595,9 +595,7 @@ def test_retranscribe_session_preserves_audio(temp_session_dir: Path, create_tes
         if "chunk_consumer" in kwargs:
             consumer = kwargs["chunk_consumer"]
             consumer(0, "Test chunk.", 0.0, 3.0, 0.1)
-        return FakeWhisperResult(
-            capture_duration=3.0, full_audio_transcription=None, metadata={"model": "turbo"}
-        )
+        return FakeWhisperResult(capture_duration=3.0, full_audio_transcription=None, metadata={"model": "turbo"})
 
     monkeypatch.setattr("transcribe_demo.whisper_backend.run_whisper_transcriber", fake_whisper_runner)
 

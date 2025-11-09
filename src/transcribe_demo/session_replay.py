@@ -195,9 +195,7 @@ def load_session(session_path: Path | str, allow_incomplete: bool = False) -> Lo
             break
 
     if not audio_path:
-        raise FileNotFoundError(
-            f"Audio file not found in {session_dir} (tried full_audio.flac and full_audio.wav)"
-        )
+        raise FileNotFoundError(f"Audio file not found in {session_dir} (tried full_audio.flac and full_audio.wav)")
 
     # Load audio
     audio, sample_rate = _load_audio(audio_path)
@@ -340,11 +338,7 @@ def retranscribe_session(
 
                 # Collect for get_full_audio
                 if self.collect_full_audio:
-                    mono = (
-                        frame_shaped.mean(axis=1).astype(np.float32)
-                        if frame_shaped.ndim > 1
-                        else frame_shaped
-                    )
+                    mono = frame_shaped.mean(axis=1).astype(np.float32) if frame_shaped.ndim > 1 else frame_shaped
                     self._full_audio_chunks.append(mono)
 
             # Signal end of stream

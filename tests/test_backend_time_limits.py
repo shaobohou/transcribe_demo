@@ -135,8 +135,7 @@ def test_whisper_backend_transcribes_incomplete_chunk_on_timeout(monkeypatch):
     # that we transcribe incomplete chunks on timeout
     has_incomplete_chunk = any(duration < 2.0 for duration in transcribed_audio_durations)
     assert has_incomplete_chunk, (
-        f"Expected at least one incomplete chunk (< 2.0s), "
-        f"but all chunks were >= 2.0s: {transcribed_audio_durations}"
+        f"Expected at least one incomplete chunk (< 2.0s), but all chunks were >= 2.0s: {transcribed_audio_durations}"
     )
 
     # Verify capture stopped around the time limit
