@@ -20,7 +20,7 @@ uv run ruff format                        # Format code
 
 # CPU-only (CI/sandboxes - REQUIRED!)
 uv sync --project ci --refresh
-uv --project ci run transcribe-demo --audio_file audio.mp3
+uv --project ci run transcribe-demo --audio_file audio.mp3 --model base.en
 uv --project ci run python -m pytest
 ```
 
@@ -80,16 +80,12 @@ git push -u origin your-branch-name
 ### Critical Defaults (DO NOT change without testing)
 
 - **`language="en"`** - Prevents hallucinations on silence/noise (auto-detection causes issues)
-- **`vad_aggressiveness=2`** - Balance speech detection (increase if missing speech, decrease if capturing noise)
+- **`vad_aggressiveness=2`** - Balance speech detection
 - **`min_silence_duration=0.2s`** - Controls chunking speed
 - **`max_chunk_duration=60s`** - Prevents buffer overflow
-- **`model="turbo"`** - Speed/accuracy tradeoff
+- **`model="turbo"`** - Default (requires GPU); **use `base.en` for CPU-only**
 
-### Other Configuration
-
-- **Device:** Auto-detection order: CUDA → MPS → CPU. Use `--require_gpu` to abort if no GPU.
-- **Audio source:** Microphone (`AudioCaptureManager`) or File/URL (`FileAudioSource` with `--audio_file`). File source supports `--playback_speed`.
-- **SSL:** `--ca_cert` for custom cert bundles. `--disable_ssl_verify` for restricted networks (**insecure**, not for production).
+**For model selection and VAD tuning guidance**, see **[README.md](README.md)** (user-facing documentation).
 
 ### Common Gotchas
 
@@ -98,6 +94,10 @@ git push -u origin your-branch-name
 3. **Punctuation stripping:** Don't modify without understanding VAD chunking implications.
 4. **Whisper testing:** VAD makes transcript tests flaky. Use Realtime for transcript comparison.
 5. **Realtime chunking:** Fixed 2.0s chunks, NOT configurable (no VAD).
+6. **SSL/Certificate issues:** For development/testing with corporate proxies or self-signed certs:
+   - Use `--ca_cert /path/to/cert.pem` for custom certificate bundles
+   - Use `--disable_ssl_verify` as last resort (insecure, not for production)
+   - Affects both model downloads and Realtime API WebSocket connections
 
 ## Testing
 

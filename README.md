@@ -60,10 +60,33 @@ uv run transcribe-demo
 
 #### Model Selection
 
+The default model is `turbo` (1.51GB), which requires a GPU for real-time performance.
+
+**For CPU-only environments, use `base.en`:**
+
 ```bash
-# Use different Whisper models
+# Recommended for CI/testing and production without GPU
+uv --project ci run transcribe-demo --model base.en
+```
+
+**Model recommendations:**
+- **`base.en` (139MB)** - **STRONGLY RECOMMENDED for CPU-only**
+  - 2.0x faster than real-time on CPU
+  - 11x smaller download than turbo
+  - Tested on 280s NPR newscast with good results
+  - Use for: CI/testing, production without GPU, resource-constrained systems
+
+- **`turbo` (1.51GB)** - Default for GPU
+  - Highest accuracy
+  - Requires GPU for real-time performance
+
+- **NOT RECOMMENDED:**
+  - `tiny.en` (72MB): Produces nonsensical errors ("stomp" vs "stop", "cliff face penalties")
+  - `small.en` (461MB): Slower than real-time on CPU, marginal improvement over base.en
+
+```bash
+# Other models (for GPU use or experimentation)
 uv run transcribe-demo --model small.en
-uv run transcribe-demo --model base.en
 uv run transcribe-demo --model tiny.en
 ```
 
@@ -71,11 +94,19 @@ uv run transcribe-demo --model tiny.en
 
 Fine-tune voice activity detection for your environment:
 
+**For responsive transcription with faster results:**
+```bash
+# Get 2-3x faster first results with minimal accuracy loss
+uv run transcribe-demo --max_chunk_duration 20 --vad_min_silence_duration 0.6
+```
+
+**Standard VAD tuning options:**
 ```bash
 # More aggressive pause detection (higher = more aggressive, 0-3)
 uv run transcribe-demo --vad_aggressiveness 3
 
 # Minimum silence duration to split chunks (default: 0.2s)
+# Increase for slower chunking, decrease for faster response
 uv run transcribe-demo --vad_min_silence_duration 0.5
 
 # Minimum speech duration before transcribing (default: 0.25s)
@@ -85,8 +116,15 @@ uv run transcribe-demo --vad_min_speech_duration 0.5
 uv run transcribe-demo --vad_speech_pad_duration 0.3
 
 # Maximum chunk duration (default: 60s)
+# Increase if seeing duration warnings during long speech
 uv run transcribe-demo --max_chunk_duration 90
 ```
+
+**Tuning guide:**
+- Increase `vad_aggressiveness` if missing speech
+- Decrease `vad_aggressiveness` if capturing background noise
+- Increase `vad_min_silence_duration` for slower, more deliberate chunking
+- Decrease `max_chunk_duration` for more responsive transcription
 
 ### Realtime API Backend
 
@@ -96,6 +134,10 @@ For lower-latency transcription, stream audio to the OpenAI Realtime API:
 export OPENAI_API_KEY=sk-...
 uv run transcribe-demo --backend realtime
 ```
+
+**Backend comparison:**
+- **Whisper** (default): VAD-based variable chunks, 2-7s latency, local processing
+- **Realtime**: Fixed 2.0s chunks, sub-second latency, cloud API (requires key + network)
 
 Customize the realtime backend:
 
