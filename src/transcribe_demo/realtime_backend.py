@@ -17,6 +17,7 @@ from typing import Any, Protocol
 
 import numpy as np
 import websockets
+import websockets.asyncio.client
 
 from transcribe_demo import audio_capture as audio_capture_lib
 from transcribe_demo.file_audio_source import FileAudioSource
@@ -66,7 +67,7 @@ class RealtimeTranscriptionResult:
 
 
 async def _send_json(
-    ws: Any,
+    ws: websockets.asyncio.client.ClientConnection,
     payload: dict[str, object],
     lock: asyncio.Lock,
 ) -> None:

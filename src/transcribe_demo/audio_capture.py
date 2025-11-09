@@ -5,7 +5,9 @@ from __future__ import annotations
 import queue
 import sys
 import threading
-from typing import TYPE_CHECKING, Any
+import types
+from ctypes import Structure
+from typing import TYPE_CHECKING, Any, Self
 
 import numpy as np
 
@@ -62,7 +64,13 @@ class AudioCaptureManager:
         self._stream: Any = None  # sd.InputStream when initialized
         self._stdin_thread: threading.Thread | None = None
 
-    def _audio_callback(self, indata: np.ndarray, frames: int, time, status) -> None:
+    def _audio_callback(
+        self,
+        indata: np.ndarray,
+        frames: int,
+        time: Structure,
+        status: sd.CallbackFlags,
+    ) -> None:
         """Audio callback invoked by sounddevice for each audio chunk."""
         if status:
             print(f"InputStream status: {status}", file=sys.stderr)
@@ -190,12 +198,17 @@ class AudioCaptureManager:
         with self._lock:
             return self._total_samples_captured / self.sample_rate
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> bool:
         """Context manager exit."""
         self.stop()
         self.close()
