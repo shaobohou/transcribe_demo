@@ -13,11 +13,13 @@ import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 import websockets
-import websockets.asyncio.client
+
+if TYPE_CHECKING:
+    import websockets.asyncio.client
 
 from transcribe_demo import audio_capture as audio_capture_lib
 from transcribe_demo.file_audio_source import FileAudioSource

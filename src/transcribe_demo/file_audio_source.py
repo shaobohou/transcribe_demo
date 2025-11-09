@@ -10,6 +10,7 @@ import threading
 import time
 import types
 from pathlib import Path
+from typing import Self
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -438,7 +439,7 @@ class FileAudioSource:
         with self._lock:
             return self._total_samples_captured / self.sample_rate
 
-    def __enter__(self) -> FileAudioSource:
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
