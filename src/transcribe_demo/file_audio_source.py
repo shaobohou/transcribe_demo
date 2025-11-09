@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import queue
 import sys
 import tempfile
@@ -82,16 +83,73 @@ class FileAudioSource:
         parsed = urlparse(path)
         return parsed.scheme in ("http", "https")
 
+    def _get_cache_dir(self) -> Path:
+        """
+        Get the cache directory for URL downloads.
+
+        Returns:
+            Path to the cache directory
+        """
+        # Follow XDG Base Directory specification
+        cache_home = Path.home() / ".cache"
+        cache_dir = cache_home / "transcribe_demo" / "urls"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
+
+    def _get_cache_key(self, url: str) -> str:
+        """
+        Generate a cache key for a URL.
+
+        Args:
+            url: The URL to hash
+
+        Returns:
+            SHA-256 hash of the URL
+        """
+        return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+    def _get_cached_file(self, url: str) -> Path | None:
+        """
+        Check if a URL is already cached and return the path if it exists.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            Path to cached file if it exists, None otherwise
+        """
+        cache_dir = self._get_cache_dir()
+        cache_key = self._get_cache_key(url)
+
+        # Determine file extension from URL
+        parsed_url = urlparse(url)
+        path_parts = parsed_url.path.split(".")
+        suffix = f".{path_parts[-1]}" if len(path_parts) > 1 and len(path_parts[-1]) <= 4 else ".audio"
+
+        cached_file = cache_dir / f"{cache_key}{suffix}"
+
+        if cached_file.exists():
+            return cached_file
+        return None
+
     def _download_from_url(self, url: str) -> Path:
         """
-        Download audio file from URL to a temporary file.
+        Download audio file from URL to cache, or return cached file if available.
 
         Args:
             url: URL to download from
 
         Returns:
-            Path to the temporary file
+            Path to the cached file
         """
+        # Check cache first
+        cached_file = self._get_cached_file(url)
+        if cached_file is not None:
+            print(f"Using cached audio from URL: {url}", file=sys.stderr)
+            print(f"Cache location: {cached_file}", file=sys.stderr)
+            return cached_file
+
+        # Cache miss - download the file
         print(f"Downloading audio from URL: {url}", file=sys.stderr)
 
         # Determine file extension from URL
@@ -99,8 +157,14 @@ class FileAudioSource:
         path_parts = parsed_url.path.split(".")
         suffix = f".{path_parts[-1]}" if len(path_parts) > 1 and len(path_parts[-1]) <= 4 else ".audio"
 
-        # Create temporary file
-        temp_fd, temp_path = tempfile.mkstemp(suffix=suffix, prefix="transcribe_audio_")
+        # Create cache file path
+        cache_dir = self._get_cache_dir()
+        cache_key = self._get_cache_key(url)
+        cache_file = cache_dir / f"{cache_key}{suffix}"
+
+        # Download to a temporary file first, then move to cache
+        # This prevents partial downloads from being cached
+        temp_fd, temp_path = tempfile.mkstemp(suffix=suffix, prefix="transcribe_audio_download_")
 
         try:
             # Download the file
@@ -125,7 +189,12 @@ class FileAudioSource:
             if total_size > 0:
                 print(f"Download complete: {downloaded / (1024 * 1024):.2f} MB", file=sys.stderr)
 
-            return Path(temp_path)
+            # Move to cache directory
+            temp_path_obj = Path(temp_path)
+            temp_path_obj.rename(cache_file)
+            print(f"Cached to: {cache_file}", file=sys.stderr)
+
+            return cache_file
 
         except Exception as e:
             # Clean up temp file on error
@@ -139,10 +208,10 @@ class FileAudioSource:
         """Load audio file and prepare for playback."""
         # Check if input is a URL
         if self._is_url(self.audio_file_input):
-            # Download to temporary file
-            self._temp_file = self._download_from_url(self.audio_file_input)
-            audio_path = self._temp_file
+            # Download to cache (or use cached file)
+            audio_path = self._download_from_url(self.audio_file_input)
             display_name = self.audio_file_input
+            # Note: We don't set self._temp_file because cached files are persistent
         else:
             # Use as local file path
             audio_path = Path(self.audio_file_input)

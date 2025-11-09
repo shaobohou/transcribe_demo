@@ -157,8 +157,14 @@ def test_file_audio_source_url_detection() -> None:
         audio_file = Path(tmpdir) / "test.wav"
         _create_test_audio_file(audio_file, 1.0, 16000)
 
+        # Use a temporary cache directory
+        temp_cache_dir = Path(tmpdir) / "cache"
+        temp_cache_dir.mkdir(parents=True, exist_ok=True)
+
         # Mock urlopen to avoid actual network requests
-        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen:
+        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen, patch.object(
+            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        ):
             # Create a mock response
             mock_response = MagicMock()
             mock_response.headers.get.return_value = "0"
@@ -237,7 +243,13 @@ def test_url_not_corrupted_by_path() -> None:
         audio_file = Path(tmpdir) / "test.wav"
         _create_test_audio_file(audio_file, 1.0, 16000)
 
-        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen:
+        # Use a temporary cache directory
+        temp_cache_dir = Path(tmpdir) / "cache"
+        temp_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen, patch.object(
+            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        ):
             # Create a mock response
             mock_response = MagicMock()
             mock_response.headers.get.return_value = "0"
@@ -269,3 +281,190 @@ def test_url_not_corrupted_by_path() -> None:
             assert "http://" in actual_url, "Double slash should be preserved"
 
             source.close()
+
+
+def test_url_caching_cache_miss() -> None:
+    """Test that first URL download creates a cache entry."""
+    with TemporaryDirectory() as tmpdir:
+        # Create a test audio file
+        audio_file = Path(tmpdir) / "test.wav"
+        _create_test_audio_file(audio_file, 1.0, 16000)
+
+        # Use a temporary cache directory
+        temp_cache_dir = Path(tmpdir) / "cache"
+        temp_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen, patch.object(
+            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        ):
+            # Create a mock response
+            mock_response = MagicMock()
+            mock_response.headers.get.return_value = "0"
+
+            # Read the actual audio file content
+            with open(audio_file, "rb") as f:
+                audio_content = f.read()
+
+            mock_response.read.side_effect = [audio_content, b""]
+            mock_response.__enter__.return_value = mock_response
+            mock_response.__exit__.return_value = False
+            mock_urlopen.return_value = mock_response
+
+            # Create file audio source with URL
+            test_url = "http://example.com/test.mp3"
+            source = FileAudioSource(
+                audio_file=test_url,
+                sample_rate=16000,
+                channels=1,
+                playback_speed=10.0,
+            )
+
+            # Verify URL was downloaded (cache miss)
+            mock_urlopen.assert_called_once()
+
+            # Verify cache file was created
+            cache_key = source._get_cache_key(test_url)
+            cache_file = temp_cache_dir / f"{cache_key}.mp3"
+            assert cache_file.exists(), "Cache file should be created"
+
+            # Verify audio was loaded
+            assert source._loaded_audio is not None
+            assert len(source._loaded_audio) > 0
+
+            source.close()
+
+
+def test_url_caching_cache_hit() -> None:
+    """Test that second URL download uses cache and doesn't re-download."""
+    with TemporaryDirectory() as tmpdir:
+        # Create a test audio file
+        audio_file = Path(tmpdir) / "test.wav"
+        _create_test_audio_file(audio_file, 1.0, 16000)
+
+        # Use a temporary cache directory
+        temp_cache_dir = Path(tmpdir) / "cache"
+        temp_cache_dir.mkdir(parents=True)
+
+        test_url = "http://example.com/test.mp3"
+
+        # First download - populate cache
+        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen, patch.object(
+            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        ):
+            # Create a mock response
+            mock_response = MagicMock()
+            mock_response.headers.get.return_value = "0"
+
+            # Read the actual audio file content
+            with open(audio_file, "rb") as f:
+                audio_content = f.read()
+
+            mock_response.read.side_effect = [audio_content, b""]
+            mock_response.__enter__.return_value = mock_response
+            mock_response.__exit__.return_value = False
+            mock_urlopen.return_value = mock_response
+
+            # Create first source
+            source1 = FileAudioSource(
+                audio_file=test_url,
+                sample_rate=16000,
+                channels=1,
+                playback_speed=10.0,
+            )
+
+            # Verify first download happened
+            assert mock_urlopen.call_count == 1
+            source1.close()
+
+        # Second download - should use cache
+        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen_2, patch.object(
+            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        ):
+            # Create second source with same URL
+            source2 = FileAudioSource(
+                audio_file=test_url,
+                sample_rate=16000,
+                channels=1,
+                playback_speed=10.0,
+            )
+
+            # Verify NO download happened (cache hit)
+            mock_urlopen_2.assert_not_called()
+
+            # Verify audio was loaded from cache
+            assert source2._loaded_audio is not None
+            assert len(source2._loaded_audio) > 0
+
+            source2.close()
+
+
+def test_url_caching_different_urls_different_cache() -> None:
+    """Test that different URLs create different cache entries."""
+    with TemporaryDirectory() as tmpdir:
+        # Create test audio files
+        audio_file1 = Path(tmpdir) / "test1.wav"
+        audio_file2 = Path(tmpdir) / "test2.wav"
+        _create_test_audio_file(audio_file1, 1.0, 16000)
+        _create_test_audio_file(audio_file2, 2.0, 16000)
+
+        # Use a temporary cache directory
+        temp_cache_dir = Path(tmpdir) / "cache"
+        temp_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        test_url1 = "http://example.com/test1.mp3"
+        test_url2 = "http://example.com/test2.mp3"
+
+        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen, patch.object(
+            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        ):
+
+            def mock_urlopen_side_effect(url, timeout=None):
+                """Return different content based on URL."""
+                mock_response = MagicMock()
+                mock_response.headers.get.return_value = "0"
+
+                if "test1" in url:
+                    with open(audio_file1, "rb") as f:
+                        content = f.read()
+                else:
+                    with open(audio_file2, "rb") as f:
+                        content = f.read()
+
+                mock_response.read.side_effect = [content, b""]
+                mock_response.__enter__.return_value = mock_response
+                mock_response.__exit__.return_value = False
+                return mock_response
+
+            mock_urlopen.side_effect = mock_urlopen_side_effect
+
+            # Download first URL
+            source1 = FileAudioSource(
+                audio_file=test_url1,
+                sample_rate=16000,
+                channels=1,
+                playback_speed=10.0,
+            )
+
+            # Download second URL
+            source2 = FileAudioSource(
+                audio_file=test_url2,
+                sample_rate=16000,
+                channels=1,
+                playback_speed=10.0,
+            )
+
+            # Verify both URLs were downloaded
+            assert mock_urlopen.call_count == 2
+
+            # Verify different cache files were created
+            cache_key1 = source1._get_cache_key(test_url1)
+            cache_key2 = source2._get_cache_key(test_url2)
+            assert cache_key1 != cache_key2, "Different URLs should have different cache keys"
+
+            cache_file1 = temp_cache_dir / f"{cache_key1}.mp3"
+            cache_file2 = temp_cache_dir / f"{cache_key2}.mp3"
+            assert cache_file1.exists(), "First cache file should exist"
+            assert cache_file2.exists(), "Second cache file should exist"
+
+            source1.close()
+            source2.close()
