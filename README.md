@@ -135,6 +135,10 @@ export OPENAI_API_KEY=sk-...
 uv run transcribe-demo --backend realtime
 ```
 
+**Backend comparison:**
+- **Whisper** (default): VAD-based variable chunks, 2-7s latency, local processing
+- **Realtime**: Fixed 2.0s chunks, sub-second latency, cloud API (requires key + network)
+
 Customize the realtime backend:
 
 ```bash
