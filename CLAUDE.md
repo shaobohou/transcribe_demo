@@ -20,7 +20,7 @@ uv run ruff format                        # Format code
 
 # CPU-only (CI/sandboxes - REQUIRED!)
 uv sync --project ci --refresh
-uv --project ci run transcribe-demo --audio_file audio.mp3
+uv --project ci run transcribe-demo --audio_file audio.mp3 --model base
 uv --project ci run python -m pytest
 ```
 
@@ -84,6 +84,26 @@ git push -u origin your-branch-name
 - **`min_silence_duration=0.2s`** - Controls chunking speed
 - **`max_chunk_duration=60s`** - Prevents buffer overflow
 - **`model="turbo"`** - Speed/accuracy tradeoff
+
+### Model Selection
+
+**`model="turbo"`** (default): Change if speed/accuracy tradeoff needs adjustment
+- **`base` model (139MB)**: Recommended for CI/testing and CPU-only environments
+  - 11x smaller download than turbo (139MB vs 1.51GB)
+  - 2.3x faster than real-time on CPU
+  - 97.5%+ accuracy on news/podcast content
+  - Use with: `--model base`
+- **`turbo` model (1.51GB)**: Default for production use with GPU
+  - Highest accuracy for general use
+  - Requires GPU for real-time performance
+
+### VAD Tuning
+
+- **`vad_aggressiveness=2`**: Increase if missing speech, decrease if capturing noise
+- **`min_silence_duration=0.2s`**: Increase for slower chunking, decrease for faster response
+- **`max_chunk_duration=60s`**: Increase if seeing duration warnings during long speech
+- **For responsive transcription**: Use `--max_chunk_duration 20` with `--vad_min_silence_duration 0.6`
+  - Provides 2-3x faster first results with minimal accuracy loss
 
 ### Other Configuration
 
