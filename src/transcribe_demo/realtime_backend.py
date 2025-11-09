@@ -466,12 +466,6 @@ def run_realtime_transcriber(
                                         flush_remaining_partials()
                                     break
 
-                                if audio_capture.stop_event.is_set():
-                                    # Flush any remaining partials before stopping
-                                    if partials:
-                                        flush_remaining_partials()
-                                    break
-
                                 payload = json.loads(message)
                                 event_type = payload.get("type")
 
@@ -540,6 +534,13 @@ def run_realtime_transcriber(
                                 elif event_type == "error.session":
                                     message_text = payload.get("message") or payload
                                     print(f"\nRealtime session error: {message_text}", file=sys.stderr)
+
+                                # Check stop_event after processing message
+                                if audio_capture.stop_event.is_set():
+                                    # Flush any remaining partials before stopping
+                                    if partials:
+                                        flush_remaining_partials()
+                                    break
                         except Exception as e:
                             print(f"Receiver error: {e}", file=sys.stderr)
                             raise
