@@ -3,5 +3,6 @@ __pycache__/
 *.py[cod]
 session_logs/
 vendor/triton-cpu-stub/src/triton.egg-info/
+vendor/triton-cpu-stub/build/
 ci/.venv/
 ci/*.egg-info/
