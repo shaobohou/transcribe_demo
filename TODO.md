@@ -1831,6 +1831,64 @@ if chunk_consumer:
 
 ## Future Improvements
 
+### TODO: Use WebRTC VAD for Realtime Backend (Instead of Server-Side VAD)
+
+**Problem**: The OpenAI Realtime API's server-side VAD is designed for conversational AI (detecting when a user stops speaking), not continuous transcription of pre-recorded content. For fast-paced speech like news broadcasts or podcasts, the server VAD requires extensive tuning and still produces fewer, less predictable chunk boundaries compared to local VAD.
+
+**Current Architecture**:
+- **Whisper backend**: WebRTC VAD locally → chunks at natural pauses → sends to Whisper
+- **Realtime backend**: Streams continuously → server-side VAD detects turns → emits chunks
+
+**Proposed Architecture**:
+- **Both backends**: WebRTC VAD locally → chunks at natural pauses → send to transcription service
+
+**Benefits**:
+1. **Consistent behavior**: Both backends use identical chunking logic - easier to reason about and predict
+2. **Local control**: No dependency on server VAD settings or API changes
+3. **Proven for broadcast content**: WebRTC VAD already works great for NPR audio in Whisper backend
+4. **Bandwidth efficiency**: Only send audio during speech, skip silence periods
+5. **Deterministic**: Server VAD is a black box; WebRTC VAD is fully under our control
+6. **Simpler configuration**: One set of VAD settings (`--vad_*` flags) for both backends
+7. **Better chunk boundaries**: More frequent, predictable chunks for continuous speech
+
+**Current Issues with Server VAD**:
+- Fast-paced content (news, podcasts) requires aggressive tuning (`--realtime_vad_silence_duration_ms 100`)
+- NPR newscast produced only 3 chunks in 120 seconds even with tuned settings
+- Configuration parameters are realtime-specific (`--realtime_vad_*`) and don't align with Whisper backend settings
+- Users must learn two different VAD configuration systems
+
+**Implementation Approach**:
+1. Extract WebRTC VAD logic from `whisper_backend.py` into a shared module (e.g., `vad.py`)
+2. Make `WebRTCVAD` class reusable for both backends
+3. Update `run_realtime_transcriber()` to:
+   - Use WebRTC VAD for local chunking (same as Whisper backend)
+   - Send each VAD-detected chunk to the API with `include_turn_detection=False`
+   - Await transcription response for each chunk before sending the next
+4. Remove `--realtime_vad_*` flags (use existing `--vad_*` flags for both backends)
+5. Update CLAUDE.md to document unified VAD configuration
+
+**Code Structure**:
+```python
+# Shared VAD module
+vad = WebRTCVAD(sample_rate, vad_aggressiveness, ...)
+
+# In realtime backend
+for chunk in vad.process_audio_stream():
+    # Send chunk with turn detection disabled
+    await send_audio_chunk(chunk, turn_detection=False)
+    await commit_and_wait_for_transcription()
+```
+
+**Priority**: High - significantly improves realtime backend usability for continuous speech
+**Estimated Effort**: 4-6 hours (extract VAD module + update realtime backend + tests + docs)
+
+**Related**:
+- Current server VAD implementation: `realtime_backend.py:80-105` (`_create_session_update`)
+- WebRTC VAD class: `whisper_backend.py:28-221`
+- Server VAD configuration flags: `main.py:166-186`
+
+---
+
 ### TODO: Silero VAD Backend for Background Noise/Music Robustness
 
 **Problem**: WebRTC VAD can only distinguish silence vs voice, causing false positives with background music/noise.
