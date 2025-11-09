@@ -102,9 +102,11 @@ flags.DEFINE_string(
     "Custom certificate bundle to trust when downloading Whisper models.",
 )
 flags.DEFINE_boolean(
-    "insecure_downloads",
+    "disable_ssl_verify",
     False,
-    "Disable SSL verification when downloading models (not recommended).",
+    "Disable SSL certificate verification for all network operations, including model downloads "
+    "and Realtime API connections. Use this to bypass certificate issues in restricted networks. "
+    "WARNING: This is insecure and not recommended for production use.",
 )
 
 # VAD configuration
@@ -608,7 +610,7 @@ def main(argv: list[str]) -> None:
                 channels=FLAGS.channels,
                 temp_file=Path(FLAGS.temp_file) if FLAGS.temp_file else None,
                 ca_cert=Path(FLAGS.ca_cert) if FLAGS.ca_cert else None,
-                insecure_downloads=FLAGS.insecure_downloads,
+                disable_ssl_verify=FLAGS.disable_ssl_verify,
                 device_preference=FLAGS.device,
                 require_gpu=FLAGS.require_gpu,
                 chunk_consumer=collector,
@@ -690,7 +692,7 @@ def main(argv: list[str]) -> None:
             channels=FLAGS.channels,
             chunk_duration=REALTIME_CHUNK_DURATION,
             instructions=FLAGS.realtime_instructions,
-            insecure_downloads=FLAGS.insecure_downloads,
+            disable_ssl_verify=FLAGS.disable_ssl_verify,
             chunk_consumer=collector,
             compare_transcripts=FLAGS.compare_transcripts,
             max_capture_duration=FLAGS.max_capture_duration,
@@ -723,7 +725,7 @@ def main(argv: list[str]) -> None:
                         endpoint=FLAGS.realtime_endpoint,
                         model=FLAGS.realtime_model,
                         instructions=FLAGS.realtime_instructions,
-                        insecure_downloads=FLAGS.insecure_downloads,
+                        disable_ssl_verify=FLAGS.disable_ssl_verify,
                         language=language_pref,
                     )
                 except Exception as exc:

@@ -1200,7 +1200,7 @@ class TranscribeConfig:
 
     # SSL settings
     ca_cert: Optional[Path] = None
-    insecure_downloads: bool = False
+    disable_ssl_verify: bool = False
 
     # Optional
     api_key: Optional[str] = None

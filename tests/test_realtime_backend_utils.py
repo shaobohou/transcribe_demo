@@ -127,7 +127,7 @@ def test_transcribe_full_audio_realtime_collects_chunks(monkeypatch):
         endpoint="wss://example.com",
         model="model",
         instructions="instructions",
-        insecure_downloads=False,
+        disable_ssl_verify=False,
         language="en",
     )
 
