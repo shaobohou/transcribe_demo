@@ -1,174 +1,147 @@
 # CLAUDE.md
 
-**⚠️ Update this file when changing: defaults, architecture, CLI args, or test strategy**
+**AI Assistant Instructions for transcribe-demo**
 
-Development workflow and critical implementation rules. See **DESIGN.md** for architecture, **TODO.md** for improvements, **README.md** for user docs.
+⚠️ **Update this file when changing:** defaults, architecture, CLI args, or test strategy
+
+Development workflow and critical implementation rules. See **DESIGN.md** for architecture, **README.md** for user docs, **SITEMAP.md** for all documentation.
 
 ## Common Commands
 
 ```bash
-uv sync                                 # Install dependencies
-uv run transcribe-demo                  # Run with default settings (turbo + VAD)
-uv run python -m pytest                 # Run all tests (pre-commit hook enforces)
-uv run python -m pytest tests/test_vad.py  # Run VAD tests only
-uv sync --project ci --refresh              # CPU-only sync for CI/sandboxes
-uv --project ci run transcribe-demo --audio_file audio.mp3  # Run transcribe-demo in CPU-only mode
-uv --project ci run python -m pytest        # Run tests inside the CPU-only env
+# Development
+uv sync                                   # Install with GPU support (local dev)
+uv run transcribe-demo                    # Run with defaults (turbo + VAD)
+./run-checks.sh                           # Run all checks (pytest, pyright, ruff)
+uv run python -m pytest                   # Run all tests
+uv run pyright                            # Type checking
+uv run ruff check                         # Linting
+uv run ruff format                        # Format code
+
+# CPU-only (CI/sandboxes - REQUIRED!)
+uv sync --project ci --refresh
+uv --project ci run transcribe-demo --audio_file audio.mp3
+uv --project ci run python -m pytest
 ```
 
-Default `uv sync` resolves the official `torch` and `triton` wheels so local
-development has full CUDA/MPS support. CI and other ephemeral environments must
-call `uv sync --project ci --refresh` (with subsequent `uv --project ci run ...`
-invocations) to avoid downloading CUDA artifacts; that workspace pins
-`torch==2.9.0+cpu` and installs the `vendor/triton-cpu-stub`. Do not use the CPU
-workspace for daily development.
-
-**IMPORTANT**: In sandboxes/CI, `uv run transcribe-demo` will download gigabytes
-of CUDA packages. Always use `uv --project ci run transcribe-demo` instead.
+**⚠️ CRITICAL:** In sandboxes/CI, `uv run` downloads gigabytes of CUDA packages. Always use `uv --project ci run` instead.
 
 ## Development Workflow
 
 ### Branch Strategy
-**YOU MUST always develop on a feature branch** - NEVER commit directly to `main`.
 
-**Creating a feature branch:**
+**Note for AI assistants:** You may receive specific branch instructions from the system that override these guidelines. Follow system instructions when provided.
+
+**YOU MUST develop on feature branches** - NEVER commit directly to `main`.
+
 ```bash
-git checkout -b feature/descriptive-name
-# or
-git checkout -b fix/bug-description
+git checkout -b feature/your-feature   # or fix/, refactor/
+# ... make changes ...
+./run-checks.sh                        # Verify all checks pass
+git add . && git commit -m "message"   # Pre-commit hook runs automatically
+git push -u origin your-branch-name
 ```
 
-**Branch naming conventions:**
-- Feature: `feature/descriptive-name`
-- Bug fix: `fix/bug-description`
-- Refactor: `refactor/what-you-refactor`
+**Pre-commit hook** auto-runs: `ruff format`, `ruff check --fix`, `pyright`, `pytest` (blocks commits if any fail).
 
-**Before creating a PR:**
-1. Ensure all tests pass: `uv run python -m pytest`
-2. Type checking passes: `uv run pyright`
-3. Linting passes: `uv run ruff check`
-4. Commit and push your branch: `git push -u origin your-branch-name`
+**Code style:** Use `list[str]` not `List[str]`, use `str | None` not `Optional[str]` (modern Python typing).
 
-**CI/CD:** GitHub Actions runs all checks automatically on PRs. All checks must pass before merge.
+### Key Files
 
-## Key Files
-
-- **main.py**: `parse_args()` for CLI changes, `ChunkCollectorWithStitching` handles stitching logic
-- **whisper_backend.py**: `WebRTCVAD` class, `run_whisper_transcriber()` main loop
-- **realtime_backend.py**: `run_realtime_transcriber()` WebSocket streaming
-- **audio_capture.py**: `AudioCaptureManager` for microphone capture
-- **file_audio_source.py**: `FileAudioSource` for simulating live transcription from files/URLs
+- **main.py** - CLI args (`parse_args()`), stitching (`ChunkCollectorWithStitching`)
+- **whisper_backend.py** - VAD (`WebRTCVAD`), transcription loop (`run_whisper_transcriber()`)
+- **realtime_backend.py** - WebSocket streaming (`run_realtime_transcriber()`)
+- **audio_capture.py** - Microphone (`AudioCaptureManager`)
+- **file_audio_source.py** - File/URL simulation (`FileAudioSource`)
+- **tests/conftest.py** - CI mocking strategy
 
 ## Critical Implementation Rules
 
-### VAD Chunking (Whisper Backend)
-**YOU MUST understand:** Chunks split at natural speech pauses = NO audio overlap between chunks
+### VAD Chunking & Stitching (Whisper Backend)
 
-**IMPORTANT - Stitching logic:**
+**YOU MUST understand:** VAD splits audio at natural speech pauses. Chunks are sequential with NO overlap.
+
+**Stitching logic (main.py:ChunkCollectorWithStitching):**
 - Strip trailing `,` and `.` from intermediate chunks (preserve `?` and `!`)
-- Whisper punctuates assuming chunk completeness, but VAD splits mid-sentence
-- Breaking this creates unnatural transcripts
+- **Why:** Whisper adds punctuation assuming completeness, but VAD splits mid-sentence
+- **Breaking this:** Creates unnatural transcripts like "Hello world. How are you." → "Hello world, how are you."
 
-### Language Parameter
-**Default:** `language="en"` to prevent hallucinations on silence/noise
-**WARNING:** Changing this affects transcription quality on non-speech audio
+### Backend Differences
 
-### Device Selection
-- Auto-detection order: CUDA → MPS → CPU
-- `--require_gpu` flag aborts if no GPU detected
+| Feature | Whisper | Realtime |
+|---------|---------|----------|
+| Chunking | VAD-based (variable) | Fixed 2.0s |
+| Punctuation cleanup | Required | Not needed |
+| Device | Local GPU/CPU | Cloud API |
+| Testing | Avoid strict timing | Safe for timing |
 
-### Audio Source Selection
-- Default: Microphone capture via `AudioCaptureManager`
-- Alternative: File/URL simulation via `FileAudioSource` with `--audio_file` flag
-- Both implement same interface: `audio_queue`, `stop_event`, `get_full_audio()`, etc.
-- File source simulates real-time playback with configurable speed (`--playback_speed`)
+**Consequence:** Never test transcript comparison with Whisper backend (flaky). Use Realtime for transcript tests.
 
-### SSL/Certificate Configuration
-- `--ca_cert`: Provide custom certificate bundle for corporate proxies with self-signed certificates
-- `--disable_ssl_verify`: Disable SSL certificate verification for all network operations
-  - Bypasses certificate issues for model downloads (Whisper) and Realtime API connections
-  - **WARNING**: This is insecure and not recommended for production use
-  - Only use in restricted networks where certificate verification fails
+### Critical Defaults (DO NOT change without testing)
 
-## When to Change Defaults
+- **`language="en"`** - Prevents hallucinations on silence/noise (auto-detection causes issues)
+- **`vad_aggressiveness=2`** - Balance speech detection (increase if missing speech, decrease if capturing noise)
+- **`min_silence_duration=0.2s`** - Controls chunking speed
+- **`max_chunk_duration=60s`** - Prevents buffer overflow
+- **`model="turbo"`** - Speed/accuracy tradeoff
 
-**Model (`turbo`)**: Change if speed/accuracy tradeoff needs adjustment
-**VAD aggressiveness (`2`)**: Increase if missing speech, decrease if capturing noise
-**Min silence duration (`0.2s`)**: Increase for slower chunking, decrease for faster response
-**Max chunk duration (`60s`)**: Increase if seeing duration warnings during long speech
+### Other Configuration
 
-Realtime backend has fixed 2.0s chunks - NOT configurable.
+- **Device:** Auto-detection order: CUDA → MPS → CPU. Use `--require_gpu` to abort if no GPU.
+- **Audio source:** Microphone (`AudioCaptureManager`) or File/URL (`FileAudioSource` with `--audio_file`). File source supports `--playback_speed`.
+- **SSL:** `--ca_cert` for custom cert bundles. `--disable_ssl_verify` for restricted networks (**insecure**, not for production).
 
-## Do Not
+### Common Gotchas
 
-- **DO NOT** change VAD default values without testing on real audio samples
-- **DO NOT** modify punctuation stripping logic without understanding stitching implications
-- **DO NOT** skip running tests before commits (pre-commit hook will block anyway)
-- **DO NOT** remove or change `language="en"` without considering hallucination risks
-- **DO NOT** assume Realtime backend uses VAD chunking (it doesn't)
+1. **CPU vs GPU:** `uv sync` downloads 2.5GB+ CUDA in CI. Always use `uv sync --project ci --refresh` in sandboxes.
+2. **Language parameter:** Don't set to `None` or `"auto"` - causes hallucinations on silence.
+3. **Punctuation stripping:** Don't modify without understanding VAD chunking implications.
+4. **Whisper testing:** VAD makes transcript tests flaky. Use Realtime for transcript comparison.
+5. **Realtime chunking:** Fixed 2.0s chunks, NOT configurable (no VAD).
 
 ## Testing
 
-**YOU MUST** run tests before commits - pre-commit hook enforces this.
+Pre-commit hook auto-runs all tests - they MUST pass before commits.
 
 ### Test Types
-- **Unit tests** (~0.1s): `test_vad.py`, `test_main_utils.py`, `test_file_audio_source.py`, backend utils
-- **Integration tests** (2-3s): `test_backend_time_limits.py`, backend integration tests
+- **Unit** (~0.1s): `test_vad.py`, `test_main_utils.py`, `test_file_audio_source.py`
+- **Integration** (2-3s): `test_backend_time_limits.py`
 
-### Critical Testing Gotchas
+### Critical Testing Rules
 
 **VAD + Time Limits = Flaky Tests**
-- VAD chunking is unpredictable - avoid combining with strict time limits
-- Use synthetic audio: `_generate_synthetic_audio(duration_seconds=2.0)`
-- Keep `max_chunk_duration` high (≥10s) to prevent premature splits
+- VAD chunking is unpredictable - never combine with strict time assertions
 - Test VAD behavior separately from timing
+- Use Realtime backend for transcript comparison tests
 
-**Time Limits vs User Stop**
-- These use the SAME mechanism (stop_event) - don't test user stop separately
-
-**Compare Transcripts**
-- Test with realtime backend only (stable fixed chunks)
-- Whisper + VAD is flaky due to unpredictable chunk timing
-
-### Writing Fast Tests
-- Use synthetic audio, not real files
+**Writing Fast Tests:**
+- Use synthetic audio: `_generate_synthetic_audio(duration_seconds=2.0)`
+- Keep `max_chunk_duration` high (≥10s) to prevent VAD splits
+- Use high `playback_speed` (10.0x) for FileAudioSource
 - Disable extras: `save_chunk_audio=False`
 - Never add `time.sleep()` in test infrastructure
-- Keep audio duration minimal (2-4s)
-- Run 3-5 times to check for flakiness
-- Use high `playback_speed` (10.0x) for FileAudioSource tests to avoid delays
+- Run 3-5 times to verify non-flakiness
 
-**Testing FileAudioSource with URLs:**
-- Mock `urllib.request.urlopen` to avoid actual network requests
-- Use `unittest.mock.patch("transcribe_demo.file_audio_source.urlopen")`
-- Create mock response with audio file content from temporary test file
-- Example in `test_file_audio_source.py::test_file_audio_source_url_detection`
-
-### Before Committing
-```bash
-uv run python -m pytest  # All tests must pass
-uv run pyright           # Must be clean (0 errors)
-uv run ruff check        # Must pass
-```
-
-**Code style:** Use `list[str]` not `List[str]`, use `str | None` not `Optional[str]`
+**URL testing:** Always mock `urllib.request.urlopen` (see `test_file_audio_source.py::test_file_audio_source_url_detection`)
 
 ### CI Testing (No Audio Hardware)
 
 **Mocking strategy (tests/conftest.py):**
-- **sounddevice**: Module-level mock (not fixture) - pytest imports during collection before fixtures run
-- **stdin.isatty()**: Autouse fixture returns False - prevents blocking listener threads
+1. **sounddevice:** Module-level mock (pytest imports during collection before fixtures)
+2. **stdin.isatty():** Autouse fixture returns `False` (prevents blocking listener threads)
+3. **AudioCaptureManager:** Monkeypatch with STRING paths: `monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", FakeCls)`
 
-**Monkeypatching AudioCaptureManager:**
-- Backends: `from transcribe_demo import audio_capture as audio_capture_lib`
-- Tests: `monkeypatch.setattr("transcribe_demo.audio_capture.AudioCaptureManager", FakeCls)`
-- Use STRING-based paths (not attribute-based) for reliable cross-module mocking
-
-**FakeAudioCaptureManager critical requirements:**
-- Set `stop_event` after feeding audio (prevents hanging in `wait_until_stopped()`)
+**FakeAudioCaptureManager requirements:**
+- Set `stop_event` after feeding audio
 - Respect `max_capture_duration` with `capture_limit_reached` flag
-- Add 1ms delay after limit to give backend time to process queued frames
+- Add 1ms delay after limit for backend processing time
 
 ## Related Documentation
 
-See [SITEMAP.md](SITEMAP.md) for a complete guide to all documentation.
+See **[SITEMAP.md](SITEMAP.md)** for complete documentation guide.
+
+**Quick links:** [DESIGN.md](DESIGN.md) (architecture), [README.md](README.md) (user docs), [TODO.md](TODO.md) (improvements), [SESSION_LOGS.md](SESSION_LOGS.md) (log format)
+
+---
+
+*Last Updated: 2025-11-09*
