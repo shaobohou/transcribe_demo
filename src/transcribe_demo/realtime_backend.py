@@ -10,6 +10,7 @@ import os
 import queue
 import socket
 import ssl
+import struct
 import sys
 import threading
 import time
@@ -26,6 +27,93 @@ import websockets.client
 from transcribe_demo import audio_capture as audio_capture_lib
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
+
+
+class SimpleWebSocketWrapper:
+    """Simple WebSocket wrapper for pre-handshaked SSL socket."""
+
+    def __init__(self, ssl_sock: ssl.SSLSocket):
+        self.sock = ssl_sock
+        self.sock.setblocking(False)
+
+    async def send(self, message: str) -> None:
+        """Send a text message over WebSocket."""
+        # WebSocket text frame format: FIN=1, opcode=1 (text)
+        payload = message.encode("utf-8")
+        header = bytearray([0x81])  # FIN=1, opcode=1
+
+        # Add payload length and masking
+        length = len(payload)
+        if length < 126:
+            header.append(0x80 | length)  # MASK=1, length
+        elif length < 65536:
+            header.append(0x80 | 126)
+            header.extend(struct.pack("!H", length))
+        else:
+            header.append(0x80 | 127)
+            header.extend(struct.pack("!Q", length))
+
+        # Generate masking key
+        mask_key = os.urandom(4)
+        header.extend(mask_key)
+
+        # Apply mask to payload
+        masked_payload = bytearray(payload)
+        for i in range(len(masked_payload)):
+            masked_payload[i] ^= mask_key[i % 4]
+
+        # Send frame
+        frame = bytes(header) + bytes(masked_payload)
+        await asyncio.get_event_loop().sock_sendall(self.sock, frame)
+
+    async def recv(self) -> str:
+        """Receive a message from WebSocket."""
+        # Read first 2 bytes
+        header = await asyncio.get_event_loop().sock_recv(self.sock, 2)
+        if len(header) < 2:
+            raise ConnectionError("Connection closed")
+
+        # Parse header
+        fin_opcode = header[0]
+        mask_len = header[1]
+
+        opcode = fin_opcode & 0x0F
+
+        # Get payload length
+        payload_len = mask_len & 0x7F
+        if payload_len == 126:
+            len_bytes = await asyncio.get_event_loop().sock_recv(self.sock, 2)
+            payload_len = struct.unpack("!H", len_bytes)[0]
+        elif payload_len == 127:
+            len_bytes = await asyncio.get_event_loop().sock_recv(self.sock, 8)
+            payload_len = struct.unpack("!Q", len_bytes)[0]
+
+        # Read payload
+        payload = bytearray()
+        while len(payload) < payload_len:
+            chunk = await asyncio.get_event_loop().sock_recv(self.sock, payload_len - len(payload))
+            if not chunk:
+                raise ConnectionError("Connection closed")
+            payload.extend(chunk)
+
+        # Decode text frame
+        if opcode == 1:  # Text frame
+            return payload.decode("utf-8")
+        elif opcode == 8:  # Close frame
+            raise ConnectionError("WebSocket closed")
+        else:
+            return ""  # Skip other frame types
+
+    async def close(self) -> None:
+        """Close the WebSocket connection."""
+        try:
+            # Send close frame (opcode=8)
+            close_frame = bytes([0x88, 0x00])
+            await asyncio.get_event_loop().sock_sendall(self.sock, close_frame)
+        except:
+            pass
+        finally:
+            self.sock.close()
 
 
 class ChunkConsumer(Protocol):
@@ -221,7 +309,8 @@ def _create_proxy_tunnel_with_websocket_handshake(
 
         ws_request += "\r\n"
 
-        print(f"[DEBUG] Sending WebSocket handshake", file=sys.stderr)
+        print(f"[DEBUG] Sending WebSocket handshake:", file=sys.stderr)
+        print(f"[DEBUG] Request:\n{ws_request}", file=sys.stderr)
         ssl_sock.sendall(ws_request.encode("utf-8"))
 
         # Read WebSocket handshake response
@@ -313,23 +402,32 @@ def transcribe_full_audio_realtime(
         }
 
         if proxy_url:
-            # Use manual CONNECT tunnel for proxy with JWT auth
-            print(f"[DEBUG] Proxy detected, using manual CONNECT tunnel", file=sys.stderr)
-            parsed_endpoint = urlparse(endpoint)
-            target_host = parsed_endpoint.hostname or "api.openai.com"
-            target_port = parsed_endpoint.port or 443
+            # Use manual CONNECT tunnel and WebSocket handshake for proxy with JWT auth
+            print(f"[DEBUG] Proxy detected, using manual WebSocket handshake", file=sys.stderr)
+            parsed_uri = urlparse(uri)
+            target_host = parsed_uri.hostname or "api.openai.com"
+            target_port = parsed_uri.port or 443
+            ws_path = parsed_uri.path + ("?" + parsed_uri.query if parsed_uri.query else "")
 
-            # Create proxy tunnel in a thread (blocking operation)
-            raw_sock = await asyncio.to_thread(_create_proxy_tunnel, target_host, target_port)
+            # Create proxy tunnel and complete WebSocket handshake in a thread (blocking operation)
+            ssl_sock = await asyncio.to_thread(
+                _create_proxy_tunnel_with_websocket_handshake,
+                target_host,
+                target_port,
+                ws_path,
+                headers,
+                ssl_context,
+            )
 
-            # Pass raw socket and let websockets handle SSL
-            ws_kwargs["sock"] = raw_sock
-            print(f"[DEBUG] Passing raw socket to websockets.connect()", file=sys.stderr)
+            # Use our simple WebSocket wrapper
+            ws = SimpleWebSocketWrapper(ssl_sock)
+            print(f"[DEBUG] Using manual WebSocket connection", file=sys.stderr)
         else:
             # Direct connection without proxy
             ws_kwargs["ssl"] = ssl_context
+            ws = await websockets.connect(uri, **ws_kwargs).__aenter__()
 
-        async with websockets.connect(uri, **ws_kwargs) as ws:
+        try:
             await _send_json(
                 ws,
                 _create_session_update(
@@ -420,8 +518,13 @@ def transcribe_full_audio_realtime(
                     break
                 elif event_type and event_type.startswith("error"):
                     raise RuntimeError(f"Realtime error: {payload}")
+        finally:
+            # Close WebSocket connection
+            try:
+                await ws.close()
+            except:
+                pass
 
-            await ws.close()
         return " ".join(completed).strip()
 
     return _run_async(_transcribe)
