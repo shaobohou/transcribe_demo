@@ -31,10 +31,16 @@ artifacts by using the dedicated CPU workspace found in `ci/pyproject.toml`:
 
 ```bash
 uv sync --project ci --refresh
-# run tooling/tests against the CPU env
+# Run transcribe-demo in CPU-only mode
+uv --project ci run transcribe-demo --audio_file audio.mp3
+# Run tooling/tests against the CPU env
 uv --project ci run ruff check
 uv --project ci run python -m pytest
 ```
+
+**Important**: All `uv run transcribe-demo` examples in this README will download
+CUDA packages on fresh environments. In sandboxes/CI, **always use**
+`uv --project ci run transcribe-demo` instead to avoid gigabyte downloads.
 
 This workspace pins `torch==2.9.0+cpu`, installs the `vendor/triton-cpu-stub`
 package, and pulls from the PyTorch CPU wheel index so dependency resolution
@@ -67,19 +73,19 @@ Fine-tune voice activity detection for your environment:
 
 ```bash
 # More aggressive pause detection (higher = more aggressive, 0-3)
-uv run transcribe-demo --vad-aggressiveness 3
+uv run transcribe-demo --vad_aggressiveness 3
 
 # Minimum silence duration to split chunks (default: 0.2s)
-uv run transcribe-demo --vad-min-silence-duration 0.5
+uv run transcribe-demo --vad_min_silence_duration 0.5
 
 # Minimum speech duration before transcribing (default: 0.25s)
-uv run transcribe-demo --vad-min-speech-duration 0.5
+uv run transcribe-demo --vad_min_speech_duration 0.5
 
 # Padding before speech to avoid cutting words (default: 0.2s)
-uv run transcribe-demo --vad-speech-pad-duration 0.3
+uv run transcribe-demo --vad_speech_pad_duration 0.3
 
 # Maximum chunk duration (default: 60s)
-uv run transcribe-demo --max-chunk-duration 90
+uv run transcribe-demo --max_chunk_duration 90
 ```
 
 ### Realtime API Backend
@@ -95,8 +101,8 @@ Customize the realtime backend:
 
 ```bash
 uv run transcribe-demo --backend realtime \
-  --realtime-model gpt-realtime-mini \
-  --realtime-instructions "Your custom transcription instructions"
+  --realtime_model gpt-realtime-mini \
+  --realtime_instructions "Your custom transcription instructions"
 ```
 
 ### GPU Support
@@ -110,7 +116,7 @@ uv run transcribe-demo --device mps    # Apple Metal (Apple Silicon)
 uv run transcribe-demo --device cpu    # CPU only
 
 # Abort if no GPU available (don't fall back to CPU)
-uv run transcribe-demo --require-gpu
+uv run transcribe-demo --require_gpu
 ```
 
 ### SSL/Certificate Handling
@@ -119,10 +125,10 @@ For corporate proxies with self-signed certificates:
 
 ```bash
 # Provide custom certificate bundle
-uv run transcribe-demo --ca-cert /path/to/corp-ca.pem
+uv run transcribe-demo --ca_cert /path/to/corp-ca.pem
 
 # Skip certificate verification (insecure, use as last resort)
-uv run transcribe-demo --insecure-downloads
+uv run transcribe-demo --insecure_downloads
 ```
 
 ### Transcript Comparison & Capture Duration
@@ -151,21 +157,21 @@ Instead of capturing from a microphone, you can simulate live transcription from
 
 ```bash
 # Transcribe from local audio file
-uv run transcribe-demo --audio-file path/to/audio.mp3
+uv run transcribe-demo --audio_file path/to/audio.mp3
 
 # Transcribe from URL (supports HTTP/HTTPS)
-uv run transcribe-demo --audio-file http://example.com/audio.mp3
+uv run transcribe-demo --audio_file http://example.com/audio.mp3
 
 # Example: NPR newscast
-uv run transcribe-demo --audio-file http://public.npr.org/anon.npr-mp3/npr/news/newscast.mp3
+uv run transcribe-demo --audio_file http://public.npr.org/anon.npr-mp3/npr/news/newscast.mp3
 
 # Control playback speed (default: 1.0 = real-time)
-uv run transcribe-demo --audio-file audio.wav --playback-speed 2.0    # 2x faster
-uv run transcribe-demo --audio-file audio.mp3 --playback-speed 0.5    # 2x slower
+uv run transcribe-demo --audio_file audio.wav --playback_speed 2.0    # 2x faster
+uv run transcribe-demo --audio_file audio.mp3 --playback_speed 0.5    # 2x slower
 
 # Works with all backends and configuration options
-uv run transcribe-demo --audio-file audio.flac --backend realtime
-uv run transcribe-demo --audio-file audio.wav --max-chunk-duration 30
+uv run transcribe-demo --audio_file audio.flac --backend realtime
+uv run transcribe-demo --audio_file audio.wav --max_chunk_duration 30
 ```
 
 **Supported formats**: WAV, FLAC, MP3, OGG, and any format supported by `libsndfile`.

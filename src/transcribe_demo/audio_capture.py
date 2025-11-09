@@ -5,9 +5,14 @@ from __future__ import annotations
 import queue
 import sys
 import threading
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import sounddevice as sd
+
+if TYPE_CHECKING:
+    import sounddevice as sd
+else:
+    sd = None  # Lazy import when needed
 
 
 class AudioCaptureManager:
@@ -54,7 +59,7 @@ class AudioCaptureManager:
         self._max_capture_samples = int(sample_rate * max_capture_duration) if max_capture_duration > 0 else 0
 
         # Input stream reference
-        self._stream: sd.InputStream | None = None
+        self._stream: Any = None  # sd.InputStream when initialized
         self._stdin_thread: threading.Thread | None = None
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time, status) -> None:
@@ -118,6 +123,12 @@ class AudioCaptureManager:
 
     def start(self) -> None:
         """Start audio capture from microphone."""
+        # Lazy import sounddevice only when actually needed
+        global sd
+        if sd is None:
+            import sounddevice as sd_module
+            sd = sd_module
+
         # Start stdin listener if available
         if sys.stdin is not None and sys.stdin.isatty():
             self._stdin_thread = threading.Thread(target=self._stdin_listener, name="stdin-listener", daemon=True)
