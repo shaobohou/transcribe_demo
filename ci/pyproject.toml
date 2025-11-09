@@ -4,9 +4,9 @@ version = "0.0.0"
 description = "CI harness for transcribe-demo CPU sync"
 requires-python = ">=3.12"
 dependencies = [
-    "transcribe-demo @ file:///workspace/transcribe_demo",
+    "transcribe-demo",
     "torch==2.9.0+cpu",
-    "triton @ file:///workspace/transcribe_demo/vendor/triton-cpu-stub",
+    "triton",
     "pytest>=8.4.2",
     "pytest-cov>=4.1.0",
     "pytest-timeout>=2.3.1",
@@ -24,4 +24,6 @@ priority = "supplemental"
 explicit = true
 
 [tool.uv.sources]
+transcribe-demo = { path = "..", editable = false }
+triton = { path = "../vendor/triton-cpu-stub", editable = false }
 torch = { index = "pytorch-cpu" }
