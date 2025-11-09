@@ -6,6 +6,23 @@ This document tracks implementation-level refactoring opportunities, code qualit
 
 ---
 
+## Recent Updates (2025-11-09)
+
+**Comprehensive codebase scan completed** - Added 8 new high-priority items:
+
+1. **§1.1**: Deduplicate `resample_audio()` function (duplicate in 2 files)
+2. **§1.1b**: Extract `stdin.isatty()` check to shared utility
+3. **§3.0**: Make hardcoded timeouts configurable (network, async, thread joins)
+4. **§4.3**: Add edge case tests for audio utilities
+5. **§5.0**: Add missing docstrings to 8 public functions ⚠️ HIGH IMPACT
+6. **§5.6**: Replace 11 bare exception handlers with logging ⚠️ HIGH IMPACT
+7. **§5.7**: Remove unused imports (wave module in 2 files)
+8. **§5.8**: Move time import to module level (PEP 8 compliance)
+
+**Overall Assessment**: Codebase is in GOOD SHAPE (86% test coverage, 97 tests, no critical bugs detected). Main concerns are maintainability improvements: missing documentation, silent failures, and code duplication.
+
+---
+
 ## When to Refactor
 
 ### DO Refactor When:
@@ -142,9 +159,162 @@ After successful refactoring:
 - Add logging or explicit error handling
 - Use proper logging framework with levels
 
+### 5.6 Replace Bare Exception Handlers with Logging
+
+**Issue**: 11 locations use bare `except Exception` without logging, making debugging difficult.
+
+**Locations**:
+- `whisper_backend.py:86-87` - MPS availability check (silent failure)
+- `realtime_backend.py:271, 358, 362` - WebSocket connection errors (3 locations)
+- `file_audio_source.py:96-98` - URL download failure (silent)
+- `file_audio_source.py:175-177` - Wave file read error (silent)
+- `session_logger.py:134-136` - JSON write error (silent)
+- `session_replay.py:95-97` - Session load error (silent)
+- Additional locations in async exception handling
+
+**Current Pattern**:
+```python
+# whisper_backend.py:86-87
+try:
+    return mps_backend.is_available()
+except Exception:
+    return False  # Silent failure - no logging
+```
+
+**Proposed Solution**:
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Add logging to all exception handlers:
+try:
+    return mps_backend.is_available()
+except Exception as e:
+    logger.debug("MPS backend check failed: %s", e)
+    return False
+
+# For critical errors:
+try:
+    with open(session_path) as f:
+        return json.load(f)
+except Exception as e:
+    logger.error("Failed to load session from %s: %s", session_path, e)
+    raise  # Re-raise if critical
+```
+
+**Benefits**:
+- Visible error messages help debugging
+- Can adjust verbosity with log levels
+- Structured error tracking
+- Easier to diagnose production issues
+
+**Priority**: High - 1 hour, significantly improves debuggability
+
 ---
 
 ## Priority 1: High Impact Refactoring
+
+### 1.1 Deduplicate resample_audio() Function
+
+**Issue**: The exact same `resample_audio()` function is implemented twice with slight variations.
+
+**Locations**:
+- `realtime_backend.py:48-73` (25 lines) - Returns np.ndarray
+- `file_audio_source.py:261-287` (27 lines) - Returns np.ndarray
+
+**Current Code**:
+```python
+# Both implementations are nearly identical:
+def resample_audio(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
+    """Resample audio using scipy."""
+    if orig_sr == target_sr:
+        return audio
+    num_samples = int(len(audio) * target_sr / orig_sr)
+    return scipy.signal.resample(audio, num_samples).astype(np.float32)
+```
+
+**Differences**:
+- `file_audio_source.py` version has more detailed docstring
+- Otherwise functionally identical
+
+**Proposed Solution**:
+```python
+# Create new file: src/transcribe_demo/audio_utils.py
+"""Audio processing utilities."""
+
+from __future__ import annotations
+
+import numpy as np
+import scipy.signal
+
+
+def resample_audio(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
+    """
+    Resample audio to a different sample rate using scipy.
+
+    Args:
+        audio: Input audio samples (mono, float32)
+        orig_sr: Original sample rate in Hz
+        target_sr: Target sample rate in Hz
+
+    Returns:
+        Resampled audio at target_sr (mono, float32)
+
+    Note:
+        If orig_sr == target_sr, returns the original audio unchanged.
+        Uses scipy.signal.resample for high-quality resampling.
+    """
+    if orig_sr == target_sr:
+        return audio
+
+    num_samples = int(len(audio) * target_sr / orig_sr)
+    resampled = scipy.signal.resample(audio, num_samples)
+    return resampled.astype(np.float32)
+
+
+def float_to_pcm16(audio: np.ndarray) -> bytes:
+    """
+    Convert float32 audio to PCM16 bytes.
+
+    Args:
+        audio: Float32 audio in range [-1.0, 1.0]
+
+    Returns:
+        PCM16-encoded bytes
+
+    Note:
+        Clips values to [-1.0, 1.0] before conversion.
+    """
+    clipped = np.clip(audio, -1.0, 1.0)
+    pcm16 = (clipped * 32767).astype(np.int16)
+    return pcm16.tobytes()
+```
+
+**Usage**:
+```python
+# In both realtime_backend.py and file_audio_source.py:
+from transcribe_demo.audio_utils import resample_audio
+
+# Remove local implementations
+```
+
+**Benefits**:
+- DRY: Single source of truth for audio resampling
+- Easier to test and improve (add caching, different algorithms, etc.)
+- Can add other audio utilities (normalization, filtering) to same module
+- Consistent behavior across all use cases
+- Future-proof: Can switch to faster resampling (e.g., librosa) in one place
+
+**Priority**: High - 30 minutes, eliminates critical code duplication
+
+**Testing**: Add unit tests to new `tests/test_audio_utils.py`:
+- Test resampling accuracy
+- Test edge cases (empty audio, single sample, very short audio)
+- Test no-op case (orig_sr == target_sr)
+- Test value range preservation
+
+---
 
 ### 1.2 Centralize Terminal Output Formatting (main.py)
 
@@ -163,6 +333,76 @@ After successful refactoring:
 - One place to adjust color codes or fall back to plain text.
 - Simplifies unit testing of presentation logic.
 - Eliminates two large blocks of duplicate `print(..., file=sys.stdout)` code.
+
+---
+
+### 1.1b Extract stdin.isatty() Check to Shared Utility
+
+**Issue**: The `stdin.isatty()` check is duplicated in multiple locations for detecting if the session is interactive.
+
+**Locations**:
+- `audio_capture.py:52-54` (capture duration confirmation)
+- `audio_capture.py:168-169` (inside __enter__ method, import time statement)
+- Similar patterns in multiple places
+
+**Current Code**:
+```python
+# Repeated pattern:
+if sys.stdin.isatty():
+    # Interactive session logic
+```
+
+**Proposed Solution**:
+```python
+# src/transcribe_demo/terminal_utils.py
+"""Terminal interaction utilities."""
+
+import sys
+from typing import TextIO
+
+
+def is_interactive_session() -> bool:
+    """
+    Check if running in an interactive terminal session.
+
+    Returns:
+        True if stdin is connected to a TTY (interactive), False otherwise
+    """
+    return sys.stdin.isatty()
+
+
+def confirm_long_capture(duration_seconds: float, threshold: float = 300.0) -> bool:
+    """
+    Prompt user to confirm if capture duration exceeds threshold.
+
+    Args:
+        duration_seconds: Requested capture duration
+        threshold: Duration in seconds that triggers confirmation (default: 5 minutes)
+
+    Returns:
+        True if user confirmed or duration below threshold, False if user declined
+
+    Note:
+        In non-interactive sessions, always returns True (no confirmation possible)
+    """
+    if not is_interactive_session() or duration_seconds < threshold:
+        return True
+
+    print(
+        f"\nWarning: You requested a {duration_seconds}s ({duration_seconds/60:.1f} minute) capture.",
+        file=sys.stderr,
+    )
+    response = input("Continue? [y/N]: ").strip().lower()
+    return response in ("y", "yes")
+```
+
+**Benefits**:
+- DRY: Single implementation for interactive checks
+- Easier to test (can mock `sys.stdin.isatty()` in one place)
+- Clear naming makes intent obvious
+- Can add more terminal utilities (color detection, width, etc.)
+
+**Priority**: Medium - 20 minutes
 
 ---
 
@@ -1095,6 +1335,76 @@ class TranscriptReceiver:
 
 ## Priority 3: Configuration and Constants
 
+### 3.0 Make Hardcoded Timeouts Configurable
+
+**Issue**: Multiple timeout values are hardcoded throughout the codebase, making it difficult to adjust for different network conditions or debugging.
+
+**Locations**:
+- `file_audio_source.py:79` - URL download timeout: `30` seconds (hardcoded)
+- `realtime_backend.py:275, 363` - WebSocket wait timeout: `0.1` seconds (hardcoded, used in multiple async loops)
+- `audio_capture.py:181` - Thread join timeout: `2.0` seconds (hardcoded)
+- `file_audio_source.py:200` - Thread join timeout: `2.0` seconds (hardcoded)
+- Various other async polling intervals
+
+**Current Code**:
+```python
+# file_audio_source.py:79
+with urllib.request.urlopen(self._audio_file, timeout=30) as response:
+    # Hard to adjust for slow connections
+
+# realtime_backend.py:275
+await asyncio.wait_for(
+    self._audio_queue.get(),
+    timeout=0.1  # Hardcoded polling interval
+)
+```
+
+**Proposed Solution**:
+```python
+# constants.py (add to existing file or create new)
+"""Timeout and performance tuning constants."""
+
+# Network timeouts
+URL_DOWNLOAD_TIMEOUT_SECONDS = 30.0
+WEBSOCKET_POLL_TIMEOUT_SECONDS = 0.1
+WEBSOCKET_CONNECT_TIMEOUT_SECONDS = 10.0
+
+# Thread coordination
+THREAD_JOIN_TIMEOUT_SECONDS = 2.0
+ASYNC_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+
+# Audio streaming
+AUDIO_QUEUE_GET_TIMEOUT_SECONDS = 0.1
+```
+
+**Optional CLI Flags** (for advanced debugging):
+```python
+# main.py
+parser.add_argument(
+    "--network-timeout",
+    type=float,
+    default=30.0,
+    help="Timeout for network operations (seconds)",
+)
+parser.add_argument(
+    "--async-poll-interval",
+    type=float,
+    default=0.1,
+    help="Polling interval for async operations (seconds)",
+)
+```
+
+**Benefits**:
+- Easy to adjust for debugging (increase timeouts)
+- Can optimize for fast networks (decrease timeouts)
+- Clear documentation of timing behavior
+- Easier testing (mock with shorter timeouts)
+- One place to tune performance
+
+**Priority**: Medium - 1 hour, improves configurability
+
+---
+
 ### 3.1 Extract Magic Numbers to Named Constants
 
 **Issue**: Magic numbers scattered throughout the code make intent unclear and harder to configure.
@@ -1334,9 +1644,181 @@ Recent work added coverage for `ChunkCollectorWithStitching` (`tests/test_main_u
 
 Targeted tests for these helpers will make future refactors safer without duplicating existing coverage.
 
+### 4.3 Add Edge Case Tests for Audio Utilities
+
+**Issue**: Critical audio processing functions lack comprehensive edge case testing.
+
+**Functions Missing Tests**:
+- `resample_audio()` in `realtime_backend.py:48` and `file_audio_source.py:261`
+- `float_to_pcm16()` in `realtime_backend.py:34`
+- Audio format conversion edge cases
+- URL download error handling
+
+**Proposed Test Cases**:
+```python
+# tests/test_audio_utils.py (after extracting to audio_utils.py per §1.1)
+
+def test_resample_audio_no_op():
+    """Test that resampling with same rate returns unchanged audio."""
+    audio = np.random.randn(1000).astype(np.float32)
+    resampled = resample_audio(audio, 16000, 16000)
+    np.testing.assert_array_equal(resampled, audio)
+
+def test_resample_audio_empty():
+    """Test resampling empty audio."""
+    audio = np.zeros(0, dtype=np.float32)
+    resampled = resample_audio(audio, 16000, 8000)
+    assert len(resampled) == 0
+
+def test_resample_audio_single_sample():
+    """Test resampling very short audio."""
+    audio = np.array([0.5], dtype=np.float32)
+    resampled = resample_audio(audio, 16000, 8000)
+    assert len(resampled) >= 1
+
+def test_resample_audio_upsampling():
+    """Test upsampling preserves value range."""
+    audio = np.random.randn(100).astype(np.float32) * 0.5
+    resampled = resample_audio(audio, 8000, 16000)
+    assert len(resampled) == 200
+    assert resampled.dtype == np.float32
+    assert np.max(np.abs(resampled)) <= 1.0
+
+def test_resample_audio_downsampling():
+    """Test downsampling preserves value range."""
+    audio = np.random.randn(1000).astype(np.float32) * 0.5
+    resampled = resample_audio(audio, 16000, 8000)
+    assert len(resampled) == 500
+    assert resampled.dtype == np.float32
+
+def test_float_to_pcm16_clipping():
+    """Test PCM16 conversion clips values correctly."""
+    audio = np.array([-2.0, -1.0, 0.0, 1.0, 2.0], dtype=np.float32)
+    pcm_bytes = float_to_pcm16(audio)
+    # Unpack and verify clipping
+    pcm = np.frombuffer(pcm_bytes, dtype=np.int16)
+    assert pcm[0] == -32767  # Clipped from -2.0
+    assert pcm[1] == -32767  # -1.0
+    assert pcm[2] == 0
+    assert pcm[3] == 32767   # 1.0
+    assert pcm[4] == 32767   # Clipped from 2.0
+
+def test_float_to_pcm16_value_range():
+    """Test PCM16 conversion preserves valid range."""
+    audio = np.linspace(-1.0, 1.0, 100, dtype=np.float32)
+    pcm_bytes = float_to_pcm16(audio)
+    pcm = np.frombuffer(pcm_bytes, dtype=np.int16)
+    assert np.min(pcm) >= -32767
+    assert np.max(pcm) <= 32767
+```
+
+**Benefits**:
+- Catches edge case bugs before production
+- Documents expected behavior
+- Makes refactoring safer
+- Tests are fast (<1ms each)
+
+**Priority**: Medium - 2 hours
+
 ---
 
 ## Priority 5: Code Quality Improvements
+
+### 5.0 Add Missing Docstrings to Public Functions
+
+**Issue**: 8 public functions lack docstrings, making the codebase harder to understand and maintain.
+
+**Locations**:
+- `main.py:514` - `main()` function (240 lines, no docstring)
+- `whisper_backend.py:54` - `load_whisper_model()` (43 lines, no docstring)
+- `whisper_backend.py:244` - `run_whisper_transcriber()` (339 lines, no docstring)
+- `realtime_backend.py:77` - `transcribe_full_audio_realtime()` (132 lines, no docstring)
+- `realtime_backend.py:193` - `run_realtime_transcriber()` (218 lines, no docstring)
+- `file_audio_source.py:18` - `FileAudioSource.__init__()` (no docstring)
+- `session_replay.py:238` - `retranscribe_session()` (253 lines, no docstring)
+- `audio_capture.py:17` - `AudioCaptureManager.__init__()` (minimal docstring)
+
+**Proposed Solution**:
+Add comprehensive docstrings following Google/NumPy style with:
+- Brief one-line summary
+- Detailed description of behavior
+- Args section with types and descriptions
+- Returns section
+- Raises section for exceptions
+- Examples for complex functions
+- Notes for important behavior/caveats
+
+**Example**:
+```python
+def run_whisper_transcriber(
+    model_name: str,
+    sample_rate: int,
+    channels: int,
+    device: str,
+    require_gpu: bool,
+    language: str | None,
+    vad_aggressiveness: int,
+    min_silence_duration: float,
+    min_speech_duration: float,
+    speech_pad_duration: float,
+    max_chunk_duration: float,
+    chunk_consumer: object | None = None,
+    max_capture_duration: float | None = None,
+    audio_source: object | None = None,
+    save_chunk_audio: str | None = None,
+    ca_cert: str | None = None,
+    insecure: bool = False,
+) -> None:
+    """
+    Run Whisper-based transcription with VAD chunking.
+
+    Captures audio from the default microphone (or custom audio source), uses
+    WebRTC VAD to detect speech segments, and transcribes each chunk with
+    OpenAI's Whisper model. Chunks are transcribed as soon as VAD detects
+    sufficient silence or the chunk reaches max_chunk_duration.
+
+    Args:
+        model_name: Whisper model name ('tiny', 'base', 'small', 'medium', 'large', 'turbo')
+        sample_rate: Audio sample rate in Hz (typically 16000)
+        channels: Number of audio channels (1 for mono, 2 for stereo)
+        device: Device for inference ('auto', 'cuda', 'mps', 'cpu')
+        require_gpu: If True, abort if no GPU available
+        language: Language code ('en', 'es', etc.) or None for auto-detection.
+                  IMPORTANT: Setting to None can cause hallucinations on silence.
+        vad_aggressiveness: WebRTC VAD aggressiveness (0-3, higher = more aggressive)
+        min_silence_duration: Minimum silence duration (seconds) to trigger chunk boundary
+        min_speech_duration: Minimum speech duration (seconds) to keep a chunk
+        speech_pad_duration: Padding (seconds) around speech segments
+        max_chunk_duration: Maximum chunk duration (seconds) before forced transcription
+        chunk_consumer: Optional callback for each transcribed chunk.
+                        Signature: (chunk_index, text, start, end, inference_seconds) -> None
+        max_capture_duration: Optional maximum capture duration in seconds
+        audio_source: Optional custom audio source (for testing/file input)
+        save_chunk_audio: Optional directory to save raw chunk audio files
+        ca_cert: Optional path to CA certificate bundle for SSL
+        insecure: If True, disable SSL certificate verification (NOT RECOMMENDED)
+
+    Raises:
+        RuntimeError: If requested device unavailable or GPU required but missing
+        FileNotFoundError: If ca_cert path doesn't exist
+
+    Notes:
+        - VAD chunking creates variable-length chunks based on speech pauses
+        - Chunk text may have trailing punctuation that needs cleanup for stitching
+        - See CLAUDE.md for critical implementation details about VAD and stitching
+    """
+```
+
+**Benefits**:
+- Better IDE autocomplete and help
+- Easier onboarding for new developers
+- Self-documenting code
+- Can generate API documentation automatically
+- Clarifies expected behavior and edge cases
+
+**Priority**: High - 30-60 minutes, significantly improves maintainability
+
+---
 
 ### 5.1 Add Type Hints for Callables
 
@@ -1493,6 +1975,59 @@ def configure_logging(verbosity: int):
 for chunk_index, cleaned_text in collector.get_cleaned_chunks():
     session_logger.update_chunk_cleaned_text(chunk_index, cleaned_text)
 ```
+
+### 5.7 Remove Unused Imports
+
+**Issue**: Unused imports clutter the codebase and can confuse readers.
+
+**Locations**:
+- `session_logger.py:4` - `import wave` (never used, JSON-only logging)
+- `session_replay.py:7` - `import wave` (never used, delegates to session_logger)
+
+**Solution**:
+```python
+# Remove these lines:
+import wave  # Not needed
+```
+
+**Benefits**:
+- Cleaner imports
+- Faster import times (minimal but measurable)
+- Clearer dependencies
+- Linters won't complain
+
+**Priority**: Low - 2 minutes, cleanup
+
+---
+
+### 5.8 Move Import to Module Level
+
+**Issue**: `import time` is inside a function instead of at module level.
+
+**Location**: `audio_capture.py:168`
+
+**Current Code**:
+```python
+def __enter__(self) -> AudioCaptureManager:
+    import time  # Inside function
+    # ...
+```
+
+**Solution**:
+```python
+# At top of file with other imports:
+import time
+
+def __enter__(self) -> AudioCaptureManager:
+    # Remove import from here
+```
+
+**Benefits**:
+- Follows Python style guide (PEP 8)
+- Clearer dependencies at top of file
+- Slightly faster (imports cached, but still best practice)
+
+**Priority**: Low - 1 minute, style fix
 
 ---
 
@@ -1959,61 +2494,80 @@ uv run transcribe-demo --vad-backend silero --vad-threshold 0.8
 
 **Strengths**:
 - Clear module separation between backends
-- Strong test coverage (2,061 test lines for 2,516 source lines)
+- Strong test coverage (86% test-to-source ratio, 97 tests)
 - Well-documented development guidelines (CLAUDE.md)
 - Modern Python style (type hints, dataclasses where used)
+- No critical bugs detected
 
 **Pain Points**:
-- **Long functions**: 4 functions >200 lines (main(), run_whisper_transcriber(), run_realtime_transcriber(), ChunkCollectorWithStitching.__call__)
-- **Code duplication**: Session config (15 lines × 2), SSL setup, output formatting (40 lines × 2), test utilities (150+ lines × 3)
-- **Magic numbers**: Scattered constants lack semantic meaning
+- **Long functions**: 4 functions >200 lines (main(), run_whisper_transcriber(), run_realtime_transcriber(), worker())
+- **Code duplication**: resample_audio() (2×), session config (15 lines × 2), SSL setup, output formatting (40 lines × 2), test utilities (150+ lines × 3)
+- **Missing documentation**: 8 public functions lack docstrings
+- **Silent failures**: 11 bare exception handlers without logging
+- **Magic numbers**: Scattered constants lack semantic meaning (timeouts, thresholds)
 - **Tight coupling**: Abseil flags make library reuse difficult
 - **Two-pass patterns**: Cleaned text backfilling after collection
 
 ---
 
-### Immediate Wins (1-2 hours total)
+### Immediate Wins (2.5 hours total)
 
 Start here for quick improvements with high value:
 
 | Priority | Item | Time | Impact | Lines Saved |
 |----------|------|------|--------|-------------|
-| **1** | §1.1: Extract realtime session config | 10 min | High | 15+ lines |
-| **2** | §1.2b: Extract final output printing | 5 min | Medium | 40 lines |
-| **3** | §3.1: Extract magic numbers to constants.py | 30 min | High | 0 (readability) |
-| **4** | §6.2: Normalize language parameter | 5 min | Low | 5 lines |
-| **5** | §2.3: Extract comparison to separate module | 1 hour | Medium | 166 lines |
+| **1** | §5.7: Remove unused imports | 2 min | Low | 2 lines |
+| **2** | §5.8: Move time import to module level | 1 min | Low | 0 (style) |
+| **3** | §1.1: Deduplicate resample_audio() | 30 min | High | 25 lines |
+| **4** | §1.1b: Extract stdin.isatty() check | 20 min | Medium | 10 lines |
+| **5** | §1.2b: Extract final output printing | 5 min | Medium | 40 lines |
+| **6** | §3.1: Extract magic numbers to constants.py | 30 min | High | 0 (readability) |
+| **7** | §6.2: Normalize language parameter | 5 min | Low | 5 lines |
 
-**Total**: ~2 hours, saves ~226 lines, improves maintainability significantly
+**Total**: ~1.5 hours, saves ~82 lines, improves maintainability
+
+**Next Priority** (additional 1 hour):
+- **§5.0**: Add docstrings to 8 public functions (30-60 min) - High impact for maintainability
 
 ---
 
-### Medium Impact Refactorings (4-8 hours each)
+### Medium Impact Refactorings (6-10 hours total)
 
 These require more planning but provide substantial benefits:
 
-1. **§1.2: Centralize terminal formatting** (4 hours)
+1. **§5.6: Replace bare exception handlers with logging** (1 hour)
+   - Add logging to 11 silent exception handlers
+   - Significantly improves debuggability
+   - Makes production issues easier to diagnose
+
+2. **§3.0: Make hardcoded timeouts configurable** (1 hour)
+   - Extract timeout constants
+   - Optional CLI flags for debugging
+   - Easier testing and performance tuning
+
+3. **§4.3: Add edge case tests for audio utilities** (2 hours)
+   - Test resample_audio() edge cases
+   - Test float_to_pcm16() clipping
+   - Makes refactoring safer
+
+4. **§1.2: Centralize terminal formatting** (3 hours)
    - Create `TerminalFormatter` class
    - Eliminates scattered ANSI color code handling
    - Consistent styling across all output
 
-2. **§1.3: Extract device selection logic** (2 hours)
+5. **§1.3: Extract device selection logic** (2 hours)
    - Create `DeviceConfig.detect_device()` classmethod
    - Testable in isolation, clearer logic
 
-3. **§1.5: SSL context manager** (2 hours)
+6. **§1.5: SSL context manager** (2 hours)
    - Proper cleanup with context manager
    - Reusable across both backends
 
-4. **§3.2: Configuration dataclasses** (6 hours)
-   - `WhisperConfig`, `RealtimeConfig`, `VADConfig`, `TranscribeConfig`
-   - Type-safe, reduces 12-parameter functions to single config object
-
-5. **§6.3: Extract RealtimeMessageHandler** (1 hour)
+7. **§6.3: Extract RealtimeMessageHandler** (1 hour)
    - Testable without WebSocket
    - Clear state management
 
-6. **§6.4: Extract FakeAudioCaptureManager to conftest** (1 hour)
+8. **§6.4: Extract FakeAudioCaptureManager to conftest** (1 hour)
    - Reduces test code by ~150 lines
    - Consistent test infrastructure
 
@@ -2049,37 +2603,62 @@ These are larger efforts that fundamentally improve architecture:
 
 ### Recommended Execution Order
 
-**Phase 1: Quick Wins** (Week 1)
+**Phase 1: Quick Cleanup** (Day 1, ~2.5 hours)
 ```
-Day 1-2: Complete all immediate wins (§1.1, §1.2b, §3.1, §6.2, §2.3)
-         → 226 lines saved, improved readability
-```
-
-**Phase 2: Configuration & Infrastructure** (Week 2-3)
-```
-Day 3-5:  §1.2, §1.3, §1.5 (Terminal formatting, device selection, SSL)
-Day 6-10: §3.2 (Configuration dataclasses) + §3.3 (Decouple Abseil)
-         → Type-safe configs, library reusability
-```
-
-**Phase 3: Test Infrastructure** (Week 4)
-```
-Day 11-12: §6.1, §6.4 (Test utilities to conftest.py)
-           → Cleaner tests, better maintainability
+Morning:   §5.7, §5.8 (Remove unused imports, fix import location) - 3 min
+           §1.1 (Deduplicate resample_audio) - 30 min
+           §1.1b (Extract stdin check) - 20 min
+           §1.2b (Extract final output printing) - 5 min
+           §3.1 (Extract magic numbers) - 30 min
+           §6.2 (Normalize language parameter) - 5 min
+Afternoon: §5.0 (Add docstrings to 8 functions) - 60 min
+           → 82 lines saved, much better documentation
 ```
 
-**Phase 4: Major Decomposition** (Week 5-6)
+**Phase 2: Quality & Debugging** (Day 2-3, ~4 hours)
 ```
-Day 13-20: §2.1, §2.4 (Worker function decomposition)
+Day 2:     §5.6 (Replace bare exceptions with logging) - 1 hour
+           §3.0 (Make timeouts configurable) - 1 hour
+           §4.3 (Add edge case tests) - 2 hours
+           → Better debuggability and test coverage
+```
+
+**Phase 3: Code Organization** (Day 4-5, ~8 hours)
+```
+Day 4:     §1.2 (Terminal formatting) - 3 hours
+           §1.3 (Device selection) - 2 hours
+Day 5:     §1.5 (SSL context manager) - 2 hours
+           §6.3 (RealtimeMessageHandler) - 1 hour
+           → Cleaner abstractions
+```
+
+**Phase 4: Test Infrastructure** (Day 6, ~2 hours)
+```
+Day 6:     §6.1 (Synthetic audio fixture) - 30 min
+           §6.4 (FakeAudioCaptureManager to conftest) - 1 hour
+           §2.3 (Extract comparison module) - 1 hour
+           → 150+ test lines saved
+```
+
+**Phase 5: Configuration Refactoring** (Week 2, ~8 hours)
+```
+Day 7-8:   §3.2 (Configuration dataclasses) - 6 hours
+Day 9-10:  §3.3 (Decouple Abseil flags) - 6 hours
+           → Library reusability, type-safe configs
+```
+
+**Phase 6: Major Decomposition** (Week 3-4, ~2-3 days)
+```
+Week 3-4:  §2.1, §2.4 (Worker function decomposition)
+           §1.4 (Unify transcription session harness)
            → Much clearer code structure, easier to extend
 ```
 
-**Phase 5: Quality & Polish** (Week 7)
+**Phase 7: Advanced Features** (Week 5, optional)
 ```
-Day 21-23: §5.3 (Logging framework)
-Day 24-25: §5.4, §6.5 (Inline cleaned text)
-Day 26:    §6.3 (RealtimeMessageHandler)
-           → Professional-grade observability and cleaner flow
+Week 5:    §5.3 (Logging framework) - 1 day
+           §5.4, §6.5 (Inline cleaned text) - 2 hours
+           → Professional-grade observability
 ```
 
 ---
