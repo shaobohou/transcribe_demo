@@ -69,7 +69,7 @@ class AudioCaptureManager:
         indata: np.ndarray,
         frames: int,
         time: Structure,
-        status: sd.CallbackFlags,
+        status: Any,
     ) -> None:
         """Audio callback invoked by sounddevice for each audio chunk."""
         if status:
