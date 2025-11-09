@@ -8,18 +8,26 @@ This document tracks implementation-level refactoring opportunities, code qualit
 
 ## Recent Updates (2025-11-09)
 
-**Comprehensive codebase scan completed** - Added 8 new high-priority items:
+**Comprehensive codebase scan completed** - Added 11 new items:
 
-1. **§1.1**: Deduplicate `resample_audio()` function (duplicate in 2 files)
-2. **§1.1b**: Extract `stdin.isatty()` check to shared utility
-3. **§3.0**: Make hardcoded timeouts configurable (network, async, thread joins)
-4. **§4.3**: Add edge case tests for audio utilities
-5. **§5.0**: Add missing docstrings to 8 public functions ⚠️ HIGH IMPACT
-6. **§5.6**: Replace 11 bare exception handlers with logging ⚠️ HIGH IMPACT
-7. **§5.7**: Remove unused imports (wave module in 2 files)
-8. **§5.8**: Move time import to module level (PEP 8 compliance)
+**Priority 0 - Code Simplification** (NEW):
+1. **§0.1**: Extract duplicate Whisper text extraction logic (~5 lines, 10 min)
+2. **§0.2**: Reuse `_run_async()` helper in Whisper backend (~10 lines, 20 min)
+3. **§0.3**: Extract color code initialization helper (~8 lines, 15 min)
 
-**Overall Assessment**: Codebase is in GOOD SHAPE (86% test coverage, 97 tests, no critical bugs detected). Main concerns are maintainability improvements: missing documentation, silent failures, and code duplication.
+**Priority 1-5 - Refactoring & Quality**:
+4. **§1.1**: Deduplicate `resample_audio()` function (duplicate in 2 files)
+5. **§1.1b**: Extract `stdin.isatty()` check to shared utility
+6. **§3.0**: Make hardcoded timeouts configurable (network, async, thread joins)
+7. **§4.3**: Add edge case tests for audio utilities
+8. **§5.0**: Add missing docstrings to 8 public functions ⚠️ HIGH IMPACT
+9. **§5.6**: Replace 11 bare exception handlers with logging ⚠️ HIGH IMPACT
+10. **§5.7**: Remove unused imports (wave module in 2 files)
+11. **§5.8**: Move time import to module level (PEP 8 compliance)
+
+**Quick Wins Summary**: ~23 lines can be removed immediately via Priority 0 items (total time: 45 min)
+
+**Overall Assessment**: Codebase is in GOOD SHAPE (86% test coverage, 97 tests, no critical bugs detected). Main opportunities are code deduplication, missing documentation, and silent failures.
 
 ---
 
@@ -210,6 +218,228 @@ except Exception as e:
 - Easier to diagnose production issues
 
 **Priority**: High - 1 hour, significantly improves debuggability
+
+---
+
+## Priority 0: Code Simplification & Deletion
+
+These are small, targeted changes that delete or consolidate duplicate code.
+
+### 0.1 Extract Duplicate Whisper Result Extraction Logic
+
+**Issue**: Text extraction from Whisper result is duplicated in two locations with slightly different patterns.
+
+**Locations**:
+- `whisper_backend.py:487-493` (in worker thread, assigns to `text`)
+- `whisper_backend.py:647-652` (in `transcribe_full_audio_whisper`, returns directly)
+
+**Current Code**:
+```python
+# Pattern 1 (lines 487-493):
+raw_text = result.get("text", "")
+if isinstance(raw_text, str):
+    text = raw_text
+elif isinstance(raw_text, list):
+    text = " ".join(str(part) for part in raw_text)
+else:
+    text = str(raw_text)
+
+# Pattern 2 (lines 647-652):
+raw_text = result.get("text", "")
+if isinstance(raw_text, str):
+    return raw_text
+if isinstance(raw_text, list):
+    return " ".join(str(part) for part in raw_text)
+return str(raw_text)
+```
+
+**Proposed Solution**:
+```python
+def _extract_whisper_text(result: dict) -> str:
+    """
+    Extract text from Whisper transcription result.
+
+    Args:
+        result: Whisper transcription result dictionary
+
+    Returns:
+        Extracted text as string
+
+    Note:
+        Handles both string results and list results (joins with spaces).
+    """
+    raw_text = result.get("text", "")
+    if isinstance(raw_text, str):
+        return raw_text
+    if isinstance(raw_text, list):
+        return " ".join(str(part) for part in raw_text)
+    return str(raw_text)
+
+# Usage at both locations:
+text = _extract_whisper_text(result)
+```
+
+**Benefits**:
+- DRY: Single implementation
+- Consistent behavior across all Whisper transcriptions
+- Easier to handle future changes to result format
+- Self-documenting function name
+
+**Priority**: High - 10 minutes, removes 5 lines of duplication
+
+---
+
+### 0.2 Reuse _run_async() Helper in Whisper Backend
+
+**Issue**: Whisper backend duplicates the asyncio error handling logic that's already in `realtime_backend.py:_run_async()`.
+
+**Locations**:
+- `whisper_backend.py:541-551` (inline `run_asyncio_pipeline()` function)
+- `realtime_backend.py:111-119` (`_run_async()` reusable helper)
+
+**Current Code**:
+```python
+# whisper_backend.py:541-551 (DUPLICATE):
+def run_asyncio_pipeline() -> None:
+    try:
+        asyncio.run(orchestrate())
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(orchestrate())
+        finally:
+            loop.close()
+
+run_asyncio_pipeline()
+
+# realtime_backend.py:111-119 (REUSABLE):
+def _run_async(coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
+    try:
+        return asyncio.run(coro_factory())
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro_factory())
+        finally:
+            loop.close()
+```
+
+**Proposed Solution**:
+```python
+# Option 1: Move _run_async to shared utilities module
+# Create: src/transcribe_demo/async_utils.py
+from typing import Callable, Coroutine, TypeVar, Any
+import asyncio
+
+T = TypeVar('T')
+
+def run_async(coro_factory: Callable[[], Coroutine[Any, Any, T]]) -> T:
+    """
+    Run async coroutine, handling event loop conflicts.
+
+    Args:
+        coro_factory: Function that creates the coroutine
+
+    Returns:
+        Result from coroutine
+
+    Note:
+        Handles RuntimeError when asyncio.run() fails (e.g., nested event loops).
+        Creates new event loop as fallback.
+    """
+    try:
+        return asyncio.run(coro_factory())
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro_factory())
+        finally:
+            loop.close()
+
+# Usage in whisper_backend.py:
+from transcribe_demo.async_utils import run_async
+
+run_async(orchestrate)  # Replace run_asyncio_pipeline()
+```
+
+**Benefits**:
+- DRY: Single implementation for asyncio error handling
+- Consistent error handling across backends
+- Removes 10 lines of duplicate code
+- Type-safe with generic T return type
+
+**Priority**: Medium - 20 minutes, removes code duplication
+
+---
+
+### 0.3 Extract Color Code Initialization Helper
+
+**Issue**: ANSI color code initialization is duplicated in two locations in main.py.
+
+**Locations**:
+- `main.py:321-333` (in `ChunkCollectorWithStitching.__init__`)
+- `main.py:428-434` (in `print_transcription_summary`)
+
+**Current Code**:
+```python
+# Both locations do:
+use_color = stream.isatty()
+cyan = ""
+green = ""
+reset = ""
+bold = ""
+if use_color:
+    cyan = "\x1b[36m"
+    green = "\x1b[32m"
+    reset = "\x1b[0m"
+    bold = "\x1b[1m"
+```
+
+**Proposed Solution**:
+```python
+from dataclasses import dataclass
+from typing import TextIO
+
+@dataclass
+class ColorCodes:
+    """ANSI color codes for terminal output."""
+    cyan: str
+    green: str
+    reset: str
+    bold: str
+
+    @classmethod
+    def for_stream(cls, stream: TextIO) -> ColorCodes:
+        """
+        Get color codes appropriate for the stream.
+
+        Args:
+            stream: Output stream
+
+        Returns:
+            ColorCodes with ANSI codes if stream is TTY, empty strings otherwise
+        """
+        if getattr(stream, "isatty", lambda: False)():
+            return cls(
+                cyan="\x1b[36m",
+                green="\x1b[32m",
+                reset="\x1b[0m",
+                bold="\x1b[1m",
+            )
+        return cls(cyan="", green="", reset="", bold="")
+
+# Usage:
+colors = ColorCodes.for_stream(sys.stdout)
+print(f"{colors.green}Success{colors.reset}")
+```
+
+**Benefits**:
+- DRY: Single color initialization logic
+- Type-safe access to color codes
+- Easy to add more colors (red, yellow, etc.)
+- Clear intent with dataclass
+
+**Priority**: Low - 15 minutes, removes ~8 lines of duplication
 
 ---
 
@@ -2510,21 +2740,26 @@ uv run transcribe-demo --vad-backend silero --vad-threshold 0.8
 
 ---
 
-### Immediate Wins (2.5 hours total)
+### Immediate Wins (~2 hours total)
 
 Start here for quick improvements with high value:
 
 | Priority | Item | Time | Impact | Lines Saved |
 |----------|------|------|--------|-------------|
-| **1** | §5.7: Remove unused imports | 2 min | Low | 2 lines |
-| **2** | §5.8: Move time import to module level | 1 min | Low | 0 (style) |
-| **3** | §1.1: Deduplicate resample_audio() | 30 min | High | 25 lines |
-| **4** | §1.1b: Extract stdin.isatty() check | 20 min | Medium | 10 lines |
-| **5** | §1.2b: Extract final output printing | 5 min | Medium | 40 lines |
-| **6** | §3.1: Extract magic numbers to constants.py | 30 min | High | 0 (readability) |
-| **7** | §6.2: Normalize language parameter | 5 min | Low | 5 lines |
+| **0.1** | Extract duplicate Whisper text extraction | 10 min | High | 5 lines |
+| **0.2** | Reuse _run_async() in Whisper backend | 20 min | Medium | 10 lines |
+| **0.3** | Extract color code initialization | 15 min | Low | 8 lines |
+| **5.7** | Remove unused imports | 2 min | Low | 2 lines |
+| **5.8** | Move time import to module level | 1 min | Low | 0 (style) |
+| **1.1** | Deduplicate resample_audio() | 30 min | High | 25 lines |
+| **1.1b** | Extract stdin.isatty() check | 20 min | Medium | 10 lines |
+| **1.2b** | Extract final output printing | 5 min | Medium | 40 lines |
+| **3.1** | Extract magic numbers to constants | 30 min | High | 0 (readability) |
+| **6.2** | Normalize language parameter | 5 min | Low | 5 lines |
 
-**Total**: ~1.5 hours, saves ~82 lines, improves maintainability
+**Total**: ~2.3 hours, **saves ~105 lines**, improves maintainability
+
+**Priority 0 wins alone**: 45 minutes, saves 23 lines (pure deletion/consolidation)
 
 **Next Priority** (additional 1 hour):
 - **§5.0**: Add docstrings to 8 public functions (30-60 min) - High impact for maintainability
