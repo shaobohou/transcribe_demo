@@ -91,15 +91,15 @@ git push -u origin your-branch-name
 - **`base.en` model (139MB)**: **STRONGLY RECOMMENDED for all CPU-only environments**
   - 11x smaller download than turbo (139MB vs 1.51GB)
   - 2.0x faster than real-time on CPU
-  - **98.2% accuracy** on news/podcast content (tested on 280s NPR newscast)
+  - Tested on 280s NPR newscast with good results
   - Use with: `--model base.en`
   - **Use this for:** CI/testing, production without GPU, resource-constrained systems
 - **`turbo` model (1.51GB)**: Default for production use with GPU
   - Highest accuracy for general use
   - Requires GPU for real-time performance
 - **NOT RECOMMENDED:**
-  - `tiny.en` (72MB): Only 95% accuracy, produces nonsensical errors ("stomp" vs "stop")
-  - `small.en` (461MB): Slower than real-time on CPU, only 0.3% better than base.en
+  - `tiny.en` (72MB): Produces nonsensical errors ("stomp" vs "stop", "cliff face penalties")
+  - `small.en` (461MB): Slower than real-time on CPU, marginal improvement over base.en
 
 ### VAD Tuning
 
