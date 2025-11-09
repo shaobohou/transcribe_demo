@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
+import os
 import queue
+import socket
 import ssl
 import sys
 import threading
@@ -14,9 +17,11 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlparse
 
 import numpy as np
 import websockets
+import websockets.client
 
 from transcribe_demo import audio_capture as audio_capture_lib
 from transcribe_demo.file_audio_source import FileAudioSource
@@ -117,6 +122,138 @@ def _run_async(coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
             loop.close()
 
 
+def _create_proxy_tunnel_with_websocket_handshake(
+    target_host: str,
+    target_port: int,
+    ws_path: str,
+    headers: list[tuple[str, str]],
+    ssl_context: ssl.SSLContext,
+) -> ssl.SSLSocket:
+    """
+    Manually establish HTTP CONNECT tunnel through proxy with JWT authentication,
+    perform SSL upgrade, and complete WebSocket handshake with custom headers.
+    Returns an SSL socket ready for WebSocket protocol communication.
+    """
+    # Get proxy configuration from environment
+    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+
+    if not proxy_url:
+        raise RuntimeError("No proxy URL found in environment variables")
+
+    # Parse proxy URL
+    parsed = urlparse(proxy_url)
+    proxy_host = parsed.hostname
+    proxy_port = parsed.port or 8080
+
+    if not proxy_host:
+        raise RuntimeError(f"Invalid proxy URL: {proxy_url}")
+
+    # Extract credentials (username may contain JWT token)
+    proxy_username = parsed.username or ""
+    proxy_password = parsed.password or ""
+
+    print(f"[DEBUG] Connecting to proxy {proxy_host}:{proxy_port}", file=sys.stderr)
+    print(f"[DEBUG] Target: {target_host}:{target_port}", file=sys.stderr)
+
+    # Create socket connection to proxy
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(15.0)
+
+    try:
+        sock.connect((proxy_host, proxy_port))
+        print(f"[DEBUG] Connected to proxy", file=sys.stderr)
+
+        # Build HTTP CONNECT request
+        connect_request = f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
+        connect_request += f"Host: {target_host}:{target_port}\r\n"
+
+        # Add Proxy-Authorization if credentials exist
+        if proxy_username or proxy_password:
+            # For JWT-based proxy, the token is in the username part
+            credentials = f"{proxy_username}:{proxy_password}"
+            encoded_credentials = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+            connect_request += f"Proxy-Authorization: Basic {encoded_credentials}\r\n"
+            print(f"[DEBUG] Added Proxy-Authorization (credentials length: {len(credentials)})", file=sys.stderr)
+
+        connect_request += "\r\n"
+
+        # Send CONNECT request
+        sock.sendall(connect_request.encode("utf-8"))
+        print(f"[DEBUG] Sent CONNECT request", file=sys.stderr)
+
+        # Read proxy response
+        response = b""
+        while b"\r\n\r\n" not in response:
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise RuntimeError("Proxy closed connection before completing CONNECT handshake")
+            response += chunk
+
+        response_str = response.decode("utf-8", errors="replace")
+        print(f"[DEBUG] Proxy CONNECT response: {response_str.split(chr(13))[0]}", file=sys.stderr)
+
+        # Parse response status
+        status_line = response_str.split("\r\n")[0]
+        if " 200 " not in status_line:
+            raise RuntimeError(f"Proxy CONNECT failed: {status_line}")
+
+        print(f"[DEBUG] CONNECT tunnel established", file=sys.stderr)
+
+        # Wrap socket in SSL
+        ssl_sock = ssl_context.wrap_socket(sock, server_hostname=target_host)
+        print(f"[DEBUG] SSL upgrade completed", file=sys.stderr)
+
+        # Now perform WebSocket handshake manually with custom headers
+        # Generate WebSocket key
+        ws_key = base64.b64encode(os.urandom(16)).decode("ascii")
+
+        # Build WebSocket upgrade request
+        ws_request = f"GET {ws_path} HTTP/1.1\r\n"
+        ws_request += f"Host: {target_host}\r\n"
+        ws_request += "Upgrade: websocket\r\n"
+        ws_request += "Connection: Upgrade\r\n"
+        ws_request += f"Sec-WebSocket-Key: {ws_key}\r\n"
+        ws_request += "Sec-WebSocket-Version: 13\r\n"
+
+        # Add custom headers (Authorization, OpenAI-Beta, etc.)
+        for header_name, header_value in headers:
+            ws_request += f"{header_name}: {header_value}\r\n"
+
+        ws_request += "\r\n"
+
+        print(f"[DEBUG] Sending WebSocket handshake", file=sys.stderr)
+        ssl_sock.sendall(ws_request.encode("utf-8"))
+
+        # Read WebSocket handshake response
+        ws_response = b""
+        while b"\r\n\r\n" not in ws_response:
+            chunk = ssl_sock.recv(4096)
+            if not chunk:
+                raise RuntimeError("Server closed connection during WebSocket handshake")
+            ws_response += chunk
+
+        ws_response_str = ws_response.decode("utf-8", errors="replace")
+        print(f"[DEBUG] WebSocket handshake response: {ws_response_str.split(chr(13))[0]}", file=sys.stderr)
+
+        # Parse WebSocket response status
+        ws_status_line = ws_response_str.split("\r\n")[0]
+        if " 101 " not in ws_status_line:
+            print(f"[DEBUG] Full response:\n{ws_response_str}", file=sys.stderr)
+            raise RuntimeError(f"WebSocket handshake failed: {ws_status_line}")
+
+        print(f"[DEBUG] WebSocket handshake successful!", file=sys.stderr)
+
+        # Return the SSL socket which is now ready for WebSocket protocol
+        return ssl_sock
+
+    except Exception as e:
+        try:
+            sock.close()
+        except:
+            pass
+        raise RuntimeError(f"Failed to establish WebSocket connection: {e}") from e
+
+
 def transcribe_full_audio_realtime(
     audio: np.ndarray,
     sample_rate: int,
@@ -167,7 +304,32 @@ def transcribe_full_audio_realtime(
         if language_value and language_value.lower() != "auto":
             transcription_config["language"] = language_value
 
-        async with websockets.connect(uri, additional_headers=headers, max_size=None, ssl=ssl_context) as ws:
+        # Check if we need to use proxy tunnel
+        proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+
+        ws_kwargs = {
+            "additional_headers": headers,
+            "max_size": None,
+        }
+
+        if proxy_url:
+            # Use manual CONNECT tunnel for proxy with JWT auth
+            print(f"[DEBUG] Proxy detected, using manual CONNECT tunnel", file=sys.stderr)
+            parsed_endpoint = urlparse(endpoint)
+            target_host = parsed_endpoint.hostname or "api.openai.com"
+            target_port = parsed_endpoint.port or 443
+
+            # Create proxy tunnel in a thread (blocking operation)
+            raw_sock = await asyncio.to_thread(_create_proxy_tunnel, target_host, target_port)
+
+            # Pass raw socket and let websockets handle SSL
+            ws_kwargs["sock"] = raw_sock
+            print(f"[DEBUG] Passing raw socket to websockets.connect()", file=sys.stderr)
+        else:
+            # Direct connection without proxy
+            ws_kwargs["ssl"] = ssl_context
+
+        async with websockets.connect(uri, **ws_kwargs) as ws:
             await _send_json(
                 ws,
                 _create_session_update(
@@ -339,8 +501,33 @@ def run_realtime_transcriber(
             lock = asyncio.Lock()
             partials: dict[str, str] = {}
 
+            # Check if we need to use proxy tunnel
+            proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+
+            ws_kwargs = {
+                "additional_headers": headers,
+                "max_size": None,
+            }
+
+            if proxy_url:
+                # Use manual CONNECT tunnel for proxy with JWT auth
+                print(f"[DEBUG] Proxy detected, using manual CONNECT tunnel", file=sys.stderr)
+                parsed_endpoint = urlparse(endpoint)
+                target_host = parsed_endpoint.hostname or "api.openai.com"
+                target_port = parsed_endpoint.port or 443
+
+                # Create proxy tunnel in a thread (blocking operation)
+                raw_sock = await asyncio.to_thread(_create_proxy_tunnel, target_host, target_port)
+
+                # Pass raw socket and let websockets handle SSL
+                ws_kwargs["sock"] = raw_sock
+                print(f"[DEBUG] Passing raw socket to websockets.connect()", file=sys.stderr)
+            else:
+                # Direct connection without proxy
+                ws_kwargs["ssl"] = ssl_context
+
             try:
-                async with websockets.connect(uri, additional_headers=headers, max_size=None, ssl=ssl_context) as ws:
+                async with websockets.connect(uri, **ws_kwargs) as ws:
                     # Session setup
                     await _send_json(
                         ws,
