@@ -127,8 +127,9 @@ For corporate proxies with self-signed certificates:
 # Provide custom certificate bundle
 uv run transcribe-demo --ca_cert /path/to/corp-ca.pem
 
-# Skip certificate verification (insecure, use as last resort)
-uv run transcribe-demo --insecure_downloads
+# Disable SSL certificate verification (insecure, use as last resort)
+# Bypasses certificate issues for model downloads and Realtime API connections
+uv run transcribe-demo --disable_ssl_verify
 ```
 
 ### Transcript Comparison & Capture Duration

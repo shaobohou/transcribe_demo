@@ -125,7 +125,7 @@ def transcribe_full_audio_realtime(
     endpoint: str,
     model: str,
     instructions: str,
-    insecure_downloads: bool = False,
+    disable_ssl_verify: bool = False,
     language: str = "en",
 ) -> str:
     """
@@ -147,7 +147,7 @@ def transcribe_full_audio_realtime(
             ("OpenAI-Beta", "realtime=v1"),
         ]
         ssl_context: ssl.SSLContext | None = None
-        if insecure_downloads:
+        if disable_ssl_verify:
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
@@ -265,7 +265,7 @@ def run_realtime_transcriber(
     channels: int,
     chunk_duration: float,
     instructions: str,
-    insecure_downloads: bool = False,
+    disable_ssl_verify: bool = False,
     chunk_consumer: ChunkConsumer | None = None,
     compare_transcripts: bool = True,
     max_capture_duration: float = 120.0,
@@ -314,7 +314,7 @@ def run_realtime_transcriber(
             ]
 
             ssl_context: ssl.SSLContext | None = None
-            if insecure_downloads:
+            if disable_ssl_verify:
                 ssl_context = ssl.create_default_context()
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE

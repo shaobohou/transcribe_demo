@@ -83,6 +83,13 @@ git checkout -b fix/bug-description
 - Both implement same interface: `audio_queue`, `stop_event`, `get_full_audio()`, etc.
 - File source simulates real-time playback with configurable speed (`--playback_speed`)
 
+### SSL/Certificate Configuration
+- `--ca_cert`: Provide custom certificate bundle for corporate proxies with self-signed certificates
+- `--disable_ssl_verify`: Disable SSL certificate verification for all network operations
+  - Bypasses certificate issues for model downloads (Whisper) and Realtime API connections
+  - **WARNING**: This is insecure and not recommended for production use
+  - Only use in restricted networks where certificate verification fails
+
 ## When to Change Defaults
 
 **Model (`turbo`)**: Change if speed/accuracy tradeoff needs adjustment

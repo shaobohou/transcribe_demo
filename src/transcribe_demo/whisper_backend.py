@@ -57,7 +57,7 @@ def load_whisper_model(
     device_preference: str,
     require_gpu: bool,
     ca_cert: Path | None,
-    insecure_downloads: bool,
+    disable_ssl_verify: bool,
 ) -> tuple[whisper.Whisper, str, bool]:
     cuda_available = torch.cuda.is_available()
     apple_mps_available = _mps_available()
@@ -100,7 +100,7 @@ def load_whisper_model(
         os.environ["REQUESTS_CA_BUNDLE"] = str(ca_cert)
 
     original_https_context: Callable[..., ssl.SSLContext] | None = None
-    if insecure_downloads:
+    if disable_ssl_verify:
         original_https_context = ssl._create_default_https_context
         ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -248,7 +248,7 @@ def run_whisper_transcriber(
     channels: int,
     temp_file: Path | None,
     ca_cert: Path | None,
-    insecure_downloads: bool,
+    disable_ssl_verify: bool,
     device_preference: str,
     require_gpu: bool,
     chunk_consumer: Callable[[int, str, float, float, float | None], None] | None = None,
@@ -270,7 +270,7 @@ def run_whisper_transcriber(
         device_preference=device_preference,
         require_gpu=require_gpu,
         ca_cert=ca_cert,
-        insecure_downloads=insecure_downloads,
+        disable_ssl_verify=disable_ssl_verify,
     )
     normalized_language = None
     if language and language.lower() != "auto":
@@ -600,7 +600,7 @@ def transcribe_full_audio(
     device_preference: str,
     require_gpu: bool,
     ca_cert: Path | None,
-    insecure_downloads: bool,
+    disable_ssl_verify: bool,
     language: str = "en",
 ) -> str:
     """
@@ -613,7 +613,7 @@ def transcribe_full_audio(
         device_preference: Preferred device to run on (auto/cpu/cuda/mps).
         require_gpu: If True, raise when GPU unavailable.
         ca_cert: Optional custom CA bundle for downloads.
-        insecure_downloads: Disable SSL verification for downloads when True.
+        disable_ssl_verify: Disable SSL certificate verification when True.
 
     Returns:
         Full transcription text (may be empty when no audio).
@@ -629,7 +629,7 @@ def transcribe_full_audio(
         device_preference=device_preference,
         require_gpu=require_gpu,
         ca_cert=ca_cert,
-        insecure_downloads=insecure_downloads,
+        disable_ssl_verify=disable_ssl_verify,
     )
 
     normalized_language = None

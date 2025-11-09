@@ -391,7 +391,7 @@ def retranscribe_session(
                 channels=loaded_session.metadata.channels,
                 temp_file=None,
                 ca_cert=backend_kwargs.get("ca_cert"),
-                insecure_downloads=backend_kwargs.get("insecure_downloads", False),
+                disable_ssl_verify=backend_kwargs.get("disable_ssl_verify", False),
                 device_preference=backend_kwargs.get("device", "auto"),
                 require_gpu=backend_kwargs.get("require_gpu", False),
                 chunk_consumer=collector,
@@ -448,7 +448,7 @@ def retranscribe_session(
                     "Return a concise verbatim transcript of the most recent audio buffer. "
                     "Do not add commentary or speaker labels.",
                 ),
-                insecure_downloads=backend_kwargs.get("insecure_downloads", False),
+                disable_ssl_verify=backend_kwargs.get("disable_ssl_verify", False),
                 chunk_consumer=collector,
                 compare_transcripts=backend_kwargs.get("compare_transcripts", False),
                 max_capture_duration=0.0,  # No duration limit for retranscription

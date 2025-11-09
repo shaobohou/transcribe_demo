@@ -103,7 +103,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
         channels=1,
         chunk_duration=0.2,
         instructions="transcribe precisely",
-        insecure_downloads=False,
+        disable_ssl_verify=False,
         chunk_consumer=collect_chunk,
         compare_transcripts=True,
         max_capture_duration=len(audio) / sample_rate,
@@ -198,7 +198,7 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
         channels=1,
         chunk_duration=0.2,
         instructions="transcribe precisely",
-        insecure_downloads=False,
+        disable_ssl_verify=False,
         chunk_consumer=lambda *, chunk_index, text, absolute_start, absolute_end, inference_seconds: None,
         compare_transcripts=True,  # Must be True to enable full audio collection
         max_capture_duration=len(audio) / sample_rate,

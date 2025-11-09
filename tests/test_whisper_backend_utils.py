@@ -28,7 +28,7 @@ def test_transcribe_full_audio_returns_empty_for_no_samples():
             device_preference="auto",
             require_gpu=False,
             ca_cert=None,
-            insecure_downloads=False,
+            disable_ssl_verify=False,
         )
         == ""
     )
@@ -51,7 +51,7 @@ def test_transcribe_full_audio_invokes_model(monkeypatch):
         device_preference="cpu",
         require_gpu=False,
         ca_cert=None,
-        insecure_downloads=False,
+        disable_ssl_verify=False,
         language="en",
     )
     assert result == "dummy transcript"
@@ -73,7 +73,7 @@ def test_load_whisper_model_prefers_cuda(monkeypatch):
         device_preference="auto",
         require_gpu=False,
         ca_cert=None,
-        insecure_downloads=False,
+        disable_ssl_verify=False,
     )
     assert model is loaded_model
     assert device == "cuda"
@@ -90,7 +90,7 @@ def test_load_whisper_model_requires_gpu(monkeypatch):
             device_preference="auto",
             require_gpu=True,
             ca_cert=None,
-            insecure_downloads=False,
+            disable_ssl_verify=False,
         )
 
 
@@ -125,7 +125,7 @@ def test_load_whisper_model_sets_ca_and_ssl(tmp_path, monkeypatch):
         device_preference="cpu",
         require_gpu=False,
         ca_cert=ca_file,
-        insecure_downloads=True,
+        disable_ssl_verify=True,
     )
 
     assert model is loaded_model
