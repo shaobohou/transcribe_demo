@@ -63,6 +63,44 @@ class RealtimeTranscriptionResult:
     metadata: dict[str, Any] | None = None
 
 
+async def _send_json(
+    ws: Any,
+    payload: dict[str, object],
+    lock: asyncio.Lock,
+) -> None:
+    """Send a JSON payload through the websocket using the provided lock."""
+
+    message = json.dumps(payload)
+    async with lock:
+        await ws.send(message)
+
+
+def _create_session_update(
+    instructions: str,
+    transcription_config: dict[str, object],
+    *,
+    include_turn_detection: bool,
+) -> dict[str, object]:
+    """Build the session.update payload for realtime websocket communication."""
+
+    session: dict[str, object] = {
+        "modalities": ["text"],
+        "instructions": instructions,
+        "input_audio_format": "pcm16",
+        "input_audio_transcription": transcription_config,
+        "temperature": 0.6,
+        "max_response_output_tokens": 4096,
+    }
+    if include_turn_detection:
+        session["turn_detection"] = {
+            "type": "server_vad",
+            "threshold": 0.3,
+            "prefix_padding_ms": 200,
+            "silence_duration_ms": 300,
+        }
+    return {"type": "session.update", "session": session}
+
+
 def _run_async(coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
     try:
         return asyncio.run(coro_factory())
@@ -119,24 +157,15 @@ def transcribe_full_audio_realtime(
         if language_value and language_value.lower() != "auto":
             transcription_config["language"] = language_value
 
-        async def send_json(payload: dict[str, object]) -> None:
-            message = json.dumps(payload)
-            async with lock:
-                await ws.send(message)
-
         async with websockets.connect(uri, additional_headers=headers, max_size=None, ssl=ssl_context) as ws:
-            await send_json(
-                {
-                    "type": "session.update",
-                    "session": {
-                        "modalities": ["text"],
-                        "instructions": instructions,
-                        "input_audio_format": "pcm16",
-                        "input_audio_transcription": transcription_config,
-                        "temperature": 0.6,
-                        "max_response_output_tokens": 4096,
-                    },
-                }
+            await _send_json(
+                ws,
+                _create_session_update(
+                    instructions,
+                    transcription_config,
+                    include_turn_detection=False,
+                ),
+                lock,
             )
 
             cursor = 0
@@ -149,11 +178,13 @@ def transcribe_full_audio_realtime(
                 if resampled.size == 0:
                     continue
                 payload = base64.b64encode(float_to_pcm16(resampled)).decode("ascii")
-                await send_json(
+                await _send_json(
+                    ws,
                     {
                         "type": "input_audio_buffer.append",
                         "audio": payload,
-                    }
+                    },
+                    lock,
                 )
                 chunks_sent += 1
 
@@ -161,7 +192,7 @@ def transcribe_full_audio_realtime(
             if chunks_sent == 0:
                 return ""
 
-            await send_json({"type": "input_audio_buffer.commit"})
+            await _send_json(ws, {"type": "input_audio_buffer.commit"}, lock)
 
             while True:
                 try:
@@ -263,32 +294,17 @@ def run_realtime_transcriber(
             lock = asyncio.Lock()
             partials: dict[str, str] = {}
 
-            async def send_json(payload: dict[str, object]) -> None:
-                message = json.dumps(payload)
-                async with lock:
-                    await ws.send(message)
-
             try:
                 async with websockets.connect(uri, additional_headers=headers, max_size=None, ssl=ssl_context) as ws:
                     # Session setup
-                    await send_json(
-                        {
-                            "type": "session.update",
-                            "session": {
-                                "modalities": ["text"],
-                                "instructions": instructions,
-                                "input_audio_format": "pcm16",
-                                "input_audio_transcription": transcription_config,
-                                "turn_detection": {
-                                    "type": "server_vad",
-                                    "threshold": 0.3,
-                                    "prefix_padding_ms": 200,
-                                    "silence_duration_ms": 300,
-                                },
-                                "temperature": 0.6,
-                                "max_response_output_tokens": 4096,
-                            },
-                        }
+                    await _send_json(
+                        ws,
+                        _create_session_update(
+                            instructions,
+                            transcription_config,
+                            include_turn_detection=True,
+                        ),
+                        lock,
                     )
 
                     # Create tasks for sending and receiving
@@ -363,11 +379,13 @@ def run_realtime_transcriber(
                                     continue
 
                                 pcm_payload = base64.b64encode(float_to_pcm16(resampled)).decode("ascii")
-                                await send_json(
+                                await _send_json(
+                                    ws,
                                     {
                                         "type": "input_audio_buffer.append",
                                         "audio": pcm_payload,
-                                    }
+                                    },
+                                    lock,
                                 )
 
                                 if force_flush and buffer.size == 0:
@@ -378,14 +396,16 @@ def run_realtime_transcriber(
                                 resampled = resample_audio(buffer, sample_rate, session_sample_rate)
                                 if len(resampled) > 0:
                                     pcm_payload = base64.b64encode(float_to_pcm16(resampled)).decode("ascii")
-                                    await send_json(
+                                    await _send_json(
+                                        ws,
                                         {
                                             "type": "input_audio_buffer.append",
                                             "audio": pcm_payload,
-                                        }
+                                        },
+                                        lock,
                                     )
 
-                            await send_json({"type": "input_audio_buffer.commit"})
+                            await _send_json(ws, {"type": "input_audio_buffer.commit"}, lock)
                         except Exception as e:
                             print(f"Audio sender error: {e}", file=sys.stderr)
                             raise
