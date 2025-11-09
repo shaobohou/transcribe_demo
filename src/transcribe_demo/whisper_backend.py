@@ -43,7 +43,7 @@ class WhisperTranscriptionResult:
 
 
 def _mps_available() -> bool:
-    mps_backend = getattr(torch.backends, "mps", None)
+    mps_backend: Any = getattr(torch.backends, "mps", None)
     if not mps_backend or not hasattr(mps_backend, "is_available"):
         return False
     try:
@@ -99,7 +99,7 @@ def load_whisper_model(
         os.environ["SSL_CERT_FILE"] = str(ca_cert)
         os.environ["REQUESTS_CA_BUNDLE"] = str(ca_cert)
 
-    original_https_context = None
+    original_https_context: Callable[..., ssl.SSLContext] | None = None
     if disable_ssl_verify:
         original_https_context = ssl._create_default_https_context
         ssl._create_default_https_context = ssl._create_unverified_context
