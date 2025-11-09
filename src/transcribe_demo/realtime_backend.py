@@ -12,12 +12,14 @@ import threading
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
 import websockets
 
 from transcribe_demo import audio_capture as audio_capture_lib
+from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -267,14 +269,26 @@ def run_realtime_transcriber(
     language: str = "en",
     session_logger: SessionLogger | None = None,
     min_log_duration: float = 0.0,
+    audio_file: Path | None = None,
+    playback_speed: float = 1.0,
 ) -> RealtimeTranscriptionResult:
-    # Initialize audio capture manager
-    audio_capture = audio_capture_lib.AudioCaptureManager(
-        sample_rate=sample_rate,
-        channels=channels,
-        max_capture_duration=max_capture_duration,
-        collect_full_audio=compare_transcripts or (session_logger is not None),
-    )
+    # Initialize audio source (either from file or microphone)
+    if audio_file is not None:
+        audio_capture = FileAudioSource(
+            audio_file=audio_file,
+            sample_rate=sample_rate,
+            channels=channels,
+            max_capture_duration=max_capture_duration,
+            collect_full_audio=compare_transcripts or (session_logger is not None),
+            playback_speed=playback_speed,
+        )
+    else:
+        audio_capture = audio_capture_lib.AudioCaptureManager(
+            sample_rate=sample_rate,
+            channels=channels,
+            max_capture_duration=max_capture_duration,
+            collect_full_audio=compare_transcripts or (session_logger is not None),
+        )
 
     session_sample_rate = 24000
     chunk_texts: list[str] = []
