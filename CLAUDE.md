@@ -80,40 +80,12 @@ git push -u origin your-branch-name
 ### Critical Defaults (DO NOT change without testing)
 
 - **`language="en"`** - Prevents hallucinations on silence/noise (auto-detection causes issues)
-- **`vad_aggressiveness=2`** - Balance speech detection (increase if missing speech, decrease if capturing noise)
+- **`vad_aggressiveness=2`** - Balance speech detection
 - **`min_silence_duration=0.2s`** - Controls chunking speed
 - **`max_chunk_duration=60s`** - Prevents buffer overflow
-- **`model="turbo"`** - Default (requires GPU); **use `base.en` for CPU-only** (see Model Selection below)
+- **`model="turbo"`** - Default (requires GPU); **use `base.en` for CPU-only**
 
-### Model Selection
-
-**`model="turbo"`** (default): Change if speed/accuracy tradeoff needs adjustment
-- **`base.en` model (139MB)**: **STRONGLY RECOMMENDED for all CPU-only environments**
-  - 11x smaller download than turbo (139MB vs 1.51GB)
-  - 2.0x faster than real-time on CPU
-  - Tested on 280s NPR newscast with good results
-  - Use with: `--model base.en`
-  - **Use this for:** CI/testing, production without GPU, resource-constrained systems
-- **`turbo` model (1.51GB)**: Default for production use with GPU
-  - Highest accuracy for general use
-  - Requires GPU for real-time performance
-- **NOT RECOMMENDED:**
-  - `tiny.en` (72MB): Produces nonsensical errors ("stomp" vs "stop", "cliff face penalties")
-  - `small.en` (461MB): Slower than real-time on CPU, marginal improvement over base.en
-
-### VAD Tuning
-
-- **`vad_aggressiveness=2`**: Increase if missing speech, decrease if capturing noise
-- **`min_silence_duration=0.2s`**: Increase for slower chunking, decrease for faster response
-- **`max_chunk_duration=60s`**: Increase if seeing duration warnings during long speech
-- **For responsive transcription**: Use `--max_chunk_duration 20` with `--vad_min_silence_duration 0.6`
-  - Provides 2-3x faster first results with minimal accuracy loss
-
-### Other Configuration
-
-- **Device:** Auto-detection order: CUDA → MPS → CPU. Use `--require_gpu` to abort if no GPU.
-- **Audio source:** Microphone (`AudioCaptureManager`) or File/URL (`FileAudioSource` with `--audio_file`). File source supports `--playback_speed`.
-- **SSL:** `--ca_cert` for custom cert bundles. `--disable_ssl_verify` for restricted networks (**insecure**, not for production).
+**For model selection and VAD tuning guidance**, see **[README.md](README.md)** (user-facing documentation).
 
 ### Common Gotchas
 
