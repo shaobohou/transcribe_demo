@@ -85,6 +85,8 @@ def _create_session_update(
     transcription_config: dict[str, Any],
     *,
     include_turn_detection: bool,
+    vad_threshold: float = 0.3,
+    vad_silence_duration_ms: int = 200,
 ) -> dict[str, Any]:
     """Build the session.update payload for realtime websocket communication."""
 
@@ -99,9 +101,9 @@ def _create_session_update(
     if include_turn_detection:
         session["turn_detection"] = {
             "type": "server_vad",
-            "threshold": 0.3,
+            "threshold": vad_threshold,
             "prefix_padding_ms": 200,
-            "silence_duration_ms": 300,
+            "silence_duration_ms": vad_silence_duration_ms,
         }
     return {"type": "session.update", "session": session}
 
@@ -274,6 +276,9 @@ def run_realtime_transcriber(
     min_log_duration: float = 0.0,
     audio_file: Path | None = None,
     playback_speed: float = 1.0,
+    vad_threshold: float = 0.3,
+    vad_silence_duration_ms: int = 200,
+    debug: bool = False,
 ) -> RealtimeTranscriptionResult:
     # Initialize audio source (either from file or microphone)
     if audio_file is not None:
@@ -335,6 +340,8 @@ def run_realtime_transcriber(
                             instructions,
                             transcription_config,
                             include_turn_detection=True,
+                            vad_threshold=vad_threshold,
+                            vad_silence_duration_ms=vad_silence_duration_ms,
                         ),
                         lock,
                     )
@@ -511,8 +518,22 @@ def run_realtime_transcriber(
                                     delta = payload.get("delta") or ""
                                     if delta and item_id:
                                         partials[item_id] = partials.get(item_id, "") + delta
+                                        if debug:
+                                            current_partial = partials[item_id]
+                                            print(
+                                                f"[DEBUG] Delta event for {item_id}: partial length={len(current_partial)}, delta='{delta}'",
+                                                file=sys.stderr,
+                                                flush=True,
+                                            )
 
                                 elif event_type == "conversation.item.input_audio_transcription.completed":
+                                    if debug:
+                                        print(
+                                            f"[DEBUG] Completed event received: item_id={payload.get('item_id')}, "
+                                            f"transcript_length={len(payload.get('transcript') or '')}",
+                                            file=sys.stderr,
+                                            flush=True,
+                                        )
                                     item_id = payload.get("item_id")
                                     transcript = payload.get("transcript") or ""
                                     had_partials = bool(item_id and partials.get(item_id))

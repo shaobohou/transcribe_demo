@@ -165,6 +165,29 @@ flags.DEFINE_string(
     ),
     "Instruction prompt sent to the realtime model.",
 )
+flags.DEFINE_float(
+    "realtime_vad_threshold",
+    0.2,
+    "Server VAD threshold for turn detection (0.0-1.0). Lower = more sensitive. "
+    "Default 0.2 works well for continuous speech (news, podcasts). "
+    "Only applies when using realtime backend.",
+    lower_bound=0.0,
+    upper_bound=1.0,
+)
+flags.DEFINE_integer(
+    "realtime_vad_silence_duration_ms",
+    100,
+    "Silence duration in milliseconds required to detect turn boundary. "
+    "Lower values = more frequent chunks. Default 100ms works well for fast-paced content. "
+    "Only applies when using realtime backend.",
+    lower_bound=100,
+    upper_bound=2000,
+)
+flags.DEFINE_boolean(
+    "realtime_debug",
+    False,
+    "Enable debug logging for realtime transcription events (shows delta and completed events).",
+)
 
 # Comparison and capture configuration
 flags.DEFINE_boolean(
@@ -701,6 +724,9 @@ def main(argv: list[str]) -> None:
             min_log_duration=FLAGS.min_log_duration,
             audio_file=FLAGS.audio_file,
             playback_speed=FLAGS.playback_speed,
+            vad_threshold=FLAGS.realtime_vad_threshold,
+            vad_silence_duration_ms=FLAGS.realtime_vad_silence_duration_ms,
+            debug=FLAGS.realtime_debug,
         )
     except KeyboardInterrupt:
         pass
