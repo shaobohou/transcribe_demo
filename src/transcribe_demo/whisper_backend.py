@@ -577,7 +577,7 @@ def run_whisper_transcriber(
                     buffer_snapshot = buffer.copy() if buffer.size > 0 else np.zeros(0, dtype=np.float32)
 
                 # Limit buffer to most recent max_partial_buffer_seconds to prevent unbounded growth
-                max_samples = int(max_partial_buffer_seconds * SAMPLE_RATE)
+                max_samples = int(max_partial_buffer_seconds * sample_rate)
                 if buffer_snapshot.size > max_samples:
                     buffer_snapshot = buffer_snapshot[-max_samples:]
 
