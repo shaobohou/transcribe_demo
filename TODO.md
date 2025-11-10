@@ -6,28 +6,23 @@ This document tracks implementation-level refactoring opportunities, code qualit
 
 ---
 
-## Recent Updates
+## Recent Updates (2025-11-09)
 
-**2025-11-10**:
-- ✅ **Completed §0.1**: Extract duplicate Whisper text extraction logic (commit: 54a3fe5)
-
-**2025-11-09**:
-- **Comprehensive codebase scan completed** - Added 11 new items
+**Comprehensive codebase scan completed** - Added 11 new items:
 
 **Priority 0 - Code Simplification**:
-1. ~~**§0.1**: Extract duplicate Whisper text extraction logic~~ ✅ **COMPLETED 2025-11-10**
-2. **§0.2**: Reuse `_run_async()` helper in Whisper backend (~10 lines, 20 min)
-3. **§0.3**: Extract color code initialization helper (~8 lines, 15 min)
+1. **§0.2**: Reuse `_run_async()` helper in Whisper backend (~10 lines, 20 min)
+2. **§0.3**: Extract color code initialization helper (~8 lines, 15 min)
 
 **Priority 1-5 - Refactoring & Quality**:
-4. **§1.1**: Deduplicate `resample_audio()` function (duplicate in 2 files)
-5. **§1.1b**: Extract `stdin.isatty()` check to shared utility
-6. **§3.0**: Make hardcoded timeouts configurable (network, async, thread joins)
-7. **§4.3**: Add edge case tests for audio utilities
-8. **§5.0**: Add missing docstrings to 8 public functions ⚠️ HIGH IMPACT
-9. **§5.6**: Replace 11 bare exception handlers with logging ⚠️ HIGH IMPACT
-10. **§5.7**: Remove unused imports (wave module in 2 files)
-11. **§5.8**: Move time import to module level (PEP 8 compliance)
+3. **§1.1**: Deduplicate `resample_audio()` function (duplicate in 2 files)
+4. **§1.1b**: Extract `stdin.isatty()` check to shared utility
+5. **§3.0**: Make hardcoded timeouts configurable (network, async, thread joins)
+6. **§4.3**: Add edge case tests for audio utilities
+7. **§5.0**: Add missing docstrings to 8 public functions ⚠️ HIGH IMPACT
+8. **§5.6**: Replace 11 bare exception handlers with logging ⚠️ HIGH IMPACT
+9. **§5.7**: Remove unused imports (wave module in 2 files)
+10. **§5.8**: Move time import to module level (PEP 8 compliance)
 
 **Quick Wins Summary**: ~15 lines can be removed via remaining Priority 0 items (total time: 35 min)
 
@@ -228,81 +223,6 @@ except Exception as e:
 ## Priority 0: Code Simplification & Deletion
 
 These are small, targeted changes that delete or consolidate duplicate code.
-
-### 0.1 Extract Duplicate Whisper Result Extraction Logic ✅ COMPLETED
-
-**Status**: ✅ Completed on 2025-11-10 (commit: 54a3fe5)
-
-**Issue**: Text extraction from Whisper result is duplicated in two locations with slightly different patterns.
-
-**Locations** (original):
-- `whisper_backend.py:487-493` (in worker thread, assigns to `text`)
-- `whisper_backend.py:647-652` (in `transcribe_full_audio_whisper`, returns directly)
-
-**Current Code**:
-```python
-# Pattern 1 (lines 487-493):
-raw_text = result.get("text", "")
-if isinstance(raw_text, str):
-    text = raw_text
-elif isinstance(raw_text, list):
-    text = " ".join(str(part) for part in raw_text)
-else:
-    text = str(raw_text)
-
-# Pattern 2 (lines 647-652):
-raw_text = result.get("text", "")
-if isinstance(raw_text, str):
-    return raw_text
-if isinstance(raw_text, list):
-    return " ".join(str(part) for part in raw_text)
-return str(raw_text)
-```
-
-**Proposed Solution**:
-```python
-def _extract_whisper_text(result: dict) -> str:
-    """
-    Extract text from Whisper transcription result.
-
-    Args:
-        result: Whisper transcription result dictionary
-
-    Returns:
-        Extracted text as string
-
-    Note:
-        Handles both string results and list results (joins with spaces).
-    """
-    raw_text = result.get("text", "")
-    if isinstance(raw_text, str):
-        return raw_text
-    if isinstance(raw_text, list):
-        return " ".join(str(part) for part in raw_text)
-    return str(raw_text)
-
-# Usage at both locations:
-text = _extract_whisper_text(result)
-```
-
-**Benefits**:
-- DRY: Single implementation
-- Consistent behavior across all Whisper transcriptions
-- Easier to handle future changes to result format
-- Self-documenting function name
-
-**Priority**: High - 10 minutes, removes 5 lines of duplication
-
-**Solution Implemented**:
-- Created `_extract_whisper_text()` helper function in `whisper_backend.py:55-73`
-- Replaced 3 duplicate code blocks (found additional instance during implementation):
-  - `whisper_backend.py:537` - Main transcription worker
-  - `whisper_backend.py:626` - Partial transcription worker
-  - `whisper_backend.py:788` - Full audio transcription function
-- Net reduction: 18 lines of duplicate code removed
-- All tests passing (101/101)
-
----
 
 ### 0.2 Reuse _run_async() Helper in Whisper Backend
 
