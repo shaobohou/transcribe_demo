@@ -61,10 +61,13 @@ uv run transcribe-demo
 #### Model Selection
 
 ```bash
-# Use different Whisper models
-uv run transcribe-demo --model small.en
-uv run transcribe-demo --model base.en
-uv run transcribe-demo --model tiny.en
+# English-only models (recommended for English audio - better accuracy)
+uv run transcribe-demo --model base.en    # Good balance of speed/accuracy
+uv run transcribe-demo --model small.en   # Better accuracy, slower
+uv run transcribe-demo --model tiny.en    # Faster, less accurate
+
+# Multilingual models (use with --language flag)
+uv run transcribe-demo --model turbo      # Default: fastest, multilingual
 ```
 
 #### VAD Configuration
