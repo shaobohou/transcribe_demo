@@ -595,6 +595,10 @@ def run_whisper_transcriber(
             heartbeat_interval = 5.0  # Log heartbeat every 5 seconds
             partial_count = 0
             skip_count = 0
+            last_forced_update = time.perf_counter()
+            # Force update every N intervals (5x partial_interval) regardless of buffer size change
+            # This ensures updates continue even when buffer is at max size (sliding window)
+            force_update_interval = partial_interval * 5.0
 
             while not audio_capture.stop_event.is_set():
                 await asyncio.sleep(partial_interval)
@@ -627,14 +631,18 @@ def run_whisper_transcriber(
                 if buffer_snapshot.size > max_samples:
                     buffer_snapshot = buffer_snapshot[-max_samples:]
 
-                # Only transcribe if we have enough audio and it's different from last time
+                # Only transcribe if we have enough audio
                 if buffer_snapshot.size < min_chunk_size:
                     last_transcribed_size = 0
                     skip_count += 1
                     continue
 
-                # Skip if buffer hasn't changed significantly (within 10% of last size)
-                if abs(buffer_snapshot.size - last_transcribed_size) < last_transcribed_size * 0.1:
+                # Check if we should force an update based on time elapsed
+                time_since_last_update = current_time - last_forced_update
+                force_update = time_since_last_update >= force_update_interval
+
+                # Skip if buffer hasn't changed significantly (within 10% of last size) AND not forcing update
+                if not force_update and abs(buffer_snapshot.size - last_transcribed_size) < last_transcribed_size * 0.1:
                     skip_count += 1
                     continue
 
@@ -689,6 +697,8 @@ def run_whisper_transcriber(
                     print(f"Warning: Partial transcription error: {exc}", file=sys.stderr)
                 finally:
                     partial_in_progress = False
+                    # Reset forced update timer after transcription completes
+                    last_forced_update = time.perf_counter()
         except Exception as exc:  # pragma: no cover - defensive guard
             # Don't crash the entire pipeline on partial transcription errors
             print(f"Warning: Partial transcriber worker error: {exc}", file=sys.stderr)
