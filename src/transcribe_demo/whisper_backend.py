@@ -596,9 +596,9 @@ def run_whisper_transcriber(
             partial_count = 0
             skip_count = 0
             last_forced_update = time.perf_counter()
-            # Force update every N intervals (5x partial_interval) regardless of buffer size change
+            # Force update at partial_interval regardless of buffer size change
             # This ensures updates continue even when buffer is at max size (sliding window)
-            force_update_interval = partial_interval * 5.0
+            force_update_interval = partial_interval
 
             while not audio_capture.stop_event.is_set():
                 await asyncio.sleep(partial_interval)
