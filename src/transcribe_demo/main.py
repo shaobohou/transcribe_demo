@@ -81,6 +81,13 @@ flags.DEFINE_float(
     lower_bound=0.1,
     upper_bound=10.0,
 )
+flags.DEFINE_float(
+    "max_partial_buffer_seconds",
+    10.0,
+    "Maximum buffer size (in seconds) for partial transcription to prevent unbounded growth in inference time.",
+    lower_bound=1.0,
+    upper_bound=60.0,
+)
 
 # Audio configuration
 flags.DEFINE_integer(
@@ -728,6 +735,7 @@ def main(argv: list[str]) -> None:
                 enable_partial_transcription=FLAGS.enable_partial_transcription,
                 partial_model=FLAGS.partial_model,
                 partial_interval=FLAGS.partial_interval,
+                max_partial_buffer_seconds=FLAGS.max_partial_buffer_seconds,
             )
         finally:
             final = collector.get_final_stitched()

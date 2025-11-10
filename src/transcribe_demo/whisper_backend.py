@@ -267,6 +267,7 @@ def run_whisper_transcriber(
     enable_partial_transcription: bool = False,
     partial_model: str = "base.en",
     partial_interval: float = 1.0,
+    max_partial_buffer_seconds: float = 10.0,
 ) -> WhisperTranscriptionResult:
     model, device, fp16 = load_whisper_model(
         model_name=model_name,
@@ -562,13 +563,23 @@ def run_whisper_transcriber(
 
         try:
             last_transcribed_size = 0
+            partial_in_progress = False
             while not audio_capture.stop_event.is_set():
                 await asyncio.sleep(partial_interval)
+
+                # Only enqueue new partial transcription if previous one has finished
+                if partial_in_progress:
+                    continue
 
                 # Get snapshot of current buffer and chunk index
                 async with buffer_lock:
                     chunk_idx = current_chunk_index_for_partial
                     buffer_snapshot = buffer.copy() if buffer.size > 0 else np.zeros(0, dtype=np.float32)
+
+                # Limit buffer to most recent max_partial_buffer_seconds to prevent unbounded growth
+                max_samples = int(max_partial_buffer_seconds * SAMPLE_RATE)
+                if buffer_snapshot.size > max_samples:
+                    buffer_snapshot = buffer_snapshot[-max_samples:]
 
                 # Only transcribe if we have enough audio and it's different from last time
                 if buffer_snapshot.size < min_chunk_size:
@@ -581,9 +592,11 @@ def run_whisper_transcriber(
 
                 last_transcribed_size = buffer_snapshot.size
 
-                # Transcribe with the fast partial model
-                inference_start = time.perf_counter()
+                # Mark partial transcription as in progress
+                partial_in_progress = True
                 try:
+                    # Transcribe with the fast partial model
+                    inference_start = time.perf_counter()
                     result: dict[str, Any] = await asyncio.to_thread(
                         partial_whisper_model.transcribe,
                         buffer_snapshot,
@@ -625,7 +638,8 @@ def run_whisper_transcriber(
                 except Exception as exc:
                     # Silently ignore errors in partial transcription (non-critical)
                     print(f"Warning: Partial transcription error: {exc}", file=sys.stderr)
-                    continue
+                finally:
+                    partial_in_progress = False
         except Exception as exc:  # pragma: no cover - defensive guard
             # Don't crash the entire pipeline on partial transcription errors
             print(f"Warning: Partial transcriber worker error: {exc}", file=sys.stderr)
