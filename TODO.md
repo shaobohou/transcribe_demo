@@ -6,12 +6,16 @@ This document tracks implementation-level refactoring opportunities, code qualit
 
 ---
 
-## Recent Updates (2025-11-09)
+## Recent Updates
 
-**Comprehensive codebase scan completed** - Added 11 new items:
+**2025-11-10**:
+- ✅ **Completed §0.1**: Extract duplicate Whisper text extraction logic (commit: 54a3fe5)
 
-**Priority 0 - Code Simplification** (NEW):
-1. **§0.1**: Extract duplicate Whisper text extraction logic (~5 lines, 10 min)
+**2025-11-09**:
+- **Comprehensive codebase scan completed** - Added 11 new items
+
+**Priority 0 - Code Simplification**:
+1. ~~**§0.1**: Extract duplicate Whisper text extraction logic~~ ✅ **COMPLETED 2025-11-10**
 2. **§0.2**: Reuse `_run_async()` helper in Whisper backend (~10 lines, 20 min)
 3. **§0.3**: Extract color code initialization helper (~8 lines, 15 min)
 
@@ -25,7 +29,7 @@ This document tracks implementation-level refactoring opportunities, code qualit
 10. **§5.7**: Remove unused imports (wave module in 2 files)
 11. **§5.8**: Move time import to module level (PEP 8 compliance)
 
-**Quick Wins Summary**: ~23 lines can be removed immediately via Priority 0 items (total time: 45 min)
+**Quick Wins Summary**: ~15 lines can be removed via remaining Priority 0 items (total time: 35 min)
 
 **Overall Assessment**: Codebase is in GOOD SHAPE (86% test coverage, 97 tests, no critical bugs detected). Main opportunities are code deduplication, missing documentation, and silent failures.
 
@@ -225,11 +229,13 @@ except Exception as e:
 
 These are small, targeted changes that delete or consolidate duplicate code.
 
-### 0.1 Extract Duplicate Whisper Result Extraction Logic
+### 0.1 Extract Duplicate Whisper Result Extraction Logic ✅ COMPLETED
+
+**Status**: ✅ Completed on 2025-11-10 (commit: 54a3fe5)
 
 **Issue**: Text extraction from Whisper result is duplicated in two locations with slightly different patterns.
 
-**Locations**:
+**Locations** (original):
 - `whisper_backend.py:487-493` (in worker thread, assigns to `text`)
 - `whisper_backend.py:647-652` (in `transcribe_full_audio_whisper`, returns directly)
 
@@ -286,6 +292,15 @@ text = _extract_whisper_text(result)
 - Self-documenting function name
 
 **Priority**: High - 10 minutes, removes 5 lines of duplication
+
+**Solution Implemented**:
+- Created `_extract_whisper_text()` helper function in `whisper_backend.py:55-73`
+- Replaced 3 duplicate code blocks (found additional instance during implementation):
+  - `whisper_backend.py:537` - Main transcription worker
+  - `whisper_backend.py:626` - Partial transcription worker
+  - `whisper_backend.py:788` - Full audio transcription function
+- Net reduction: 18 lines of duplicate code removed
+- All tests passing (101/101)
 
 ---
 
