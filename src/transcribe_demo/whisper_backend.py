@@ -608,6 +608,12 @@ def run_whisper_transcriber(
                         chunk_absolute_end = max(0.0, time.perf_counter() - session_start_time)
                         chunk_absolute_start = 0.0  # Not meaningful for partial
 
+                        # Re-check if this chunk is still current (prevent displaying stale partials)
+                        async with buffer_lock:
+                            if chunk_idx != current_chunk_index_for_partial:
+                                # Chunk has already been finalized, skip displaying this partial
+                                continue
+
                         chunk_consumer(
                             chunk_idx,
                             text,
