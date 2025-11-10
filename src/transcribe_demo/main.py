@@ -42,8 +42,7 @@ flags.DEFINE_string(
 flags.DEFINE_string(
     "model",
     "turbo",
-    "Whisper checkpoint to load. English-only models (base.en, small.en, tiny.en) recommended for English audio. "
-    "Multilingual models (turbo, base, small) support multiple languages.",
+    "Whisper checkpoint to load. Recommended: 'turbo' (default, GPU, multilingual) or 'base.en' (CPU-friendly, English-only).",
 )
 flags.DEFINE_enum(
     "device",
