@@ -52,6 +52,27 @@ def _mps_available() -> bool:
         return False
 
 
+def _extract_whisper_text(result: dict[str, Any]) -> str:
+    """
+    Extract text from Whisper transcription result.
+
+    Args:
+        result: Whisper transcription result dictionary
+
+    Returns:
+        Extracted text as string
+
+    Note:
+        Handles both string results and list results (joins with spaces).
+    """
+    raw_text = result.get("text", "")
+    if isinstance(raw_text, str):
+        return raw_text
+    if isinstance(raw_text, list):
+        return " ".join(str(part) for part in raw_text)
+    return str(raw_text)
+
+
 def load_whisper_model(
     model_name: str,
     device_preference: str,
@@ -513,13 +534,7 @@ def run_whisper_transcriber(
                     language=normalized_language,
                 )
                 inference_duration = time.perf_counter() - inference_start
-                raw_text = result.get("text", "")
-                if isinstance(raw_text, str):
-                    text = raw_text
-                elif isinstance(raw_text, list):
-                    text = " ".join(str(part) for part in raw_text)
-                else:
-                    text = str(raw_text)
+                text = _extract_whisper_text(result)
 
                 # Compute absolute timestamps relative to session start (approximate real-time)
                 chunk_absolute_end = max(0.0, inference_start - session_start_time)
@@ -608,13 +623,7 @@ def run_whisper_transcriber(
                     )
                     inference_duration = time.perf_counter() - inference_start
 
-                    raw_text = result.get("text", "")
-                    if isinstance(raw_text, str):
-                        text = raw_text
-                    elif isinstance(raw_text, list):
-                        text = " ".join(str(part) for part in raw_text)
-                    else:
-                        text = str(raw_text)
+                    text = _extract_whisper_text(result)
 
                     if text.strip():
                         # Compute approximate timestamp
@@ -776,9 +785,4 @@ def transcribe_full_audio(
         best_of=1,
         language=normalized_language,
     )
-    raw_text = result.get("text", "")
-    if isinstance(raw_text, str):
-        return raw_text
-    if isinstance(raw_text, list):
-        return " ".join(str(part) for part in raw_text)
-    return str(raw_text)
+    return _extract_whisper_text(result)
