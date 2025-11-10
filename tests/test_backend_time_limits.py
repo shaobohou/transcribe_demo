@@ -39,8 +39,9 @@ def test_whisper_backend_respects_time_limit(monkeypatch):
         create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
     )
 
-    def capture_chunk(index, text, start, end, inference_seconds):
-        chunks.append({"index": index, "text": text, "start": start, "end": end})
+    def capture_chunk(index, text, start, end, inference_seconds, is_partial=False):
+        if not is_partial:
+            chunks.append({"index": index, "text": text, "start": start, "end": end})
 
     result = whisper_backend.run_whisper_transcriber(
         model_name="fixture",
@@ -101,8 +102,9 @@ def test_whisper_backend_transcribes_incomplete_chunk_on_timeout(monkeypatch):
         create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
     )
 
-    def capture_chunk(index, text, start, end, inference_seconds):
-        chunks.append({"index": index, "text": text, "start": start, "end": end})
+    def capture_chunk(index, text, start, end, inference_seconds, is_partial=False):
+        if not is_partial:
+            chunks.append({"index": index, "text": text, "start": start, "end": end})
 
     result = whisper_backend.run_whisper_transcriber(
         model_name="fixture",
@@ -167,8 +169,9 @@ def test_whisper_backend_logs_session(monkeypatch, temp_session_dir):
         create_fake_audio_capture_factory(audio, sample_rate),
     )
 
-    def capture_chunk(index, text, start, end, inference_seconds):
-        chunks.append({"index": index, "text": text, "start": start, "end": end})
+    def capture_chunk(index, text, start, end, inference_seconds, is_partial=False):
+        if not is_partial:
+            chunks.append({"index": index, "text": text, "start": start, "end": end})
 
     # Create session logger with temp directory
     session_logger = SessionLogger(
@@ -601,8 +604,9 @@ def test_session_logger_respects_min_duration(monkeypatch, temp_session_dir):
         create_fake_audio_capture_factory(audio, sample_rate),
     )
 
-    def capture_chunk(index, text, start, end, inference_seconds):
-        chunks.append({"index": index, "text": text})
+    def capture_chunk(index, text, start, end, inference_seconds, is_partial=False):
+        if not is_partial:
+            chunks.append({"index": index, "text": text})
 
     # Create session logger with temp directory
     session_logger = SessionLogger(

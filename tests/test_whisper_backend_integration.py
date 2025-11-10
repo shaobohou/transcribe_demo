@@ -37,16 +37,17 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
         create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
     )
 
-    def capture_chunk(index, text, start, end, inference_seconds):
-        chunks.append(
-            {
-                "index": index,
-                "text": text,
-                "start": start,
-                "end": end,
-                "inference": inference_seconds,
-            }
-        )
+    def capture_chunk(index, text, start, end, inference_seconds, is_partial=False):
+        if not is_partial:
+            chunks.append(
+                {
+                    "index": index,
+                    "text": text,
+                    "start": start,
+                    "end": end,
+                    "inference": inference_seconds,
+                }
+            )
 
     duration_seconds = len(audio) / sample_rate
     result = whisper_backend.run_whisper_transcriber(

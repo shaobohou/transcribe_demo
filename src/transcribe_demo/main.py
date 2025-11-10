@@ -42,7 +42,7 @@ flags.DEFINE_string(
 flags.DEFINE_string(
     "model",
     "turbo",
-    "Whisper checkpoint to load (e.g., turbo, tiny.en, tiny, base.en, small).",
+    "Whisper checkpoint to load. Recommended: 'turbo' (default, GPU, multilingual) or 'base.en' (CPU-friendly, English-only).",
 )
 flags.DEFINE_enum(
     "device",
@@ -60,6 +60,33 @@ flags.DEFINE_string(
     "language",
     "en",
     "Preferred language code for transcription (e.g., en, es). Use 'auto' to let the model detect.",
+)
+
+# Partial transcription configuration (Whisper backend only)
+flags.DEFINE_boolean(
+    "enable_partial_transcription",
+    False,
+    "Enable real-time partial transcription of accumulating audio chunks using a fast model. "
+    "Only applies to Whisper backend.",
+)
+flags.DEFINE_string(
+    "partial_model",
+    "base.en",
+    "Whisper model for partial transcription (should be faster than main model, e.g., base.en, tiny.en).",
+)
+flags.DEFINE_float(
+    "partial_interval",
+    1.0,
+    "Interval (seconds) between partial transcription updates.",
+    lower_bound=0.1,
+    upper_bound=10.0,
+)
+flags.DEFINE_float(
+    "max_partial_buffer_seconds",
+    10.0,
+    "Maximum buffer size (in seconds) for partial transcription to prevent unbounded growth in inference time.",
+    lower_bound=1.0,
+    upper_bound=60.0,
 )
 
 # Audio configuration
@@ -239,6 +266,7 @@ class ChunkCollectorWithStitching:
         self._stream = stream
         self._last_time = float("-inf")
         self._chunks: list[TranscriptionChunk] = []
+        self._last_partial_chunk_index: int | None = None
 
     @staticmethod
     def _clean_chunk_text(text: str, is_final_chunk: bool = False) -> str:
@@ -256,6 +284,46 @@ class ChunkCollectorWithStitching:
                 text = text[:-1].rstrip()
         return text
 
+    def _display_partial_chunk(
+        self,
+        chunk_index: int,
+        text: str,
+        absolute_end: float,
+        inference_seconds: float | None,
+    ) -> None:
+        """Display a partial transcription that updates in real-time."""
+        use_color = bool(getattr(self._stream, "isatty", lambda: False)())
+
+        # Clear previous partial line if this is an update for the same chunk
+        if self._last_partial_chunk_index == chunk_index:
+            # Move cursor to beginning of line and clear it
+            self._stream.write("\r\x1b[K")
+        elif self._last_partial_chunk_index is not None:
+            # Different chunk, add newline to finalize previous partial
+            self._stream.write("\n")
+
+        self._last_partial_chunk_index = chunk_index
+
+        # Format the partial transcription
+        if inference_seconds is not None:
+            timing_suffix = f" | t={absolute_end:.2f}s | inference: {inference_seconds:.2f}s"
+        else:
+            timing_suffix = f" | t={absolute_end:.2f}s"
+
+        if use_color:
+            yellow = "\x1b[33m"
+            reset = "\x1b[0m"
+            bold = "\x1b[1m"
+            dim = "\x1b[2m"
+            label = f"{bold}{yellow}[PARTIAL {chunk_index:03d}{timing_suffix}]{reset}"
+            line = f"{label} {dim}{text.strip()}{reset}"
+        else:
+            label = f"[PARTIAL {chunk_index:03d}{timing_suffix}]"
+            line = f"{label} {text.strip()}"
+
+        self._stream.write(line)
+        self._stream.flush()
+
     def __call__(
         self,
         chunk_index: int,
@@ -263,8 +331,14 @@ class ChunkCollectorWithStitching:
         absolute_start: float,
         absolute_end: float,
         inference_seconds: float | None = None,
+        is_partial: bool = False,
     ) -> None:
         if not text:
+            return
+
+        # Handle partial transcription (don't store, just display)
+        if is_partial:
+            self._display_partial_chunk(chunk_index, text, absolute_end, inference_seconds)
             return
 
         # Store the chunk
@@ -303,6 +377,15 @@ class ChunkCollectorWithStitching:
         # - Only refine chunks >= 2 (need 3-chunk window)
         # - Extract middle chunk text using word timestamps that fall within N-1 time range
         # - Display both immediate (chunk N) and refined (chunk N-1) with different labels
+
+        # Clear previous partial line if final chunk replaces it
+        if self._last_partial_chunk_index == chunk_index:
+            self._stream.write("\r\x1b[K")
+            self._last_partial_chunk_index = None
+        elif self._last_partial_chunk_index is not None:
+            # Finalize previous partial with newline
+            self._stream.write("\n")
+            self._last_partial_chunk_index = None
 
         # Display the individual chunk
         if inference_seconds is not None:
@@ -649,6 +732,10 @@ def main(argv: list[str]) -> None:
                 min_log_duration=FLAGS.min_log_duration,
                 audio_file=FLAGS.audio_file,
                 playback_speed=FLAGS.playback_speed,
+                enable_partial_transcription=FLAGS.enable_partial_transcription,
+                partial_model=FLAGS.partial_model,
+                partial_interval=FLAGS.partial_interval,
+                max_partial_buffer_seconds=FLAGS.max_partial_buffer_seconds,
             )
         finally:
             final = collector.get_final_stitched()

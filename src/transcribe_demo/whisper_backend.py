@@ -251,7 +251,7 @@ def run_whisper_transcriber(
     disable_ssl_verify: bool,
     device_preference: str,
     require_gpu: bool,
-    chunk_consumer: Callable[[int, str, float, float, float | None], None] | None = None,
+    chunk_consumer: Callable[[int, str, float, float, float | None, bool], None] | None = None,
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,
@@ -264,6 +264,10 @@ def run_whisper_transcriber(
     min_log_duration: float = 0.0,
     audio_file: Path | None = None,
     playback_speed: float = 1.0,
+    enable_partial_transcription: bool = False,
+    partial_model: str = "base.en",
+    partial_interval: float = 1.0,
+    max_partial_buffer_seconds: float = 10.0,
 ) -> WhisperTranscriptionResult:
     model, device, fp16 = load_whisper_model(
         model_name=model_name,
@@ -272,6 +276,25 @@ def run_whisper_transcriber(
         ca_cert=ca_cert,
         disable_ssl_verify=disable_ssl_verify,
     )
+
+    # Load partial model if enabled
+    partial_whisper_model = None
+    if enable_partial_transcription:
+        if partial_model == model_name:
+            print(
+                f"WARNING: Partial model '{partial_model}' is the same as main model '{model_name}'. "
+                f"This won't provide the speed benefits. Consider using a faster model like 'base.en' or 'tiny.en'.",
+                file=sys.stderr,
+            )
+        print(f"Loading partial transcription model: {partial_model}", file=sys.stderr)
+        partial_whisper_model, _, _ = load_whisper_model(
+            model_name=partial_model,
+            device_preference=device_preference,
+            require_gpu=require_gpu,
+            ca_cert=ca_cert,
+            disable_ssl_verify=disable_ssl_verify,
+        )
+
     normalized_language = None
     if language and language.lower() != "auto":
         normalized_language = language
@@ -325,8 +348,12 @@ def run_whisper_transcriber(
     transcription_queue: asyncio.Queue[tuple[int, np.ndarray, float] | None] = asyncio.Queue()
     transcriber_error: list[BaseException] = []
 
+    # Shared state for partial transcription
+    buffer_lock = asyncio.Lock()
+    current_chunk_index_for_partial = 0
+
     async def vad_worker() -> None:
-        nonlocal buffer
+        nonlocal buffer, current_chunk_index_for_partial
         chunk_index = 0
         silence_frames = 0
         speech_frames = 0
@@ -452,6 +479,8 @@ def run_whisper_transcriber(
                     speech_pad_buffer = speech_pad_buffer[-max_pad_buffer_size:]
 
                 chunk_index += 1
+                async with buffer_lock:
+                    current_chunk_index_for_partial = chunk_index
 
                 # After chunk completes, check if capture limit was reached and stop gracefully
                 if audio_capture.capture_limit_reached.is_set():
@@ -503,6 +532,7 @@ def run_whisper_transcriber(
                         chunk_absolute_start,
                         chunk_absolute_end,
                         inference_duration,
+                        False,  # is_partial
                     )
                 else:
                     print(
@@ -525,15 +555,108 @@ def run_whisper_transcriber(
             audio_capture.stop()
             await transcription_queue.put(None)
 
+    async def partial_transcriber_worker() -> None:
+        """Periodically transcribe the current accumulating buffer with a fast model."""
+        nonlocal buffer
+        if not enable_partial_transcription or partial_whisper_model is None or chunk_consumer is None:
+            return
+
+        try:
+            last_transcribed_size = 0
+            partial_in_progress = False
+            while not audio_capture.stop_event.is_set():
+                await asyncio.sleep(partial_interval)
+
+                # Only enqueue new partial transcription if previous one has finished
+                if partial_in_progress:
+                    continue
+
+                # Get snapshot of current buffer and chunk index
+                async with buffer_lock:
+                    chunk_idx = current_chunk_index_for_partial
+                    buffer_snapshot = buffer.copy() if buffer.size > 0 else np.zeros(0, dtype=np.float32)
+
+                # Limit buffer to most recent max_partial_buffer_seconds to prevent unbounded growth
+                max_samples = int(max_partial_buffer_seconds * sample_rate)
+                if buffer_snapshot.size > max_samples:
+                    buffer_snapshot = buffer_snapshot[-max_samples:]
+
+                # Only transcribe if we have enough audio and it's different from last time
+                if buffer_snapshot.size < min_chunk_size:
+                    last_transcribed_size = 0
+                    continue
+
+                # Skip if buffer hasn't changed significantly (within 10% of last size)
+                if abs(buffer_snapshot.size - last_transcribed_size) < last_transcribed_size * 0.1:
+                    continue
+
+                last_transcribed_size = buffer_snapshot.size
+
+                # Mark partial transcription as in progress
+                partial_in_progress = True
+                try:
+                    # Transcribe with the fast partial model
+                    inference_start = time.perf_counter()
+                    result: dict[str, Any] = await asyncio.to_thread(
+                        partial_whisper_model.transcribe,
+                        buffer_snapshot,
+                        fp16=fp16,
+                        temperature=0.0,
+                        beam_size=1,
+                        best_of=1,
+                        language=normalized_language,
+                    )
+                    inference_duration = time.perf_counter() - inference_start
+
+                    raw_text = result.get("text", "")
+                    if isinstance(raw_text, str):
+                        text = raw_text
+                    elif isinstance(raw_text, list):
+                        text = " ".join(str(part) for part in raw_text)
+                    else:
+                        text = str(raw_text)
+
+                    if text.strip():
+                        # Compute approximate timestamp
+                        chunk_absolute_end = max(0.0, time.perf_counter() - session_start_time)
+                        chunk_absolute_start = 0.0  # Not meaningful for partial
+
+                        # Re-check if this chunk is still current (prevent displaying stale partials)
+                        async with buffer_lock:
+                            if chunk_idx != current_chunk_index_for_partial:
+                                # Chunk has already been finalized, skip displaying this partial
+                                continue
+
+                        chunk_consumer(
+                            chunk_idx,
+                            text,
+                            chunk_absolute_start,
+                            chunk_absolute_end,
+                            inference_duration,
+                            True,  # is_partial
+                        )
+                except Exception as exc:
+                    # Silently ignore errors in partial transcription (non-critical)
+                    print(f"Warning: Partial transcription error: {exc}", file=sys.stderr)
+                finally:
+                    partial_in_progress = False
+        except Exception as exc:  # pragma: no cover - defensive guard
+            # Don't crash the entire pipeline on partial transcription errors
+            print(f"Warning: Partial transcriber worker error: {exc}", file=sys.stderr)
+
     async def orchestrate() -> None:
         builder_task = asyncio.create_task(vad_worker())
         transcriber_task = asyncio.create_task(transcriber_worker())
+        partial_task = asyncio.create_task(partial_transcriber_worker()) if enable_partial_transcription else None
         try:
             audio_capture.start()
             await asyncio.to_thread(audio_capture.wait_until_stopped)
         finally:
             audio_capture.stop()
-            await asyncio.gather(builder_task, transcriber_task, return_exceptions=True)
+            tasks = [builder_task, transcriber_task]
+            if partial_task is not None:
+                tasks.append(partial_task)
+            await asyncio.gather(*tasks, return_exceptions=True)
             audio_capture.close()
             if temp_file is not None and temp_file.exists():
                 temp_file.unlink()
@@ -577,19 +700,28 @@ def run_whisper_transcriber(
     if session_logger is not None:
         session_logger.save_full_audio(full_audio, audio_capture.get_capture_duration())
 
+    metadata = {
+        "model": model_name,
+        "device": device,
+        "language": normalized_language or "auto",
+        "vad_aggressiveness": vad_aggressiveness,
+        "vad_min_silence_duration": vad_min_silence_duration,
+        "vad_min_speech_duration": vad_min_speech_duration,
+        "vad_speech_pad_duration": vad_speech_pad_duration,
+        "max_chunk_duration": max_chunk_duration,
+    }
+
+    if enable_partial_transcription:
+        metadata["partial_transcription"] = {
+            "enabled": True,
+            "partial_model": partial_model,
+            "partial_interval": partial_interval,
+        }
+
     return WhisperTranscriptionResult(
         full_audio_transcription=full_audio_transcription,
         capture_duration=audio_capture.get_capture_duration(),
-        metadata={
-            "model": model_name,
-            "device": device,
-            "language": normalized_language or "auto",
-            "vad_aggressiveness": vad_aggressiveness,
-            "vad_min_silence_duration": vad_min_silence_duration,
-            "vad_min_speech_duration": vad_min_speech_duration,
-            "vad_speech_pad_duration": vad_speech_pad_duration,
-            "max_chunk_duration": max_chunk_duration,
-        },
+        metadata=metadata,
     )
 
 

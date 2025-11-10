@@ -69,25 +69,23 @@ The default model is `turbo` (1.51GB), which requires a GPU for real-time perfor
 uv --project ci run transcribe-demo --model base.en
 ```
 
-**Model recommendations:**
-- **`base.en` (139MB)** - **STRONGLY RECOMMENDED for CPU-only**
+**Recommended models:**
+
+- **`turbo` (1.51GB)** - Default, best for GPU
+  - Highest accuracy
+  - Requires GPU for real-time performance
+  - Supports multiple languages with `--language` flag
+
+- **`base.en` (139MB)** - Recommended for CPU-only
   - 2.0x faster than real-time on CPU
   - 11x smaller download than turbo
   - Tested on 280s NPR newscast with good results
   - Use for: CI/testing, production without GPU, resource-constrained systems
 
-- **`turbo` (1.51GB)** - Default for GPU
-  - Highest accuracy
-  - Requires GPU for real-time performance
-
-- **NOT RECOMMENDED:**
-  - `tiny.en` (72MB): Produces nonsensical errors ("stomp" vs "stop", "cliff face penalties")
-  - `small.en` (461MB): Slower than real-time on CPU, marginal improvement over base.en
-
 ```bash
-# Other models (for GPU use or experimentation)
-uv run transcribe-demo --model small.en
-uv run transcribe-demo --model tiny.en
+# Examples
+uv run transcribe-demo --model turbo      # Default: best accuracy, GPU
+uv run transcribe-demo --model base.en    # CPU-friendly, English-only
 ```
 
 #### VAD Configuration
