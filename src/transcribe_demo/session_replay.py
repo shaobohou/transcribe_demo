@@ -379,7 +379,7 @@ def retranscribe_session(
 
     try:
         # Create a simple chunk consumer
-        from transcribe_demo.main import ChunkCollectorWithStitching
+        from transcribe_demo.cli import ChunkCollectorWithStitching
 
         collector = ChunkCollectorWithStitching(sys.stdout)
 

@@ -309,11 +309,11 @@ run_async(orchestrate)  # Replace run_asyncio_pipeline()
 
 ### 0.3 Extract Color Code Initialization Helper
 
-**Issue**: ANSI color code initialization is duplicated in two locations in main.py.
+**Issue**: ANSI color code initialization is duplicated in two locations in cli.py.
 
 **Locations**:
-- `main.py:321-333` (in `ChunkCollectorWithStitching.__init__`)
-- `main.py:428-434` (in `print_transcription_summary`)
+- `cli.py:321-333` (in `ChunkCollectorWithStitching.__init__`)
+- `cli.py:428-434` (in `print_transcription_summary`)
 
 **Current Code**:
 ```python
@@ -481,12 +481,12 @@ from transcribe_demo.audio_utils import resample_audio
 
 ---
 
-### 1.2 Centralize Terminal Output Formatting (main.py)
+### 1.2 Centralize Terminal Output Formatting (cli.py)
 
 **Issue**: ANSI color handling and final-result printing are hand-written in several places, leading to duplicated code and inconsistent styling.
 
 **Locations**:
-- `main.py`: chunk labels, stitched banners, final summary for both backends
+- `cli.py`: chunk labels, stitched banners, final summary for both backends
 - `ChunkCollectorWithStitching`: label formatting and `[STITCHED]` announcements
 
 **Proposed Solution**:
@@ -571,13 +571,13 @@ def confirm_long_capture(duration_seconds: float, threshold: float = 300.0) -> b
 
 ---
 
-### 1.2b Extract Final Output Printing (main.py)
+### 1.2b Extract Final Output Printing (cli.py)
 
 **Issue**: Final stitched result printing is duplicated in 4 near-identical code blocks.
 
 **Locations**:
-- `main.py:642-653` (whisper backend without comparison)
-- `main.py:738-751` (realtime backend without comparison)
+- `cli.py:642-653` (whisper backend without comparison)
+- `cli.py:738-751` (realtime backend without comparison)
 
 **Current Code**:
 ```python
@@ -737,7 +737,7 @@ def _check_mps_available() -> bool:
 
 **Remaining Issue**: `whisper_backend.py` and `realtime_backend.py` still each reimplement:
 
-- Final stitched output and optional comparison transcription (handled in `main.py` but duplicated)
+- Final stitched output and optional comparison transcription (handled in `cli.py` but duplicated)
 
 The backends only diverge when actually producing text (Whisper VAD loop vs. realtime websocket).
 
@@ -773,7 +773,7 @@ class TranscriberSession:
 **Implementation Sketch**:
 1. Extract shared data structures (`SessionSettings`, `SessionMetrics`, `ChunkInfo`) into a new module (e.g., `transcribe_demo/session.py`).
 2. Refactor whisper and realtime backends to implement the `Backend` protocol, delegating chunk emission to the shared session.
-3. Update `main.py` to construct `TranscriberSession` with the selected backend and reuse the existing `ChunkCollectorWithStitching`.
+3. Update `cli.py` to construct `TranscriberSession` with the selected backend and reuse the existing `ChunkCollectorWithStitching`.
 4. Move post-run printing (`print_transcription_summary`) into session or a helper so both backends use identical output paths.
 
 **Risks**:
@@ -1121,11 +1121,11 @@ class TranscriptionWorker:
 
 ---
 
-### 2.2 Decompose ChunkCollectorWithStitching.__call__() (main.py)
+### 2.2 Decompose ChunkCollectorWithStitching.__call__() (cli.py)
 
 **Issue**: The `__call__` method is 93 lines with multiple responsibilities.
 
-**Location**: `main.py:46-138`
+**Location**: `cli.py:46-138`
 
 **Proposed Solution**:
 ```python

@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-transcribe-demo = "transcribe_demo.main:cli_main"
+transcribe-demo = "transcribe_demo.cli:cli_main"
 transcribe-session = "transcribe_demo.session_replay_cli:cli_main"
 
 [build-system]

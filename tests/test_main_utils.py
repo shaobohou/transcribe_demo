@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from absl.testing import flagsaver
 
-from transcribe_demo.main import (
+from transcribe_demo.cli import (
     ChunkCollectorWithStitching,
     FLAGS,
     _colorize_token,
@@ -190,11 +190,11 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
     monkeypatch.setattr(
-        "transcribe_demo.main.ChunkCollectorWithStitching",
+        "transcribe_demo.cli.ChunkCollectorWithStitching",
         FakeCollector,
     )
     monkeypatch.setattr(
-        "transcribe_demo.main.run_whisper_transcriber",
+        "transcribe_demo.cli.run_whisper_transcriber",
         lambda **kwargs: DummyResult(),
     )
 
@@ -238,13 +238,13 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
     monkeypatch.setenv("OPENAI_API_KEY", "")
-    monkeypatch.setattr("transcribe_demo.main.ChunkCollectorWithStitching", FakeCollector)
+    monkeypatch.setattr("transcribe_demo.cli.ChunkCollectorWithStitching", FakeCollector)
     monkeypatch.setattr(
-        "transcribe_demo.main.run_realtime_transcriber",
+        "transcribe_demo.cli.run_realtime_transcriber",
         lambda **kwargs: DummyRealtimeResult(),
     )
     monkeypatch.setattr(
-        "transcribe_demo.main.transcribe_full_audio_realtime",
+        "transcribe_demo.cli.transcribe_full_audio_realtime",
         lambda *args, **kwargs: "full realtime transcription",
     )
 
