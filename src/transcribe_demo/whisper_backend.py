@@ -572,9 +572,9 @@ def run_whisper_transcriber(
 
     async def partial_transcriber_worker() -> None:
         """
-        Periodically transcribe NEW audio with position tracking.
-        Uses non-overlapping windows: only transcribes audio we haven't transcribed yet.
-        Accumulates results and displays the full partial transcription.
+        Periodically transcribe audio in fixed-duration segments.
+        Each segment is continuously transcribed as new audio accumulates.
+        Segments are printed on separate lines when they complete or grow.
         """
         nonlocal buffer
         if not enable_partial_transcription or partial_whisper_model is None or chunk_consumer is None:
@@ -588,11 +588,10 @@ def run_whisper_transcriber(
             # Track last chunk index to reset state on chunk changes
             current_partial_chunk_idx = 0
 
-            # Position tracking: how many samples have we already transcribed?
-            samples_already_transcribed = 0
-
-            # Accumulated partial transcription for the current chunk
-            accumulated_partial_text = ""
+            # Segment tracking: fixed-duration segments (default 10s)
+            segment_duration_samples = int(max_partial_buffer_seconds * sample_rate)
+            current_segment_index = 0
+            segment_start_sample = 0
 
             # Minimum new audio required before transcribing (avoid very short segments)
             min_new_samples = int(sample_rate * 0.5)  # 0.5s minimum
@@ -609,17 +608,25 @@ def run_whisper_transcriber(
                     chunk_idx = current_chunk_index_for_partial
                     buffer_snapshot = buffer.copy() if buffer.size > 0 else np.zeros(0, dtype=np.float32)
 
-                # Reset position and accumulated text if we've moved to a new chunk
+                # Reset position if we've moved to a new chunk
                 if chunk_idx != current_partial_chunk_idx:
                     current_partial_chunk_idx = chunk_idx
-                    samples_already_transcribed = 0
-                    accumulated_partial_text = ""
+                    current_segment_index = 0
+                    segment_start_sample = 0
 
-                # Calculate how much NEW audio we have
-                new_samples = buffer_snapshot.size - samples_already_transcribed
+                # Determine current segment boundary
+                current_segment_end = segment_start_sample + segment_duration_samples
 
-                # Skip if not enough new audio
-                if new_samples < min_new_samples:
+                # Check if we have audio in the current segment
+                if buffer_snapshot.size <= segment_start_sample:
+                    continue
+
+                # Extract audio for current segment (up to segment boundary or buffer end)
+                segment_audio_end = min(buffer_snapshot.size, current_segment_end)
+                segment_audio = buffer_snapshot[segment_start_sample:segment_audio_end]
+
+                # Skip if not enough audio in this segment
+                if len(segment_audio) < min_new_samples:
                     continue
 
                 # Check if we should force an update based on time elapsed
@@ -628,20 +635,17 @@ def run_whisper_transcriber(
                 force_update = time_since_last_update >= force_update_interval
 
                 # Skip if very little new audio AND not forcing update
-                if not force_update and new_samples < min_new_samples * 2:
+                if not force_update and len(segment_audio) < min_new_samples * 2:
                     continue
-
-                # Extract only the NEW audio portion to transcribe
-                new_audio = buffer_snapshot[samples_already_transcribed:]
 
                 # Mark partial transcription as in progress
                 partial_in_progress = True
                 try:
-                    # Transcribe only the NEW audio
+                    # Transcribe the current segment audio
                     inference_start = time.perf_counter()
                     result: dict[str, Any] = await asyncio.to_thread(
                         partial_whisper_model.transcribe,
-                        new_audio,
+                        segment_audio,
                         fp16=fp16,
                         temperature=0.0,
                         beam_size=1,
@@ -653,16 +657,6 @@ def run_whisper_transcriber(
                     text = _extract_whisper_text(result).strip()
 
                     if text:
-                        # Simple append - no overlap detection needed!
-                        if accumulated_partial_text:
-                            accumulated_partial_text = accumulated_partial_text + " " + text
-                        else:
-                            # First partial transcription for this chunk
-                            accumulated_partial_text = text
-
-                        # Update position: we've now transcribed up to here
-                        samples_already_transcribed = buffer_snapshot.size
-
                         # Compute approximate timestamp
                         chunk_absolute_end = max(0.0, time.perf_counter() - session_start_time)
                         chunk_absolute_start = 0.0  # Not meaningful for partial
@@ -673,15 +667,24 @@ def run_whisper_transcriber(
                                 # Chunk has already been finalized, skip displaying this partial
                                 continue
 
-                        # Display the accumulated partial transcription
+                        # Display the segment transcription
+                        # Use segment_index as a unique identifier
+                        display_index = chunk_idx * 1000 + current_segment_index
                         chunk_consumer(
-                            chunk_idx,
-                            accumulated_partial_text,
+                            display_index,
+                            text,
                             chunk_absolute_start,
                             chunk_absolute_end,
                             inference_duration,
                             True,  # is_partial
                         )
+
+                        # Check if segment is complete (reached boundary)
+                        if segment_audio_end >= current_segment_end:
+                            # Move to next segment
+                            current_segment_index += 1
+                            segment_start_sample = current_segment_end
+
                 except Exception as exc:
                     # Silently ignore errors in partial transcription (non-critical)
                     print(f"Warning: Partial transcription error: {exc}", file=sys.stderr)
