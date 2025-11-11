@@ -292,12 +292,20 @@ class ChunkCollectorWithStitching:
         inference_seconds: float | None,
     ) -> None:
         """Display a partial transcription that updates in real-time."""
-        use_color = bool(getattr(self._stream, "isatty", lambda: False)())
+        import os
+        import sys
 
-        # Clear previous partial line if this is an update for the same chunk
+        # Check if stdout is a TTY (works even if self._stream != sys.stdout)
+        is_tty = sys.stdout.isatty()
+
+        # Handle line clearing/newlines based on output type
         if self._last_partial_chunk_index == chunk_index:
-            # Move cursor to beginning of line and clear it
-            self._stream.write("\r\x1b[K")
+            if is_tty:
+                # TTY: Move cursor to beginning of line and clear it completely
+                self._stream.write("\r\x1b[2K")
+            else:
+                # Non-TTY: Skip intermediate partials to prevent flooding log files
+                return
         elif self._last_partial_chunk_index is not None:
             # Different chunk, add newline to finalize previous partial
             self._stream.write("\n")
@@ -310,16 +318,31 @@ class ChunkCollectorWithStitching:
         else:
             timing_suffix = f" | t={absolute_end:.2f}s"
 
-        if use_color:
+        # Truncate text if too long to prevent line wrapping issues
+        # Get terminal width, default to 120 if unavailable
+        try:
+            terminal_width = os.get_terminal_size().columns if is_tty else 200
+        except (AttributeError, OSError):
+            terminal_width = 120
+
+        # Reserve space for label and formatting codes
+        label_length = len(f"[PARTIAL {chunk_index:03d}{timing_suffix}] ")
+        max_text_length = max(50, terminal_width - label_length - 5)  # -5 for ellipsis and margin
+
+        text_display = text.strip()
+        if len(text_display) > max_text_length:
+            text_display = text_display[:max_text_length] + "..."
+
+        if is_tty:
             yellow = "\x1b[33m"
             reset = "\x1b[0m"
             bold = "\x1b[1m"
             dim = "\x1b[2m"
             label = f"{bold}{yellow}[PARTIAL {chunk_index:03d}{timing_suffix}]{reset}"
-            line = f"{label} {dim}{text.strip()}{reset}"
+            line = f"{label} {dim}{text_display}{reset}"
         else:
             label = f"[PARTIAL {chunk_index:03d}{timing_suffix}]"
-            line = f"{label} {text.strip()}"
+            line = f"{label} {text_display}"
 
         self._stream.write(line)
         self._stream.flush()

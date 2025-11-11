@@ -564,6 +564,14 @@ def run_whisper_transcriber(
         try:
             last_transcribed_size = 0
             partial_in_progress = False
+            last_forced_update = time.perf_counter()
+            # Force update at partial_interval regardless of buffer size change
+            # This ensures updates continue even when buffer is at max size (sliding window)
+            force_update_interval = partial_interval
+
+            # Track last chunk index to reset state on chunk changes
+            current_partial_chunk_idx = 0
+
             while not audio_capture.stop_event.is_set():
                 await asyncio.sleep(partial_interval)
 
@@ -576,18 +584,28 @@ def run_whisper_transcriber(
                     chunk_idx = current_chunk_index_for_partial
                     buffer_snapshot = buffer.copy() if buffer.size > 0 else np.zeros(0, dtype=np.float32)
 
+                # Reset size tracking if we've moved to a new chunk
+                if chunk_idx != current_partial_chunk_idx:
+                    current_partial_chunk_idx = chunk_idx
+                    last_transcribed_size = 0
+
                 # Limit buffer to most recent max_partial_buffer_seconds to prevent unbounded growth
                 max_samples = int(max_partial_buffer_seconds * sample_rate)
                 if buffer_snapshot.size > max_samples:
                     buffer_snapshot = buffer_snapshot[-max_samples:]
 
-                # Only transcribe if we have enough audio and it's different from last time
+                # Only transcribe if we have enough audio
                 if buffer_snapshot.size < min_chunk_size:
                     last_transcribed_size = 0
                     continue
 
-                # Skip if buffer hasn't changed significantly (within 10% of last size)
-                if abs(buffer_snapshot.size - last_transcribed_size) < last_transcribed_size * 0.1:
+                # Check if we should force an update based on time elapsed
+                current_time = time.perf_counter()
+                time_since_last_update = current_time - last_forced_update
+                force_update = time_since_last_update >= force_update_interval
+
+                # Skip if buffer hasn't changed significantly (within 10% of last size) AND not forcing update
+                if not force_update and abs(buffer_snapshot.size - last_transcribed_size) < last_transcribed_size * 0.1:
                     continue
 
                 last_transcribed_size = buffer_snapshot.size
@@ -640,6 +658,8 @@ def run_whisper_transcriber(
                     print(f"Warning: Partial transcription error: {exc}", file=sys.stderr)
                 finally:
                     partial_in_progress = False
+                    # Reset forced update timer after transcription completes
+                    last_forced_update = time.perf_counter()
         except Exception as exc:  # pragma: no cover - defensive guard
             # Don't crash the entire pipeline on partial transcription errors
             print(f"Warning: Partial transcriber worker error: {exc}", file=sys.stderr)
