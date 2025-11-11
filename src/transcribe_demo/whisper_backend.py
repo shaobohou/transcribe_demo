@@ -569,6 +569,10 @@ def run_whisper_transcriber(
             # This ensures updates continue even when buffer is at max size (sliding window)
             force_update_interval = partial_interval
 
+            # Track accumulated partials for current chunk
+            current_partial_chunk_idx = 0
+            accumulated_partials: list[str] = []
+
             while not audio_capture.stop_event.is_set():
                 await asyncio.sleep(partial_interval)
 
@@ -580,6 +584,12 @@ def run_whisper_transcriber(
                 async with buffer_lock:
                     chunk_idx = current_chunk_index_for_partial
                     buffer_snapshot = buffer.copy() if buffer.size > 0 else np.zeros(0, dtype=np.float32)
+
+                # Reset accumulated partials if we've moved to a new chunk
+                if chunk_idx != current_partial_chunk_idx:
+                    current_partial_chunk_idx = chunk_idx
+                    accumulated_partials = []
+                    last_transcribed_size = 0
 
                 # Limit buffer to most recent max_partial_buffer_seconds to prevent unbounded growth
                 max_samples = int(max_partial_buffer_seconds * sample_rate)
@@ -627,6 +637,12 @@ def run_whisper_transcriber(
                         text = str(raw_text)
 
                     if text.strip():
+                        # Add this partial to accumulated list
+                        accumulated_partials.append(text.strip())
+
+                        # Concatenate all partials for display
+                        concatenated_text = " ".join(accumulated_partials)
+
                         # Compute approximate timestamp
                         chunk_absolute_end = max(0.0, time.perf_counter() - session_start_time)
                         chunk_absolute_start = 0.0  # Not meaningful for partial
@@ -639,7 +655,7 @@ def run_whisper_transcriber(
 
                         chunk_consumer(
                             chunk_idx,
-                            text,
+                            concatenated_text,
                             chunk_absolute_start,
                             chunk_absolute_end,
                             inference_duration,

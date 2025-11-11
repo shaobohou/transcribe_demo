@@ -292,6 +292,7 @@ class ChunkCollectorWithStitching:
         inference_seconds: float | None,
     ) -> None:
         """Display a partial transcription that updates in real-time."""
+        import os
         import sys
 
         # Check if stdout is a TTY (works even if self._stream != sys.stdout)
@@ -317,16 +318,31 @@ class ChunkCollectorWithStitching:
         else:
             timing_suffix = f" | t={absolute_end:.2f}s"
 
+        # Truncate text if too long to prevent line wrapping issues
+        # Get terminal width, default to 120 if unavailable
+        try:
+            terminal_width = os.get_terminal_size().columns if is_tty else 200
+        except (AttributeError, OSError):
+            terminal_width = 120
+
+        # Reserve space for label and formatting codes
+        label_length = len(f"[PARTIAL {chunk_index:03d}{timing_suffix}] ")
+        max_text_length = max(50, terminal_width - label_length - 5)  # -5 for ellipsis and margin
+
+        text_display = text.strip()
+        if len(text_display) > max_text_length:
+            text_display = text_display[:max_text_length] + "..."
+
         if is_tty:
             yellow = "\x1b[33m"
             reset = "\x1b[0m"
             bold = "\x1b[1m"
             dim = "\x1b[2m"
             label = f"{bold}{yellow}[PARTIAL {chunk_index:03d}{timing_suffix}]{reset}"
-            line = f"{label} {dim}{text.strip()}{reset}"
+            line = f"{label} {dim}{text_display}{reset}"
         else:
             label = f"[PARTIAL {chunk_index:03d}{timing_suffix}]"
-            line = f"{label} {text.strip()}"
+            line = f"{label} {text_display}"
 
         self._stream.write(line)
         self._stream.flush()
