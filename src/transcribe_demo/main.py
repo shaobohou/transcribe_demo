@@ -84,9 +84,9 @@ flags.DEFINE_float(
 flags.DEFINE_float(
     "max_partial_buffer_seconds",
     10.0,
-    "Warning threshold (in seconds) for partial transcription buffer size. "
-    "Partial transcriptions accumulate the entire buffer; this parameter triggers a warning "
-    "if the buffer grows too large, which may cause slow inference.",
+    "Sliding window size (in seconds) for partial transcription. "
+    "Partial transcriptions use a sliding window for fast inference, but accumulate "
+    "and display the full transcription with overlap handling.",
     lower_bound=1.0,
     upper_bound=60.0,
 )

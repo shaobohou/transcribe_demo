@@ -571,7 +571,10 @@ def run_whisper_transcriber(
             await transcription_queue.put(None)
 
     async def partial_transcriber_worker() -> None:
-        """Periodically transcribe the current accumulating buffer with a fast model."""
+        """
+        Periodically transcribe sliding windows with a fast model.
+        Accumulates results and displays the full accumulated partial transcription.
+        """
         nonlocal buffer
         if not enable_partial_transcription or partial_whisper_model is None or chunk_consumer is None:
             return
@@ -587,6 +590,9 @@ def run_whisper_transcriber(
             # Track last chunk index to reset state on chunk changes
             current_partial_chunk_idx = 0
 
+            # Accumulated partial transcription for the current chunk
+            accumulated_partial_text = ""
+
             while not audio_capture.stop_event.is_set():
                 await asyncio.sleep(partial_interval)
 
@@ -599,22 +605,16 @@ def run_whisper_transcriber(
                     chunk_idx = current_chunk_index_for_partial
                     buffer_snapshot = buffer.copy() if buffer.size > 0 else np.zeros(0, dtype=np.float32)
 
-                # Reset size tracking if we've moved to a new chunk
+                # Reset accumulated text and size tracking if we've moved to a new chunk
                 if chunk_idx != current_partial_chunk_idx:
                     current_partial_chunk_idx = chunk_idx
                     last_transcribed_size = 0
+                    accumulated_partial_text = ""
 
-                # Warn if buffer is getting very large (may cause slow inference)
+                # Use sliding window to keep inference fast
                 max_samples = int(max_partial_buffer_seconds * sample_rate)
-                buffer_duration = buffer_snapshot.size / sample_rate
                 if buffer_snapshot.size > max_samples:
-                    print(
-                        f"WARNING: Partial transcription buffer ({buffer_duration:.1f}s) exceeds "
-                        f"max_partial_buffer_seconds ({max_partial_buffer_seconds:.1f}s). "
-                        f"Inference may be slow. Consider increasing --max_partial_buffer_seconds "
-                        f"or using a faster partial model.",
-                        file=sys.stderr,
-                    )
+                    buffer_snapshot = buffer_snapshot[-max_samples:]
 
                 # Only transcribe if we have enough audio
                 if buffer_snapshot.size < min_chunk_size:
@@ -635,7 +635,7 @@ def run_whisper_transcriber(
                 # Mark partial transcription as in progress
                 partial_in_progress = True
                 try:
-                    # Transcribe with the fast partial model
+                    # Transcribe sliding window with the fast partial model
                     inference_start = time.perf_counter()
                     result: dict[str, Any] = await asyncio.to_thread(
                         partial_whisper_model.transcribe,
@@ -648,9 +648,36 @@ def run_whisper_transcriber(
                     )
                     inference_duration = time.perf_counter() - inference_start
 
-                    text = _extract_whisper_text(result)
+                    text = _extract_whisper_text(result).strip()
 
-                    if text.strip():
+                    if text:
+                        # Merge new transcription with accumulated text, handling overlap
+                        if accumulated_partial_text:
+                            # Find overlap by looking for last few words of accumulated text in new text
+                            accumulated_words = accumulated_partial_text.split()
+                            new_text_lower = text.lower()
+
+                            # Try to find overlap using last 3-8 words
+                            overlap_found = False
+                            for num_words in range(min(8, len(accumulated_words)), 2, -1):
+                                overlap_candidate = " ".join(accumulated_words[-num_words:])
+                                overlap_pos = new_text_lower.find(overlap_candidate.lower())
+
+                                if overlap_pos >= 0:
+                                    # Found overlap, append only the new portion
+                                    new_portion = text[overlap_pos + len(overlap_candidate) :].lstrip()
+                                    if new_portion:
+                                        accumulated_partial_text = accumulated_partial_text + " " + new_portion
+                                    overlap_found = True
+                                    break
+
+                            # If no overlap found, just append (with space)
+                            if not overlap_found:
+                                accumulated_partial_text = accumulated_partial_text + " " + text
+                        else:
+                            # First partial transcription for this chunk
+                            accumulated_partial_text = text
+
                         # Compute approximate timestamp
                         chunk_absolute_end = max(0.0, time.perf_counter() - session_start_time)
                         chunk_absolute_start = 0.0  # Not meaningful for partial
@@ -661,9 +688,10 @@ def run_whisper_transcriber(
                                 # Chunk has already been finalized, skip displaying this partial
                                 continue
 
+                        # Display the accumulated partial transcription
                         chunk_consumer(
                             chunk_idx,
-                            text,
+                            accumulated_partial_text,
                             chunk_absolute_start,
                             chunk_absolute_end,
                             inference_duration,
