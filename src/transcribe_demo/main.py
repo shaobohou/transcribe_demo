@@ -294,25 +294,13 @@ class ChunkCollectorWithStitching:
         absolute_end: float,
         inference_seconds: float | None,
     ) -> None:
-        """Display a partial transcription that updates in real-time."""
-        import os
+        """Display a partial transcription with full accumulated buffer."""
         import sys
 
-        # Check if stdout is a TTY (works even if self._stream != sys.stdout)
+        # Check if stdout is a TTY for color formatting
         is_tty = sys.stdout.isatty()
 
-        # Handle line clearing/newlines based on output type
-        if self._last_partial_chunk_index == chunk_index:
-            if is_tty:
-                # TTY: Move cursor to beginning of line and clear it completely
-                self._stream.write("\r\x1b[2K")
-            else:
-                # Non-TTY: Skip intermediate partials to prevent flooding log files
-                return
-        elif self._last_partial_chunk_index is not None:
-            # Different chunk, add newline to finalize previous partial
-            self._stream.write("\n")
-
+        # Update tracking
         self._last_partial_chunk_index = chunk_index
 
         # Format the partial transcription
@@ -321,20 +309,8 @@ class ChunkCollectorWithStitching:
         else:
             timing_suffix = f" | t={absolute_end:.2f}s"
 
-        # Truncate text if too long to prevent line wrapping issues
-        # Get terminal width, default to 120 if unavailable
-        try:
-            terminal_width = os.get_terminal_size().columns if is_tty else 200
-        except (AttributeError, OSError):
-            terminal_width = 120
-
-        # Reserve space for label and formatting codes
-        label_length = len(f"[PARTIAL {chunk_index:03d}{timing_suffix}] ")
-        max_text_length = max(50, terminal_width - label_length - 5)  # -5 for ellipsis and margin
-
+        # Display full accumulated text (no truncation)
         text_display = text.strip()
-        if len(text_display) > max_text_length:
-            text_display = text_display[:max_text_length] + "..."
 
         if is_tty:
             yellow = "\x1b[33m"
@@ -347,7 +323,8 @@ class ChunkCollectorWithStitching:
             label = f"[PARTIAL {chunk_index:03d}{timing_suffix}]"
             line = f"{label} {text_display}"
 
-        self._stream.write(line)
+        # Always print on new line (no in-place updates)
+        self._stream.write(line + "\n")
         self._stream.flush()
 
     def __call__(
@@ -404,14 +381,8 @@ class ChunkCollectorWithStitching:
         # - Extract middle chunk text using word timestamps that fall within N-1 time range
         # - Display both immediate (chunk N) and refined (chunk N-1) with different labels
 
-        # Clear previous partial line if final chunk replaces it
-        if self._last_partial_chunk_index == chunk_index:
-            self._stream.write("\r\x1b[K")
-            self._last_partial_chunk_index = None
-        elif self._last_partial_chunk_index is not None:
-            # Finalize previous partial with newline
-            self._stream.write("\n")
-            self._last_partial_chunk_index = None
+        # Reset partial tracking when final chunk arrives
+        self._last_partial_chunk_index = None
 
         # Display the individual chunk
         if inference_seconds is not None:
