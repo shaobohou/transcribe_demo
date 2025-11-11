@@ -572,26 +572,30 @@ def run_whisper_transcriber(
 
     async def partial_transcriber_worker() -> None:
         """
-        Periodically transcribe sliding windows with a fast model.
-        Accumulates results and displays the full accumulated partial transcription.
+        Periodically transcribe NEW audio with position tracking.
+        Uses non-overlapping windows: only transcribes audio we haven't transcribed yet.
+        Accumulates results and displays the full partial transcription.
         """
         nonlocal buffer
         if not enable_partial_transcription or partial_whisper_model is None or chunk_consumer is None:
             return
 
         try:
-            last_transcribed_size = 0
             partial_in_progress = False
             last_forced_update = time.perf_counter()
-            # Force update at partial_interval regardless of buffer size change
-            # This ensures updates continue even when buffer is at max size (sliding window)
             force_update_interval = partial_interval
 
             # Track last chunk index to reset state on chunk changes
             current_partial_chunk_idx = 0
 
+            # Position tracking: how many samples have we already transcribed?
+            samples_already_transcribed = 0
+
             # Accumulated partial transcription for the current chunk
             accumulated_partial_text = ""
+
+            # Minimum new audio required before transcribing (avoid very short segments)
+            min_new_samples = int(sample_rate * 0.5)  # 0.5s minimum
 
             while not audio_capture.stop_event.is_set():
                 await asyncio.sleep(partial_interval)
@@ -605,20 +609,17 @@ def run_whisper_transcriber(
                     chunk_idx = current_chunk_index_for_partial
                     buffer_snapshot = buffer.copy() if buffer.size > 0 else np.zeros(0, dtype=np.float32)
 
-                # Reset accumulated text and size tracking if we've moved to a new chunk
+                # Reset position and accumulated text if we've moved to a new chunk
                 if chunk_idx != current_partial_chunk_idx:
                     current_partial_chunk_idx = chunk_idx
-                    last_transcribed_size = 0
+                    samples_already_transcribed = 0
                     accumulated_partial_text = ""
 
-                # Use sliding window to keep inference fast
-                max_samples = int(max_partial_buffer_seconds * sample_rate)
-                if buffer_snapshot.size > max_samples:
-                    buffer_snapshot = buffer_snapshot[-max_samples:]
+                # Calculate how much NEW audio we have
+                new_samples = buffer_snapshot.size - samples_already_transcribed
 
-                # Only transcribe if we have enough audio
-                if buffer_snapshot.size < min_chunk_size:
-                    last_transcribed_size = 0
+                # Skip if not enough new audio
+                if new_samples < min_new_samples:
                     continue
 
                 # Check if we should force an update based on time elapsed
@@ -626,20 +627,21 @@ def run_whisper_transcriber(
                 time_since_last_update = current_time - last_forced_update
                 force_update = time_since_last_update >= force_update_interval
 
-                # Skip if buffer hasn't changed significantly (within 10% of last size) AND not forcing update
-                if not force_update and abs(buffer_snapshot.size - last_transcribed_size) < last_transcribed_size * 0.1:
+                # Skip if very little new audio AND not forcing update
+                if not force_update and new_samples < min_new_samples * 2:
                     continue
 
-                last_transcribed_size = buffer_snapshot.size
+                # Extract only the NEW audio portion to transcribe
+                new_audio = buffer_snapshot[samples_already_transcribed:]
 
                 # Mark partial transcription as in progress
                 partial_in_progress = True
                 try:
-                    # Transcribe sliding window with the fast partial model
+                    # Transcribe only the NEW audio
                     inference_start = time.perf_counter()
                     result: dict[str, Any] = await asyncio.to_thread(
                         partial_whisper_model.transcribe,
-                        buffer_snapshot,
+                        new_audio,
                         fp16=fp16,
                         temperature=0.0,
                         beam_size=1,
@@ -651,42 +653,15 @@ def run_whisper_transcriber(
                     text = _extract_whisper_text(result).strip()
 
                     if text:
-                        # Merge new transcription with accumulated text, handling overlap
+                        # Simple append - no overlap detection needed!
                         if accumulated_partial_text:
-                            # Strategy: Find where the new transcription starts relative to accumulated text
-                            # Look for best suffix/prefix overlap between accumulated end and new text start
-
-                            accumulated_words = accumulated_partial_text.split()
-                            new_words = text.split()
-
-                            # Try to find overlap: how many words at the end of accumulated
-                            # match the beginning of new text?
-                            best_overlap = 0
-                            max_overlap_check = min(len(accumulated_words), len(new_words), 15)
-
-                            for i in range(1, max_overlap_check + 1):
-                                # Check if last i words of accumulated match first i words of new
-                                if accumulated_words[-i:] == new_words[:i]:
-                                    best_overlap = i
-
-                            if best_overlap > 0:
-                                # Found overlap, append only the non-overlapping portion
-                                new_portion_words = new_words[best_overlap:]
-                                if new_portion_words:
-                                    accumulated_partial_text = (
-                                        accumulated_partial_text + " " + " ".join(new_portion_words)
-                                    )
-                                # If no new words, accumulated text stays the same (don't append anything)
-                            else:
-                                # No overlap found - this means sliding window moved past accumulated content
-                                # Only append if new text is substantially different to avoid duplicates
-                                # Check if new text is completely contained in accumulated text
-                                if text.lower() not in accumulated_partial_text.lower():
-                                    accumulated_partial_text = accumulated_partial_text + " " + text
-                                # Otherwise skip this update (it's redundant)
+                            accumulated_partial_text = accumulated_partial_text + " " + text
                         else:
                             # First partial transcription for this chunk
                             accumulated_partial_text = text
+
+                        # Update position: we've now transcribed up to here
+                        samples_already_transcribed = buffer_snapshot.size
 
                         # Compute approximate timestamp
                         chunk_absolute_end = max(0.0, time.perf_counter() - session_start_time)

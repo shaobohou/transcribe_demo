@@ -84,9 +84,10 @@ flags.DEFINE_float(
 flags.DEFINE_float(
     "max_partial_buffer_seconds",
     10.0,
-    "Sliding window size (in seconds) for partial transcription. "
-    "Partial transcriptions use a sliding window for fast inference, but accumulate "
-    "and display the full transcription with overlap handling.",
+    "Maximum duration (in seconds) for partial transcription windows. "
+    "Partial transcriptions use non-overlapping windows with position tracking: "
+    "only NEW audio is transcribed each update, then appended to accumulated text. "
+    "This parameter is currently unused but reserved for future optimizations.",
     lower_bound=1.0,
     upper_bound=60.0,
 )
