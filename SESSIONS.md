@@ -1,8 +1,41 @@
-# Session Log Format Reference
+# Session Logging and Replay
 
-This document describes the complete format of session logs created by transcribe-demo. Every transcription session is automatically saved with comprehensive metadata, audio files, and diff tracking information.
+This document describes the complete session logging system in transcribe-demo. Every transcription session is automatically saved with comprehensive metadata, audio files, and diff tracking information. You can also replay and retranscribe sessions with different settings.
 
-## Directory Structure
+## Quick Start
+
+```bash
+# Sessions are automatically logged during transcription
+uv run transcribe-demo                # Creates session log automatically
+
+# List all logged sessions
+uv run transcribe-session --command=list
+
+# Show details of a specific session
+uv run transcribe-session --command=show --session_path=session_logs/2025-11-07/session_143052_whisper
+
+# Retranscribe with different settings
+uv run transcribe-session --command=retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=whisper \
+  --model=small \
+  --vad_aggressiveness=3
+```
+
+---
+
+## Table of Contents
+
+1. [Session Log Format](#session-log-format)
+2. [Session Replay Utility](#session-replay-utility)
+3. [Using Session Data](#using-session-data)
+4. [Configuration](#configuration)
+
+---
+
+## Session Log Format
+
+### Directory Structure
 
 ```
 session_logs/
@@ -26,11 +59,11 @@ This hidden file is created as the last step of session finalization. Its presen
 
 The session replay utility uses this marker to filter out incomplete or corrupted sessions by default.
 
-## session.json Format
+### session.json Format
 
 The `session.json` file contains all session data in structured JSON format for programmatic analysis.
 
-### Top-Level Structure
+#### Top-Level Structure
 
 ```json
 {
@@ -39,7 +72,7 @@ The `session.json` file contains all session data in structured JSON format for 
 }
 ```
 
-### Metadata Object
+#### Metadata Object
 
 Complete session-level information:
 
@@ -77,7 +110,7 @@ Complete session-level information:
 }
 ```
 
-### Metadata Fields Reference
+#### Metadata Fields Reference
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -103,7 +136,7 @@ Complete session-level information:
 | `transcription_similarity` | float\|null | Similarity ratio 0.0-1.0 between stitched and complete |
 | `transcription_diffs` | array\|null | Detailed diff snippets (see below) |
 
-### Transcription Diff Format
+#### Transcription Diff Format
 
 When `--compare_transcripts` is enabled, diffs show where stitched and complete transcriptions differ:
 
@@ -129,7 +162,7 @@ When `--compare_transcripts` is enabled, diffs show where stitched and complete 
 
 Context words (3 before/after) are shown around differences. The special symbol `∅` indicates missing text.
 
-### Chunks Array
+#### Chunks Array
 
 Each chunk contains transcription and timing information:
 
@@ -158,7 +191,7 @@ Each chunk contains transcription and timing information:
 ]
 ```
 
-### Chunk Fields Reference
+#### Chunk Fields Reference
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -174,11 +207,11 @@ Each chunk contains transcription and timing information:
 **Punctuation Cleanup:**
 The `cleaned_text` field shows text after removing trailing `,` and `.` characters for smoother stitching. Question marks and exclamation points are preserved. The final chunk keeps all punctuation.
 
-## README.txt Format
+### README.txt Format
 
 Human-readable text summary of the session. Sections include:
 
-### Header
+#### Header
 ```
 Transcription Session: session_143052_whisper
 ============================================================
@@ -195,7 +228,7 @@ Device: cuda
 Language: en
 ```
 
-### VAD Parameters (Whisper only)
+#### VAD Parameters (Whisper only)
 ```
 VAD Parameters:
   Aggressiveness: 2
@@ -205,7 +238,7 @@ VAD Parameters:
   Max Chunk Duration: 60.0s
 ```
 
-### Stitched Transcription
+#### Stitched Transcription
 ```
 ============================================================
 STITCHED TRANSCRIPTION (from chunks):
@@ -213,7 +246,7 @@ STITCHED TRANSCRIPTION (from chunks):
 Hello world. How are you today? I'm doing great thanks for asking.
 ```
 
-### Full Audio Transcription
+#### Full Audio Transcription
 ```
 ============================================================
 FULL AUDIO TRANSCRIPTION (complete audio):
@@ -221,7 +254,7 @@ FULL AUDIO TRANSCRIPTION (complete audio):
 Hello world. How are you today? I'm doing great, thanks for asking.
 ```
 
-### Transcription Comparison (when available)
+#### Transcription Comparison (when available)
 ```
 ============================================================
 TRANSCRIPTION COMPARISON:
@@ -243,7 +276,7 @@ Similarity: 100.00%
 Transcriptions match exactly.
 ```
 
-### Chunks
+#### Chunks
 ```
 ============================================================
 CHUNKS:
@@ -262,9 +295,9 @@ Chunk 001 [2.30s - 4.10s]:
   Audio: chunks/chunk_001.wav
 ```
 
-## Audio Files
+### Audio Files
 
-### full_audio.wav
+#### full_audio.wav
 
 Complete recording of the entire session:
 - **Format**: WAV (RIFF)
@@ -273,7 +306,7 @@ Complete recording of the entire session:
 - **Sample Rate**: 16000 Hz (or as configured with `--samplerate`)
 - **Duration**: Matches `capture_duration` in metadata
 
-### chunks/*.wav
+#### chunks/*.wav
 
 Individual chunk audio files (when saved):
 - Same format as full_audio.wav
@@ -281,7 +314,364 @@ Individual chunk audio files (when saved):
 - Duration matches chunk `duration` in metadata
 - Not all sessions save chunk audio (depends on `save_chunk_audio` setting)
 
-## Using Session Logs
+---
+
+## Session Replay Utility
+
+The session replay utility allows you to list, inspect, and retranscribe previously logged transcription sessions.
+
+### Session Completion Marker
+
+All successfully finalized sessions contain a `.complete` marker file. This file is created as the last step of session finalization and indicates that:
+- All audio files have been written
+- All metadata has been saved
+- The session was not interrupted
+
+By default, the session replay utility only lists and loads complete sessions (those with the `.complete` marker). This protects against:
+- Incomplete sessions from crashes or interruptions
+- Partially written session data
+- Corrupted session directories
+
+To work with incomplete sessions, use the `--include_incomplete` flag for listing or `--allow_incomplete` flag for loading/retranscribing.
+
+### Commands
+
+#### `list` - List All Sessions
+
+List all available sessions with optional filtering.
+
+**Basic usage:**
+```bash
+uv run transcribe-session --command=list
+```
+
+**Filter by backend:**
+```bash
+uv run transcribe-session --command=list --backend=whisper
+uv run transcribe-session --command=list --backend=realtime
+```
+
+**Filter by date range:**
+```bash
+uv run transcribe-session --command=list --start_date=2025-11-01 --end_date=2025-11-07
+```
+
+**Filter by minimum duration:**
+```bash
+uv run transcribe-session --command=list --min_duration=60.0
+```
+
+**Show verbose details:**
+```bash
+uv run transcribe-session --command=list --verbose
+```
+
+**Include incomplete sessions:**
+```bash
+# Show all sessions including those without completion marker
+uv run transcribe-session --command=list --include_incomplete
+```
+
+**Example output (compact):**
+```
+Found 5 session(s):
+
+  session_143052_whisper                   | whisper  | 45.2s    | 8 chunks
+  session_142830_realtime                  | realtime | 30.1s    | 15 chunks
+  session_141500_whisper                   | whisper  | 120.5s   | 20 chunks
+  session_140000_whisper                   | whisper  | 15.2s    | 3 chunks [INCOMPLETE]
+```
+
+Note: Sessions marked `[INCOMPLETE]` are missing the `.complete` marker and may be corrupted or partially written.
+
+#### `show` - Show Session Details
+
+Display detailed information about a specific session.
+
+**Usage:**
+```bash
+uv run transcribe-session --command=show --session_path=session_logs/2025-11-07/session_143052_whisper
+```
+
+**Load incomplete session:**
+```bash
+# Force loading session without completion marker
+uv run transcribe-session --command=show \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --allow_incomplete
+```
+
+**Example output:**
+```
+Session: session_143052_whisper
+============================================================
+Timestamp: 2025-11-07T14:30:52.123456
+Backend: whisper
+Duration: 45.20s
+Sample Rate: 16000 Hz
+Channels: 1
+Total Chunks: 8
+Model: turbo
+Device: cuda
+Language: en
+
+VAD Parameters:
+  Aggressiveness: 2
+  Min Silence: 0.2s
+  Min Speech: 0.25s
+
+============================================================
+STITCHED TRANSCRIPTION:
+============================================================
+Hello world. How are you today? I'm doing great thanks for asking...
+
+============================================================
+CHUNKS (8):
+============================================================
+  Chunk 000 [0.00s - 2.30s]: Hello world....
+  Chunk 001 [2.30s - 4.10s]: How are you?...
+  ... and 6 more chunks
+```
+
+#### `retranscribe` - Retranscribe a Session
+
+Retranscribe a logged session with different backend or settings.
+
+**Basic usage (Whisper):**
+```bash
+uv run transcribe-session --command=retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=whisper
+```
+
+**Use different Whisper model:**
+```bash
+uv run transcribe-session --command=retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=whisper \
+  --model=small \
+  --device=cuda
+```
+
+**Adjust VAD settings:**
+```bash
+uv run transcribe-session --command=retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=whisper \
+  --vad_aggressiveness=3 \
+  --vad_min_silence_duration=0.3
+```
+
+**Retranscribe with Realtime backend:**
+```bash
+export OPENAI_API_KEY=your_api_key_here
+uv run transcribe-session --command=retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=realtime \
+  --realtime_model=gpt-realtime-mini
+```
+
+**Custom output directory:**
+```bash
+uv run transcribe-session --command=retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --output_dir=./retranscriptions \
+  --retranscribe_backend=whisper \
+  --model=turbo
+```
+
+### Command-Line Flags Reference
+
+#### Common Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--command` | (required) | Command to execute: `list`, `show`, or `retranscribe` |
+| `--session_log_dir` | `./session_logs` | Directory containing session logs |
+
+#### List Command Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--backend` | None | Filter by backend (`whisper` or `realtime`) |
+| `--start_date` | None | Filter sessions on or after this date (YYYY-MM-DD) |
+| `--end_date` | None | Filter sessions on or before this date (YYYY-MM-DD) |
+| `--min_duration` | None | Filter sessions with duration >= this value (seconds) |
+| `--verbose` | False | Show detailed information |
+| `--include_incomplete` | False | Include sessions without completion marker |
+
+#### Show/Retranscribe Command Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--session_path` | (required) | Path to session directory |
+| `--allow_incomplete` | False | Allow loading sessions without completion marker |
+
+#### Retranscribe Command Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--retranscribe_backend` | `whisper` | Backend to use (`whisper` or `realtime`) |
+| `--output_dir` | `./session_logs` | Output directory for results |
+| `--model` | `turbo` | Whisper model (turbo, small, base, etc.) |
+| `--device` | `auto` | Device (`auto`, `cpu`, `cuda`, `mps`) |
+| `--language` | `en` | Language code |
+| `--vad_aggressiveness` | 2 | VAD aggressiveness (0-3) |
+| `--vad_min_silence_duration` | 0.2 | Min silence duration (seconds) |
+| `--api_key` | $OPENAI_API_KEY | OpenAI API key (for realtime backend) |
+| `--realtime_model` | `gpt-realtime-mini` | Realtime model name |
+| `--audio_format` | `flac` | Audio format (`wav` or `flac`) |
+
+### Use Cases
+
+#### Compare Different VAD Settings
+
+Test how different VAD settings affect chunking:
+
+```bash
+# Original session with VAD aggressiveness 2
+uv run transcribe-demo --backend=whisper --vad_aggressiveness=2
+
+# Retranscribe with more aggressive VAD
+uv run transcribe-session --command=retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --vad_aggressiveness=3 \
+  --vad_min_silence_duration=0.1
+```
+
+#### Test Different Models
+
+Compare transcription quality across different Whisper models:
+
+```bash
+# Get the session path from listing
+SESSION=session_logs/2025-11-07/session_143052_whisper
+
+# Try turbo (fastest)
+uv run transcribe-session --command=retranscribe --session_path=$SESSION --model=turbo
+
+# Try small (more accurate)
+uv run transcribe-session --command=retranscribe --session_path=$SESSION --model=small
+
+# Try base (balanced)
+uv run transcribe-session --command=retranscribe --session_path=$SESSION --model=base
+```
+
+#### Compare Backends
+
+Compare Whisper vs Realtime API:
+
+```bash
+SESSION=session_logs/2025-11-07/session_143052_whisper
+
+# Retranscribe with Whisper
+uv run transcribe-session --command=retranscribe \
+  --session_path=$SESSION \
+  --retranscribe_backend=whisper
+
+# Retranscribe with Realtime API
+uv run transcribe-session --command=retranscribe \
+  --session_path=$SESSION \
+  --retranscribe_backend=realtime
+```
+
+#### Batch Processing
+
+Process multiple sessions with a script:
+
+```bash
+#!/bin/bash
+# retranscribe_all.sh - Retranscribe all whisper sessions with a different model
+
+for session_dir in session_logs/*/session_*_whisper; do
+  echo "Processing $session_dir..."
+  uv run transcribe-session --command=retranscribe \
+    --session_path="$session_dir" \
+    --model=small \
+    --output_dir=./retranscriptions_small
+done
+```
+
+### Output Directory Structure
+
+Retranscribed sessions are saved in the same format as original sessions:
+
+```
+session_logs/
+└── YYYY-MM-DD/
+    └── retranscribe_HHMMSS_<backend>_from_<original_session_id>/
+        ├── .complete              # Completion marker
+        ├── session.json           # New metadata and chunks
+        ├── full_audio.flac        # Same audio as original
+        ├── chunks/                # New chunk audio files
+        │   ├── chunk_000.flac
+        │   └── ...
+        └── README.txt             # Human-readable summary
+```
+
+The retranscribed session directory name includes:
+- Timestamp of retranscription
+- Backend used for retranscription
+- Reference to original session ID
+
+This allows you to easily track which sessions are retranscriptions and compare them with originals.
+
+---
+
+## Using Session Data
+
+### Python API
+
+You can use the session replay functionality programmatically:
+
+```python
+from pathlib import Path
+from transcribe_demo.session_replay import (
+    list_sessions,
+    load_session,
+    retranscribe_session,
+)
+
+# List sessions (only complete ones by default)
+sessions = list_sessions(
+    log_dir="./session_logs",
+    backend="whisper",
+    min_duration=10.0,
+)
+
+# Include incomplete sessions
+all_sessions = list_sessions(
+    log_dir="./session_logs",
+    include_incomplete=True,
+)
+
+for session in sessions:
+    print(f"{session.session_id}: {session.capture_duration:.1f}s")
+
+# Load a specific session (must be complete)
+loaded = load_session("session_logs/2025-11-07/session_143052_whisper")
+print(f"Loaded session with {loaded.metadata.total_chunks} chunks")
+print(f"Audio duration: {loaded.metadata.capture_duration:.2f}s")
+
+# Load incomplete session (use with caution)
+incomplete_loaded = load_session(
+    "session_logs/2025-11-07/session_incomplete",
+    allow_incomplete=True,
+)
+
+# Retranscribe with different settings
+result_path = retranscribe_session(
+    loaded_session=loaded,
+    output_dir="./retranscriptions",
+    backend="whisper",
+    backend_kwargs={
+        "model": "small",
+        "device": "cuda",
+        "vad_aggressiveness": 3,
+    },
+)
+print(f"Results saved to: {result_path}")
+```
 
 ### Python Examples
 
@@ -375,6 +765,8 @@ jq -s 'map(.metadata) | {
 }' session_logs/*/session_*/session.json
 ```
 
+---
+
 ## Configuration
 
 Session logging is always enabled and controlled by these flags:
@@ -395,6 +787,8 @@ uv run transcribe-demo --nocompare_transcripts
 
 **Note:** Sessions shorter than `--min_log_duration` are automatically deleted to avoid cluttering logs.
 
+---
+
 ## Version History
 
 ### Current Version (2025-11-06)
@@ -410,6 +804,12 @@ uv run transcribe-demo --nocompare_transcripts
 - Metadata for model, device, VAD parameters
 - Human-readable README.txt
 
+---
+
 ## Related Documentation
 
 See [SITEMAP.md](SITEMAP.md) for a complete guide to all documentation.
+
+---
+
+*Last Updated: 2025-11-11*
