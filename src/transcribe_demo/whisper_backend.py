@@ -653,27 +653,37 @@ def run_whisper_transcriber(
                     if text:
                         # Merge new transcription with accumulated text, handling overlap
                         if accumulated_partial_text:
-                            # Find overlap by looking for last few words of accumulated text in new text
+                            # Strategy: Find where the new transcription starts relative to accumulated text
+                            # Look for best suffix/prefix overlap between accumulated end and new text start
+
                             accumulated_words = accumulated_partial_text.split()
-                            new_text_lower = text.lower()
+                            new_words = text.split()
 
-                            # Try to find overlap using last 3-8 words
-                            overlap_found = False
-                            for num_words in range(min(8, len(accumulated_words)), 2, -1):
-                                overlap_candidate = " ".join(accumulated_words[-num_words:])
-                                overlap_pos = new_text_lower.find(overlap_candidate.lower())
+                            # Try to find overlap: how many words at the end of accumulated
+                            # match the beginning of new text?
+                            best_overlap = 0
+                            max_overlap_check = min(len(accumulated_words), len(new_words), 15)
 
-                                if overlap_pos >= 0:
-                                    # Found overlap, append only the new portion
-                                    new_portion = text[overlap_pos + len(overlap_candidate) :].lstrip()
-                                    if new_portion:
-                                        accumulated_partial_text = accumulated_partial_text + " " + new_portion
-                                    overlap_found = True
-                                    break
+                            for i in range(1, max_overlap_check + 1):
+                                # Check if last i words of accumulated match first i words of new
+                                if accumulated_words[-i:] == new_words[:i]:
+                                    best_overlap = i
 
-                            # If no overlap found, just append (with space)
-                            if not overlap_found:
-                                accumulated_partial_text = accumulated_partial_text + " " + text
+                            if best_overlap > 0:
+                                # Found overlap, append only the non-overlapping portion
+                                new_portion_words = new_words[best_overlap:]
+                                if new_portion_words:
+                                    accumulated_partial_text = (
+                                        accumulated_partial_text + " " + " ".join(new_portion_words)
+                                    )
+                                # If no new words, accumulated text stays the same (don't append anything)
+                            else:
+                                # No overlap found - this means sliding window moved past accumulated content
+                                # Only append if new text is substantially different to avoid duplicates
+                                # Check if new text is completely contained in accumulated text
+                                if text.lower() not in accumulated_partial_text.lower():
+                                    accumulated_partial_text = accumulated_partial_text + " " + text
+                                # Otherwise skip this update (it's redundant)
                         else:
                             # First partial transcription for this chunk
                             accumulated_partial_text = text
