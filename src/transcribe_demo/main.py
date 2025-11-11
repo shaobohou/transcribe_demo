@@ -83,7 +83,7 @@ flags.DEFINE_float(
 )
 flags.DEFINE_float(
     "max_partial_buffer_seconds",
-    10.0,
+    20.0,
     "Maximum duration (in seconds) for partial transcription windows. "
     "Partial transcriptions use non-overlapping windows with position tracking: "
     "only NEW audio is transcribed each update, then appended to accumulated text. "
