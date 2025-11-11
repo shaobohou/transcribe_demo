@@ -48,7 +48,7 @@ git push -u origin your-branch-name
 
 ### Key Files
 
-- **main.py** - CLI args (`parse_args()`), stitching (`ChunkCollectorWithStitching`)
+- **cli.py** - CLI args (`parse_args()`), stitching (`ChunkCollectorWithStitching`)
 - **whisper_backend.py** - VAD (`WebRTCVAD`), transcription loop (`run_whisper_transcriber()`)
 - **realtime_backend.py** - WebSocket streaming (`run_realtime_transcriber()`)
 - **audio_capture.py** - Microphone (`AudioCaptureManager`)
@@ -61,7 +61,7 @@ git push -u origin your-branch-name
 
 **YOU MUST understand:** VAD splits audio at natural speech pauses. Chunks are sequential with NO overlap.
 
-**Stitching logic (main.py:ChunkCollectorWithStitching):**
+**Stitching logic (cli.py:ChunkCollectorWithStitching):**
 - Strip trailing `,` and `.` from intermediate chunks (preserve `?` and `!`)
 - **Why:** Whisper adds punctuation assuming completeness, but VAD splits mid-sentence
 - **Breaking this:** Creates unnatural transcripts like "Hello world. How are you." → "Hello world, how are you."

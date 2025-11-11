@@ -50,7 +50,7 @@ This document explains the key design decisions and architectural patterns in th
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         main.py                             │
+│                          cli.py                             │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │        ChunkCollectorWithStitching                  │   │
 │  │  - Collects chunks                                  │   │
@@ -107,7 +107,7 @@ This document explains the key design decisions and architectural patterns in th
 
 | Module | Responsibility | Key Classes/Functions |
 |--------|----------------|----------------------|
-| `main.py` | Orchestration, CLI args, comparison | `ChunkCollectorWithStitching`, `cli_main()` |
+| `cli.py` | Orchestration, CLI args, comparison | `ChunkCollectorWithStitching`, `cli_main()` |
 | `whisper_backend.py` | Local Whisper + VAD chunking | `WebRTCVAD`, `run_whisper_transcriber()` |
 | `realtime_backend.py` | OpenAI Realtime API streaming | `run_realtime_transcriber()` |
 | `audio_capture.py` | Microphone audio capture | `AudioCaptureManager` |
@@ -203,7 +203,7 @@ def run_backend(
     """
 ```
 
-**Key Design Decision**: The `chunk_consumer` callback pattern allows `main.py` to collect chunks from either backend without knowing implementation details. This enables:
+**Key Design Decision**: The `chunk_consumer` callback pattern allows `cli.py` to collect chunks from either backend without knowing implementation details. This enables:
 - Consistent display formatting
 - Unified session logging
 - Backend-agnostic testing
@@ -307,7 +307,7 @@ Stitched: "Hello, world. How are you today."  ← Incorrect (should be one sente
 - Questions and exclamations are intentional and should be preserved
 - Final chunk keeps all punctuation (it's genuinely complete)
 
-**Implementation** (`main.py:ChunkCollectorWithStitching._clean_chunk_text()`):
+**Implementation** (`cli.py:ChunkCollectorWithStitching._clean_chunk_text()`):
 
 ```python
 def _clean_chunk_text(self, text: str, is_final_chunk: bool = False) -> str:
@@ -467,7 +467,7 @@ result_path = retranscribe_session(
 
 ### Potential Improvements
 
-1. **Sliding Window Refinement** (see `main.py:242-266` TODO)
+1. **Sliding Window Refinement** (see `cli.py:242-266` TODO)
    - Use 3-chunk sliding window for better context
    - Requires word-level timestamps (not currently implemented)
    - Trade-off: 3x inference time, 1-chunk latency

@@ -355,7 +355,7 @@ uv run pytest -v
 
 ## Architecture
 
-- **main.py**: Entry point and orchestration, chunk collection, stitching, and comparison
+- **cli.py**: Entry point and orchestration, chunk collection, stitching, and comparison
 - **whisper_backend.py**: Local Whisper transcription with WebRTC VAD
 - **realtime_backend.py**: OpenAI Realtime API integration via WebSocket
 - **audio_capture.py**: Microphone audio capture manager
