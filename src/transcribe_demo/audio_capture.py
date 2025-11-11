@@ -135,6 +135,7 @@ class AudioCaptureManager:
         global sd
         if sd is None:
             import sounddevice as sd_module
+
             sd = sd_module
 
         # Start stdin listener if available

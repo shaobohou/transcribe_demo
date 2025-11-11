@@ -604,10 +604,17 @@ def run_whisper_transcriber(
                     current_partial_chunk_idx = chunk_idx
                     last_transcribed_size = 0
 
-                # Limit buffer to most recent max_partial_buffer_seconds to prevent unbounded growth
+                # Warn if buffer is getting very large (may cause slow inference)
                 max_samples = int(max_partial_buffer_seconds * sample_rate)
+                buffer_duration = buffer_snapshot.size / sample_rate
                 if buffer_snapshot.size > max_samples:
-                    buffer_snapshot = buffer_snapshot[-max_samples:]
+                    print(
+                        f"WARNING: Partial transcription buffer ({buffer_duration:.1f}s) exceeds "
+                        f"max_partial_buffer_seconds ({max_partial_buffer_seconds:.1f}s). "
+                        f"Inference may be slow. Consider increasing --max_partial_buffer_seconds "
+                        f"or using a faster partial model.",
+                        file=sys.stderr,
+                    )
 
                 # Only transcribe if we have enough audio
                 if buffer_snapshot.size < min_chunk_size:
