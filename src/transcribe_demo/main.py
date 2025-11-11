@@ -292,12 +292,17 @@ class ChunkCollectorWithStitching:
         inference_seconds: float | None,
     ) -> None:
         """Display a partial transcription that updates in real-time."""
-        use_color = bool(getattr(self._stream, "isatty", lambda: False)())
+        is_tty = bool(getattr(self._stream, "isatty", lambda: False)())
 
-        # Clear previous partial line if this is an update for the same chunk
+        # Handle line clearing/newlines based on output type
         if self._last_partial_chunk_index == chunk_index:
-            # Move cursor to beginning of line and clear it
-            self._stream.write("\r\x1b[K")
+            if is_tty:
+                # TTY: Move cursor to beginning of line and clear it
+                self._stream.write("\r\x1b[K")
+            # else: Non-TTY: Skip this partial (don't print intermediate updates to files)
+                # This prevents flooding log files with duplicate partial lines
+            else:
+                return  # Skip intermediate partials for non-TTY outputs
         elif self._last_partial_chunk_index is not None:
             # Different chunk, add newline to finalize previous partial
             self._stream.write("\n")
@@ -310,7 +315,7 @@ class ChunkCollectorWithStitching:
         else:
             timing_suffix = f" | t={absolute_end:.2f}s"
 
-        if use_color:
+        if is_tty:
             yellow = "\x1b[33m"
             reset = "\x1b[0m"
             bold = "\x1b[1m"
