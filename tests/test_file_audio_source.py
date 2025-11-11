@@ -162,8 +162,9 @@ def test_file_audio_source_url_detection() -> None:
         temp_cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Mock urlopen to avoid actual network requests
-        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen, patch.object(
-            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        with (
+            patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen,
+            patch.object(FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir),
         ):
             # Create a mock response
             mock_response = MagicMock()
@@ -247,8 +248,9 @@ def test_url_not_corrupted_by_path() -> None:
         temp_cache_dir = Path(tmpdir) / "cache"
         temp_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen, patch.object(
-            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        with (
+            patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen,
+            patch.object(FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir),
         ):
             # Create a mock response
             mock_response = MagicMock()
@@ -294,8 +296,9 @@ def test_url_caching_cache_miss() -> None:
         temp_cache_dir = Path(tmpdir) / "cache"
         temp_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen, patch.object(
-            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        with (
+            patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen,
+            patch.object(FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir),
         ):
             # Create a mock response
             mock_response = MagicMock()
@@ -348,8 +351,9 @@ def test_url_caching_cache_hit() -> None:
         test_url = "http://example.com/test.mp3"
 
         # First download - populate cache
-        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen, patch.object(
-            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        with (
+            patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen,
+            patch.object(FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir),
         ):
             # Create a mock response
             mock_response = MagicMock()
@@ -377,8 +381,9 @@ def test_url_caching_cache_hit() -> None:
             source1.close()
 
         # Second download - should use cache
-        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen_2, patch.object(
-            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        with (
+            patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen_2,
+            patch.object(FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir),
         ):
             # Create second source with same URL
             source2 = FileAudioSource(
@@ -414,8 +419,9 @@ def test_url_caching_different_urls_different_cache() -> None:
         test_url1 = "http://example.com/test1.mp3"
         test_url2 = "http://example.com/test2.mp3"
 
-        with patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen, patch.object(
-            FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir
+        with (
+            patch("transcribe_demo.file_audio_source.urlopen") as mock_urlopen,
+            patch.object(FileAudioSource, "_get_cache_dir", return_value=temp_cache_dir),
         ):
 
             def mock_urlopen_side_effect(url, timeout=None):

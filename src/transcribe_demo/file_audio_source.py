@@ -227,8 +227,7 @@ class FileAudioSource:
             audio, file_sample_rate = sf.read(str(audio_path), dtype="float32", always_2d=False)
 
             print(
-                f"Loaded audio: {display_name} "
-                f"({len(audio) / file_sample_rate:.2f}s @ {file_sample_rate}Hz)",
+                f"Loaded audio: {display_name} ({len(audio) / file_sample_rate:.2f}s @ {file_sample_rate}Hz)",
                 file=sys.stderr,
             )
 
