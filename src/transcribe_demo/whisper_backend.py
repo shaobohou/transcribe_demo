@@ -360,21 +360,9 @@ def run_whisper_transcriber(
         speech_pad_buffer = np.zeros(0, dtype=np.float32)
         vad_frame_buffer = np.zeros(0, dtype=np.float32)
         next_chunk_start = 0.0
-        last_heartbeat = time.perf_counter()
-        heartbeat_interval = 5.0  # Log heartbeat every 5 seconds
 
         try:
             while not audio_capture.stop_event.is_set():
-                # Heartbeat logging
-                current_time = time.perf_counter()
-                if current_time - last_heartbeat >= heartbeat_interval:
-                    buffer_size_seconds = len(buffer) / float(sample_rate)
-                    print(
-                        f"[HEARTBEAT] VAD worker alive | buffer: {buffer_size_seconds:.2f}s | "
-                        f"chunks: {chunk_index} | speech_frames: {speech_frames} | silence_frames: {silence_frames}",
-                        file=sys.stderr,
-                    )
-                    last_heartbeat = current_time
                 try:
                     chunk = await asyncio.to_thread(audio_capture.audio_queue.get, True, 0.1)
                 except queue.Empty:
@@ -506,10 +494,6 @@ def run_whisper_transcriber(
             await transcription_queue.put(None)
 
     async def transcriber_worker() -> None:
-        last_heartbeat = time.perf_counter()
-        heartbeat_interval = 5.0  # Log heartbeat every 5 seconds
-        chunks_processed = 0
-
         try:
             while True:
                 item = await transcription_queue.get()
@@ -517,15 +501,6 @@ def run_whisper_transcriber(
                     break
 
                 chunk_index, window, chunk_audio_duration = item
-
-                # Heartbeat logging
-                current_time = time.perf_counter()
-                if current_time - last_heartbeat >= heartbeat_interval:
-                    print(
-                        f"[HEARTBEAT] Transcriber worker alive | chunks_processed: {chunks_processed} | queue_size: {transcription_queue.qsize()}",
-                        file=sys.stderr,
-                    )
-                    last_heartbeat = current_time
 
                 inference_start = time.perf_counter()
                 result: dict[str, Any] = await asyncio.to_thread(
@@ -575,8 +550,6 @@ def run_whisper_transcriber(
                         inference_seconds=inference_duration,
                         audio=window.copy() if session_logger.save_chunk_audio else None,
                     )
-
-                chunks_processed += 1
         except Exception as exc:  # pragma: no cover - defensive guard
             transcriber_error.append(exc)
             audio_capture.stop()
@@ -591,10 +564,6 @@ def run_whisper_transcriber(
         try:
             last_transcribed_size = 0
             partial_in_progress = False
-            last_heartbeat = time.perf_counter()
-            heartbeat_interval = 5.0  # Log heartbeat every 5 seconds
-            partial_count = 0
-            skip_count = 0
             last_forced_update = time.perf_counter()
             # Force update at partial_interval regardless of buffer size change
             # This ensures updates continue even when buffer is at max size (sliding window)
@@ -603,22 +572,8 @@ def run_whisper_transcriber(
             while not audio_capture.stop_event.is_set():
                 await asyncio.sleep(partial_interval)
 
-                # Heartbeat logging
-                current_time = time.perf_counter()
-                if current_time - last_heartbeat >= heartbeat_interval:
-                    async with buffer_lock:
-                        buffer_size_seconds = len(buffer) / float(sample_rate)
-                    print(
-                        f"[HEARTBEAT] Partial transcriber alive | buffer: {buffer_size_seconds:.2f}s | "
-                        f"partial_count: {partial_count} | skip_count: {skip_count} | "
-                        f"in_progress: {partial_in_progress} | last_size: {last_transcribed_size}",
-                        file=sys.stderr,
-                    )
-                    last_heartbeat = current_time
-
                 # Only enqueue new partial transcription if previous one has finished
                 if partial_in_progress:
-                    skip_count += 1
                     continue
 
                 # Get snapshot of current buffer and chunk index
@@ -634,23 +589,21 @@ def run_whisper_transcriber(
                 # Only transcribe if we have enough audio
                 if buffer_snapshot.size < min_chunk_size:
                     last_transcribed_size = 0
-                    skip_count += 1
                     continue
 
                 # Check if we should force an update based on time elapsed
+                current_time = time.perf_counter()
                 time_since_last_update = current_time - last_forced_update
                 force_update = time_since_last_update >= force_update_interval
 
                 # Skip if buffer hasn't changed significantly (within 10% of last size) AND not forcing update
                 if not force_update and abs(buffer_snapshot.size - last_transcribed_size) < last_transcribed_size * 0.1:
-                    skip_count += 1
                     continue
 
                 last_transcribed_size = buffer_snapshot.size
 
                 # Mark partial transcription as in progress
                 partial_in_progress = True
-                partial_count += 1
                 try:
                     # Transcribe with the fast partial model
                     inference_start = time.perf_counter()
