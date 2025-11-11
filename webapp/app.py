@@ -4,7 +4,6 @@ Flask web server for transcribe-demo web app.
 Provides a web interface that mimics CLI functionality with real-time transcription.
 """
 
-import io
 import logging
 import os
 import tempfile
@@ -14,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request as flask_request
 from flask_socketio import SocketIO, emit
 
 from transcribe_demo.realtime_backend import run_realtime_transcriber
@@ -41,22 +40,24 @@ def index() -> str:
 @socketio.on("connect")
 def handle_connect() -> None:
     """Handle client connection."""
-    logger.info(f"Client connected: {request.sid}")
+    session_id: str = flask_request.sid  # type: ignore[attr-defined]
+    logger.info(f"Client connected: {session_id}")
     emit("connected", {"message": "Connected to transcription server"})
 
 
 @socketio.on("disconnect")
 def handle_disconnect() -> None:
     """Handle client disconnection."""
-    logger.info(f"Client disconnected: {request.sid}")
+    session_id: str = flask_request.sid  # type: ignore[attr-defined]
+    logger.info(f"Client disconnected: {session_id}")
     # Stop any active transcription for this client
-    stop_transcription(request.sid)
+    stop_transcription(session_id)
 
 
 @socketio.on("start_transcription")
 def handle_start_transcription(data: dict[str, Any]) -> None:
     """Start a new transcription session."""
-    session_id = request.sid
+    session_id: str = flask_request.sid  # type: ignore[attr-defined]
     logger.info(f"Starting transcription for session {session_id} with config: {data}")
 
     # Stop any existing session
@@ -82,11 +83,16 @@ def handle_start_transcription(data: dict[str, Any]) -> None:
     wav_writer.setsampwidth(2)  # 16-bit audio
     wav_writer.setframerate(sample_rate)
 
-    # Store session info
+    # Store session info including configuration
     active_sessions[session_id] = {
         "wav_writer": wav_writer,
         "temp_path": temp_path,
         "backend": backend,
+        "model": model,
+        "language": language,
+        "vad_aggressiveness": vad_aggressiveness,
+        "min_silence_duration": min_silence_duration,
+        "max_chunk_duration": max_chunk_duration,
         "transcribing": False,
         "audio_chunks": [],
         "lock": threading.Lock(),
@@ -98,7 +104,7 @@ def handle_start_transcription(data: dict[str, Any]) -> None:
 @socketio.on("audio_chunk")
 def handle_audio_chunk(data: dict[str, Any]) -> None:
     """Receive audio chunk from client."""
-    session_id = request.sid
+    session_id: str = flask_request.sid  # type: ignore[attr-defined]
 
     if session_id not in active_sessions:
         logger.warning(f"Received audio chunk for inactive session: {session_id}")
@@ -129,7 +135,7 @@ def handle_audio_chunk(data: dict[str, Any]) -> None:
 @socketio.on("stop_transcription")
 def handle_stop_transcription() -> None:
     """Stop recording and transcribe the complete audio."""
-    session_id = request.sid
+    session_id: str = flask_request.sid  # type: ignore[attr-defined]
     logger.info(f"Stopping transcription for session {session_id}")
 
     if session_id not in active_sessions:
@@ -142,40 +148,43 @@ def handle_stop_transcription() -> None:
     with session["lock"]:
         session["wav_writer"].close()
 
-    # Extract configuration from previous start_transcription call
-    # We'll need to store this in the session
-    # For now, use defaults
+    # Extract configuration from session
     backend = session.get("backend", "whisper")
+    model = session.get("model", "base.en")
+    language = session.get("language", "en")
+    vad_aggressiveness = session.get("vad_aggressiveness", 2)
+    min_silence_duration = session.get("min_silence_duration", 0.2)
+    max_chunk_duration = session.get("max_chunk_duration", 60.0)
 
     # Start transcription in background thread
     def run_transcription() -> None:
         try:
-            emit("transcription_status", {"message": "Processing audio..."}, room=session_id)
-
-            # Create chunk consumer callback
-            def chunk_consumer(
-                chunk_index: int,
-                chunk_text: str,
-                start_time: float,
-                end_time: float,
-                inference_seconds: float | None,
-                is_final: bool,
-            ) -> None:
-                """Send transcription chunks to client."""
-                socketio.emit(
-                    "transcription_chunk",
-                    {
-                        "text": chunk_text,
-                        "is_final": is_final,
-                        "index": chunk_index,
-                        "start_time": start_time,
-                        "end_time": end_time,
-                    },
-                    room=session_id,
-                )
+            socketio.emit("transcription_status", {"message": "Processing audio..."}, to=session_id)
 
             # Run appropriate backend
             if backend == "realtime":
+                # Realtime backend uses keyword-only ChunkConsumer protocol
+                def realtime_chunk_consumer(
+                    *,
+                    chunk_index: int,
+                    text: str,
+                    absolute_start: float,
+                    absolute_end: float,
+                    inference_seconds: float | None,
+                ) -> None:
+                    """Send transcription chunks to client."""
+                    socketio.emit(
+                        "transcription_chunk",
+                        {
+                            "text": text,
+                            "is_final": True,
+                            "index": chunk_index,
+                            "start_time": absolute_start,
+                            "end_time": absolute_end,
+                        },
+                        to=session_id,
+                    )
+
                 api_key = os.environ.get("ANTHROPIC_API_KEY")
                 if not api_key:
                     raise ValueError("ANTHROPIC_API_KEY not set")
@@ -183,16 +192,16 @@ def handle_stop_transcription() -> None:
                 run_realtime_transcriber(
                     api_key=api_key,
                     endpoint="wss://api.anthropic.com/v1/messages",
-                    model="claude-3-5-sonnet-20241022",
+                    model=model,
                     sample_rate=16000,
                     channels=1,
                     chunk_duration=2.0,
                     instructions="Transcribe the audio accurately.",
                     disable_ssl_verify=False,
-                    chunk_consumer=chunk_consumer,
+                    chunk_consumer=realtime_chunk_consumer,
                     compare_transcripts=False,
                     max_capture_duration=0.0,
-                    language="en",
+                    language=language,
                     session_logger=None,
                     min_log_duration=0.0,
                     audio_file=session["temp_path"],
@@ -202,8 +211,30 @@ def handle_stop_transcription() -> None:
                     debug=False,
                 )
             else:  # whisper
+                # Whisper backend uses positional parameters
+                def whisper_chunk_consumer(
+                    chunk_index: int,
+                    chunk_text: str,
+                    start_time: float,
+                    end_time: float,
+                    inference_seconds: float | None,
+                    is_final: bool,
+                ) -> None:
+                    """Send transcription chunks to client."""
+                    socketio.emit(
+                        "transcription_chunk",
+                        {
+                            "text": chunk_text,
+                            "is_final": is_final,
+                            "index": chunk_index,
+                            "start_time": start_time,
+                            "end_time": end_time,
+                        },
+                        to=session_id,
+                    )
+
                 run_whisper_transcriber(
-                    model_name="base.en",
+                    model_name=model,
                     sample_rate=16000,
                     channels=1,
                     temp_file=None,
@@ -211,26 +242,26 @@ def handle_stop_transcription() -> None:
                     disable_ssl_verify=False,
                     device_preference="cpu",
                     require_gpu=False,
-                    chunk_consumer=chunk_consumer,
-                    vad_aggressiveness=2,
-                    vad_min_silence_duration=0.2,
+                    chunk_consumer=whisper_chunk_consumer,
+                    vad_aggressiveness=vad_aggressiveness,
+                    vad_min_silence_duration=min_silence_duration,
                     vad_min_speech_duration=0.25,
                     vad_speech_pad_duration=0.2,
-                    max_chunk_duration=60.0,
+                    max_chunk_duration=max_chunk_duration,
                     compare_transcripts=False,
                     max_capture_duration=0.0,
-                    language="en",
+                    language=language,
                     session_logger=None,
                     min_log_duration=0.0,
                     audio_file=session["temp_path"],
                     playback_speed=10.0,  # Process quickly
                 )
 
-            socketio.emit("transcription_complete", {"message": "Transcription finished"}, room=session_id)
+            socketio.emit("transcription_complete", {"message": "Transcription finished"}, to=session_id)
 
         except Exception as e:
             logger.error(f"Transcription error: {e}", exc_info=True)
-            socketio.emit("transcription_error", {"error": str(e)}, room=session_id)
+            socketio.emit("transcription_error", {"error": str(e)}, to=session_id)
         finally:
             # Clean up
             try:
