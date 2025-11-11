@@ -293,14 +293,11 @@ class ChunkCollectorWithStitching:
         absolute_end: float,
         inference_seconds: float | None,
     ) -> None:
-        """Display a partial transcription with full accumulated buffer."""
+        """Display a partial transcription, overwriting same segment on TTY."""
         import sys
 
         # Check if stdout is a TTY for color formatting
         is_tty = sys.stdout.isatty()
-
-        # Update tracking
-        self._last_partial_chunk_index = chunk_index
 
         # Format the partial transcription
         if inference_seconds is not None:
@@ -318,12 +315,24 @@ class ChunkCollectorWithStitching:
             dim = "\x1b[2m"
             label = f"{bold}{yellow}[PARTIAL {chunk_index:03d}{timing_suffix}]{reset}"
             line = f"{label} {dim}{text_display}{reset}"
+
+            # Handle line clearing/newlines based on segment changes
+            if self._last_partial_chunk_index == chunk_index:
+                # Same segment: overwrite with \r and clear line
+                self._stream.write(f"\r\x1b[2K{line}")
+            else:
+                # Different segment: finalize previous and start new line
+                if self._last_partial_chunk_index is not None:
+                    self._stream.write("\n")
+                self._stream.write(line)
         else:
+            # Non-TTY: always print on new line for logs
             label = f"[PARTIAL {chunk_index:03d}{timing_suffix}]"
             line = f"{label} {text_display}"
+            self._stream.write(line + "\n")
 
-        # Always print on new line (no in-place updates)
-        self._stream.write(line + "\n")
+        # Update tracking
+        self._last_partial_chunk_index = chunk_index
         self._stream.flush()
 
     def __call__(
@@ -380,8 +389,10 @@ class ChunkCollectorWithStitching:
         # - Extract middle chunk text using word timestamps that fall within N-1 time range
         # - Display both immediate (chunk N) and refined (chunk N-1) with different labels
 
-        # Reset partial tracking when final chunk arrives
-        self._last_partial_chunk_index = None
+        # Finalize any partial line before displaying final chunk
+        if self._last_partial_chunk_index is not None:
+            self._stream.write("\n")
+            self._last_partial_chunk_index = None
 
         # Display the individual chunk
         if inference_seconds is not None:
