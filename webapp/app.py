@@ -4,6 +4,7 @@ Flask web server for transcribe-demo web app.
 Provides a web interface that mimics CLI functionality with real-time transcription.
 """
 
+import argparse
 import logging
 import os
 import tempfile
@@ -20,8 +21,12 @@ from transcribe_demo.realtime_backend import run_realtime_transcriber
 from transcribe_demo.whisper_backend import run_whisper_transcriber
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "transcribe-demo-secret-key"
-socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=10 * 1024 * 1024)
+# Use environment variable or generate secure random key
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex())
+
+# Configure CORS - default to all origins in dev, can be restricted via env var
+cors_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "*")
+socketio = SocketIO(app, cors_allowed_origins=cors_origins, max_http_buffer_size=10 * 1024 * 1024)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -94,7 +99,6 @@ def handle_start_transcription(data: dict[str, Any]) -> None:
         "min_silence_duration": min_silence_duration,
         "max_chunk_duration": max_chunk_duration,
         "transcribing": False,
-        "audio_chunks": [],
         "lock": threading.Lock(),
     }
 
@@ -127,7 +131,6 @@ def handle_audio_chunk(data: dict[str, Any]) -> None:
     with session["lock"]:
         try:
             session["wav_writer"].writeframes(audio_bytes)
-            session["audio_chunks"].append(audio_bytes)
         except Exception as e:
             logger.error(f"Error writing audio chunk: {e}")
 
@@ -269,8 +272,8 @@ def handle_stop_transcription() -> None:
             except Exception as e:
                 logger.error(f"Error cleaning up temp file: {e}")
 
-            if session_id in active_sessions:
-                del active_sessions[session_id]
+            # Use pop() to safely remove session even on race conditions
+            active_sessions.pop(session_id, None)
 
     thread = threading.Thread(target=run_transcription, daemon=True)
     thread.start()
@@ -280,23 +283,30 @@ def handle_stop_transcription() -> None:
 
 def stop_transcription(session_id: str) -> None:
     """Stop transcription for a specific session."""
-    if session_id in active_sessions:
-        session = active_sessions[session_id]
-        try:
-            with session["lock"]:
-                if "wav_writer" in session:
-                    session["wav_writer"].close()
-        except Exception as e:
-            logger.error(f"Error closing WAV writer: {e}")
+    session = active_sessions.pop(session_id, None)
+    if session is None:
+        return
 
-        try:
-            if "temp_path" in session and session["temp_path"].exists():
-                session["temp_path"].unlink()
-        except Exception as e:
-            logger.error(f"Error cleaning up temp file: {e}")
+    try:
+        with session["lock"]:
+            if "wav_writer" in session:
+                session["wav_writer"].close()
+    except Exception as e:
+        logger.error(f"Error closing WAV writer: {e}")
 
-        del active_sessions[session_id]
+    try:
+        if "temp_path" in session and session["temp_path"].exists():
+            session["temp_path"].unlink()
+    except Exception as e:
+        logger.error(f"Error cleaning up temp file: {e}")
 
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    parser = argparse.ArgumentParser(description="Transcribe Demo Web Server")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=5000, help="Port to bind to (default: 5000)")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    args = parser.parse_args()
+
+    logger.info(f"Starting server on {args.host}:{args.port} (debug={args.debug})")
+    socketio.run(app, host=args.host, port=args.port, debug=args.debug)

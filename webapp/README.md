@@ -25,7 +25,7 @@ A tasteful web interface for the transcribe-demo CLI tool, providing real-time a
 
    For CPU-only environments (CI/sandboxes):
    ```bash
-   uv sync --project ci --group webapp --refresh
+   uv sync --project ci --refresh
    ```
 
 2. (Optional) For Realtime backend, set your Anthropic API key:

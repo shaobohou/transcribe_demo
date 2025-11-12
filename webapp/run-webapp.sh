@@ -73,13 +73,9 @@ fi
 echo -e "${YELLOW}Checking dependencies...${NC}"
 if $CPU_ONLY; then
     echo -e "${YELLOW}Running in CPU-only mode${NC}"
-    cd ..
-    uv sync --project ci --group webapp --refresh
-    cd webapp
+    (cd .. && uv sync --project ci --refresh)
 else
-    cd ..
-    uv sync --group webapp
-    cd webapp
+    (cd .. && uv sync --group webapp)
 fi
 
 echo -e "${GREEN}Dependencies installed${NC}"
@@ -102,10 +98,9 @@ echo ""
 echo -e "${GREEN}Press Ctrl+C to stop${NC}"
 echo ""
 
+# Run with appropriate Python command and pass arguments
 if $CPU_ONLY; then
-    cd ..
-    uv --project ci run python webapp/app.py
+    (cd .. && uv --project ci run python webapp/app.py --host "$HOST" --port "$PORT")
 else
-    cd ..
-    uv run python webapp/app.py
+    (cd .. && uv run python webapp/app.py --host "$HOST" --port "$PORT")
 fi
