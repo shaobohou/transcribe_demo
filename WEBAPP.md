@@ -35,7 +35,7 @@ A tasteful web interface for real-time audio transcription, mimicking the functi
 
 ### Dual Backend Support
 - **Whisper**: Local processing (CPU/GPU)
-- **Realtime**: Cloud-based via Anthropic API (requires `ANTHROPIC_API_KEY`)
+- **Realtime**: Cloud-based via Anthropic API (requires `OPENAI_API_KEY`)
 
 ### Modern Interface
 - Clean, responsive dark mode design
@@ -90,7 +90,7 @@ Browser Display
   - Safari 14.1+
   - Edge 79+
 - Microphone access permissions
-- For Realtime backend: `ANTHROPIC_API_KEY` environment variable
+- For Realtime backend: `OPENAI_API_KEY` environment variable
 
 ## Differences from CLI
 
@@ -121,9 +121,9 @@ Browser Display
 - Ensure HTTPS if on remote server
 - Try a different browser
 
-**"ANTHROPIC_API_KEY not set" (Realtime backend)**
+**"OPENAI_API_KEY not set" (Realtime backend)**
 ```bash
-export ANTHROPIC_API_KEY=your_api_key_here
+export OPENAI_API_KEY=your_api_key_here
 ```
 
 **Port already in use**

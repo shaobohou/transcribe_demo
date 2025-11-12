@@ -82,10 +82,10 @@ echo -e "${GREEN}Dependencies installed${NC}"
 echo ""
 
 # Check for Realtime API key
-if [[ -z "${ANTHROPIC_API_KEY}" ]]; then
-    echo -e "${YELLOW}Warning: ANTHROPIC_API_KEY not set${NC}"
+if [[ -z "${OPENAI_API_KEY}" ]]; then
+    echo -e "${YELLOW}Warning: OPENAI_API_KEY not set${NC}"
     echo "Realtime backend will not be available"
-    echo "Set it with: export ANTHROPIC_API_KEY=your_key_here"
+    echo "Set it with: export OPENAI_API_KEY=your_key_here"
     echo ""
 fi
 

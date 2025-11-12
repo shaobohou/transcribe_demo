@@ -27,12 +27,45 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("host", "0.0.0.0", "Host to bind to")
 flags.DEFINE_integer("port", 5000, "Port to bind to")
 flags.DEFINE_boolean("debug", False, "Enable debug mode")
+flags.DEFINE_enum(
+    "device",
+    "auto",
+    ["auto", "cpu", "cuda", "mps"],
+    "Device to run Whisper on. 'auto' prefers CUDA, then MPS, otherwise CPU.",
+)
+flags.DEFINE_boolean(
+    "require_gpu",
+    False,
+    "Exit immediately if CUDA is unavailable instead of falling back to CPU.",
+)
 
 app = Flask(__name__)
-# Use environment variable or generate secure random key
-app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex())
 
-# Configure CORS - default to all origins in dev, can be restricted via env var
+# Flask secret key configuration
+# IMPORTANT: Set FLASK_SECRET_KEY environment variable in production
+# Using os.urandom() generates a new key on each restart, invalidating sessions
+# This is acceptable for development but problematic for production
+flask_secret = os.environ.get("FLASK_SECRET_KEY")
+if not flask_secret:
+    # Generate temporary key (won't persist across restarts)
+    flask_secret = os.urandom(24).hex()
+    # Log warning that will be visible when server starts
+    import sys
+
+    print(
+        "WARNING: Using temporary Flask secret key. Sessions will not persist across server restarts.",
+        file=sys.stderr,
+    )
+    print(
+        "For production, set FLASK_SECRET_KEY: python -c 'import os; print(os.urandom(24).hex())'",
+        file=sys.stderr,
+    )
+app.config["SECRET_KEY"] = flask_secret
+
+# CORS configuration
+# WARNING: Default allows all origins (*) - INSECURE FOR PRODUCTION
+# Set CORS_ALLOWED_ORIGINS environment variable to restrict origins in production
+# Example: export CORS_ALLOWED_ORIGINS="https://yourdomain.com,https://app.yourdomain.com"
 cors_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "*")
 socketio = SocketIO(app, cors_allowed_origins=cors_origins, max_http_buffer_size=10 * 1024 * 1024)
 
@@ -106,7 +139,7 @@ def handle_start_transcription(data: dict[str, Any]) -> None:
         "vad_aggressiveness": vad_aggressiveness,
         "min_silence_duration": min_silence_duration,
         "max_chunk_duration": max_chunk_duration,
-        "transcribing": False,
+        "is_transcribing": False,  # Track if background transcription is active
         "lock": threading.Lock(),
     }
 
@@ -169,6 +202,10 @@ def handle_stop_transcription() -> None:
 
     # Start transcription in background thread
     def run_transcription() -> None:
+        # Mark as transcribing to prevent premature cleanup
+        if session_id in active_sessions:
+            active_sessions[session_id]["is_transcribing"] = True
+
         try:
             socketio.emit("transcription_status", {"message": "Processing audio..."}, to=session_id)
 
@@ -196,14 +233,15 @@ def handle_stop_transcription() -> None:
                         to=session_id,
                     )
 
-                api_key = os.environ.get("ANTHROPIC_API_KEY")
+                # Use OpenAI API for realtime transcription
+                api_key = os.environ.get("OPENAI_API_KEY")
                 if not api_key:
-                    raise ValueError("ANTHROPIC_API_KEY not set")
+                    raise ValueError("OPENAI_API_KEY not set for realtime transcription")
 
                 run_realtime_transcriber(
                     api_key=api_key,
-                    endpoint="wss://api.anthropic.com/v1/messages",
-                    model=model,
+                    endpoint="wss://api.openai.com/v1/realtime",
+                    model=model if model != "base.en" else "gpt-realtime-mini",
                     sample_rate=16000,
                     channels=1,
                     chunk_duration=2.0,
@@ -251,8 +289,8 @@ def handle_stop_transcription() -> None:
                     temp_file=None,
                     ca_cert=None,
                     disable_ssl_verify=False,
-                    device_preference="cpu",
-                    require_gpu=False,
+                    device_preference=FLAGS.device,
+                    require_gpu=FLAGS.require_gpu,
                     chunk_consumer=whisper_chunk_consumer,
                     vad_aggressiveness=vad_aggressiveness,
                     vad_min_silence_duration=min_silence_duration,
@@ -302,11 +340,14 @@ def stop_transcription(session_id: str) -> None:
     except Exception as e:
         logger.error(f"Error closing WAV writer: {e}")
 
-    try:
-        if "temp_path" in session and session["temp_path"].exists():
-            session["temp_path"].unlink()
-    except Exception as e:
-        logger.error(f"Error cleaning up temp file: {e}")
+    # Only delete temp file if transcription is not currently running
+    # Background transcription thread will clean up when it finishes
+    if not session.get("is_transcribing", False):
+        try:
+            if "temp_path" in session and session["temp_path"].exists():
+                session["temp_path"].unlink()
+        except Exception as e:
+            logger.error(f"Error cleaning up temp file: {e}")
 
 
 def main(argv: list[str]) -> None:

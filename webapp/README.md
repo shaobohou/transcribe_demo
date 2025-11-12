@@ -7,7 +7,7 @@ A tasteful web interface for the transcribe-demo CLI tool, providing real-time a
 - **Real-time Audio Transcription**: Record audio directly from your browser and see transcriptions appear in real-time
 - **Dual Backend Support**:
   - **Whisper**: Local processing with GPU/CPU support
-  - **Realtime**: Cloud-based transcription via Anthropic's API
+  - **Realtime**: Cloud-based transcription via OpenAI's Realtime API
 - **Configurable Settings**:
   - Multiple Whisper models (tiny, base, small, medium, large, turbo)
   - Language selection (English, Spanish, French, German, etc.)
@@ -28,9 +28,9 @@ A tasteful web interface for the transcribe-demo CLI tool, providing real-time a
    uv sync --project ci --refresh
    ```
 
-2. (Optional) For Realtime backend, set your Anthropic API key:
+2. (Optional) For Realtime backend, set your OpenAI API key:
    ```bash
-   export ANTHROPIC_API_KEY=your_api_key_here
+   export OPENAI_API_KEY=your_api_key_here
    ```
 
 ## Usage
@@ -81,7 +81,7 @@ The server will start on `http://localhost:5000`
 
 - **Realtime**:
   - Cloud-based API transcription
-  - Requires ANTHROPIC_API_KEY
+  - Requires OPENAI_API_KEY
   - Lower latency (<200ms)
   - Fixed 2.0s chunks
 
@@ -176,7 +176,7 @@ WebSocket → Browser Display
 ### "Transcription error"
 
 - **Whisper**: Check that the model is downloaded and CPU/GPU is available
-- **Realtime**: Verify ANTHROPIC_API_KEY is set and valid
+- **Realtime**: Verify OPENAI_API_KEY is set and valid
 - Check server logs for detailed error messages
 
 ### SSL/Certificate Issues

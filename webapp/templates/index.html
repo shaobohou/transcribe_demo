@@ -642,10 +642,10 @@
         document.getElementById('backend').addEventListener('change', (e) => {
             const modelSelect = document.getElementById('model');
             if (e.target.value === 'realtime') {
-                // Realtime API models
+                // OpenAI Realtime API models
                 modelSelect.innerHTML = `
-                    <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-                    <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+                    <option value="gpt-realtime-mini" selected>GPT Realtime Mini (recommended)</option>
+                    <option value="gpt-4o-realtime-preview">GPT-4o Realtime Preview</option>
                 `;
             } else {
                 // Whisper models
