@@ -4,7 +4,6 @@ Flask web server for transcribe-demo web app.
 Provides a web interface that mimics CLI functionality with real-time transcription.
 """
 
-import argparse
 import logging
 import os
 import tempfile
@@ -14,11 +13,20 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from absl import app as absl_app
+from absl import flags
 from flask import Flask, render_template, request as flask_request
 from flask_socketio import SocketIO, emit
 
 from transcribe_demo.realtime_backend import run_realtime_transcriber
 from transcribe_demo.whisper_backend import run_whisper_transcriber
+
+# Define command-line flags
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string("host", "0.0.0.0", "Host to bind to")
+flags.DEFINE_integer("port", 5000, "Port to bind to")
+flags.DEFINE_boolean("debug", False, "Enable debug mode")
 
 app = Flask(__name__)
 # Use environment variable or generate secure random key
@@ -301,12 +309,12 @@ def stop_transcription(session_id: str) -> None:
         logger.error(f"Error cleaning up temp file: {e}")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Transcribe Demo Web Server")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
-    parser.add_argument("--port", type=int, default=5000, help="Port to bind to (default: 5000)")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
-    args = parser.parse_args()
+def main(argv: list[str]) -> None:
+    """Main entry point for the web server."""
+    del argv  # Unused
+    logger.info(f"Starting server on {FLAGS.host}:{FLAGS.port} (debug={FLAGS.debug})")
+    socketio.run(app, host=FLAGS.host, port=FLAGS.port, debug=FLAGS.debug)
 
-    logger.info(f"Starting server on {args.host}:{args.port} (debug={args.debug})")
-    socketio.run(app, host=args.host, port=args.port, debug=args.debug)
+
+if __name__ == "__main__":
+    absl_app.run(main)
