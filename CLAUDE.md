@@ -140,7 +140,7 @@ Pre-commit hook auto-runs all tests - they MUST pass before commits.
 
 See **[SITEMAP.md](SITEMAP.md)** for complete documentation guide.
 
-**Quick links:** [DESIGN.md](DESIGN.md) (architecture), [README.md](README.md) (user docs), [TODO.md](TODO.md) (improvements), [SESSION_LOGS.md](SESSION_LOGS.md) (log format)
+**Quick links:** [DESIGN.md](DESIGN.md) (architecture), [README.md](README.md) (user docs), [TODO.md](TODO.md) (improvements), [SESSIONS.md](SESSIONS.md) (sessions)
 
 ---
 

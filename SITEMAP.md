@@ -9,8 +9,7 @@ This is the central index for all transcribe-demo documentation. Use this to nav
 - 💻 **Contribute code** → [CLAUDE.md](CLAUDE.md)
 - 🏗️ **Understand the architecture** → [DESIGN.md](DESIGN.md)
 - 🔧 **Find refactoring opportunities** → [TODO.md](TODO.md)
-- 📊 **Understand session logs** → [SESSION_LOGS.md](SESSION_LOGS.md)
-- 🔄 **Retranscribe sessions** → [SESSION_REPLAY.md](SESSION_REPLAY.md)
+- 📊 **Work with session logs** → [SESSIONS.md](SESSIONS.md)
 - 🤖 **Work with AI assistants** → [CLAUDE.md](CLAUDE.md) or [GEMINI.md](GEMINI.md)
 
 ---
@@ -26,18 +25,14 @@ This is the central index for all transcribe-demo documentation. Use this to nav
 - Configuration options for both backends
 - Session logging overview
 
-**[SESSION_LOGS.md](SESSION_LOGS.md)** - *Session log format reference*
+**[SESSIONS.md](SESSIONS.md)** - *Session logging and replay guide*
 - Complete session log format specification
 - Directory structure and file formats
 - JSON schema for `session.json`
-- Python and command-line examples for analyzing logs
-- Audio file format details
-
-**[SESSION_REPLAY.md](SESSION_REPLAY.md)** - *Session replay utility guide*
+- Session replay utility (`transcribe-session`)
 - How to list, inspect, and retranscribe sessions
-- Command reference for `transcribe-session`
-- Use cases and examples
-- Python API documentation
+- Python API and command-line examples
+- Audio file format details
 
 ---
 
@@ -89,8 +84,7 @@ Each document has a specific purpose to avoid overlap:
 | **CLAUDE.md** | "How do I develop this?" | Contributors | Changing workflow, adding tests |
 | **DESIGN.md** | "Why is it designed this way?" | Developers, maintainers | Major architecture changes |
 | **TODO.md** | "What should we improve?" | Contributors | Finding refactoring opportunities |
-| **SESSION_LOGS.md** | "What's in the session files?" | Users, automation scripts | Changing log format |
-| **SESSION_REPLAY.md** | "How do I replay sessions?" | Users | Changing replay utility |
+| **SESSIONS.md** | "How do sessions work?" | Users, automation scripts | Changing log format or replay utility |
 
 ---
 
@@ -121,8 +115,7 @@ Each document has a specific purpose to avoid overlap:
 
 ### 🎯 I'm a new user
 1. Start with [README.md](README.md) for installation and basic usage
-2. Check [SESSION_LOGS.md](SESSION_LOGS.md) to understand what gets saved
-3. Try [SESSION_REPLAY.md](SESSION_REPLAY.md) to experiment with different settings
+2. Check [SESSIONS.md](SESSIONS.md) to understand session logging and replay
 
 ### 🎯 I want to contribute code
 1. Read [CLAUDE.md](CLAUDE.md) for development workflow
@@ -131,7 +124,7 @@ Each document has a specific purpose to avoid overlap:
 
 ### 🎯 I'm debugging an issue
 1. Check [DESIGN.md](DESIGN.md) for how the system is supposed to work
-2. Review [SESSION_LOGS.md](SESSION_LOGS.md) to analyze session data
+2. Review [SESSIONS.md](SESSIONS.md) to analyze session data
 3. See [CLAUDE.md](CLAUDE.md) for testing and debugging guidelines
 
 ### 🎯 I'm planning a refactoring
@@ -156,4 +149,4 @@ Each document has a specific purpose to avoid overlap:
 
 ---
 
-*Last Updated: 2025-11-07*
+*Last Updated: 2025-11-11*

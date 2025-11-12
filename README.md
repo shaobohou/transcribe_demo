@@ -270,7 +270,7 @@ Each session includes:
 - **session.json**: Complete structured data in machine-readable JSON format
 - **README.txt**: Human-readable summary with all transcriptions, diffs, and chunk details
 
-See **[SESSION_LOGS.md](SESSION_LOGS.md)** for the complete session log format reference.
+See **[SESSIONS.md](SESSIONS.md)** for the complete session log format reference and replay utility documentation.
 
 #### Configuration
 
@@ -310,7 +310,7 @@ uv run transcribe-session --command=retranscribe \
   --retranscribe_backend=realtime
 ```
 
-See **[SESSION_REPLAY.md](SESSION_REPLAY.md)** for complete documentation on listing, loading, and retranscribing sessions.
+See **[SESSIONS.md](SESSIONS.md)** for complete documentation on listing, loading, and retranscribing sessions.
 
 ## How It Works
 
