@@ -10,13 +10,14 @@ from typing import TextIO
 from absl import app
 from absl import flags
 
+from transcribe_demo.backend_protocol import TranscriptionChunk
 from transcribe_demo.realtime_backend import (
     RealtimeTranscriptionResult,
     run_realtime_transcriber,
     transcribe_full_audio_realtime,
 )
 from transcribe_demo.session_logger import SessionLogger
-from transcribe_demo.whisper_backend import TranscriptionChunk, run_whisper_transcriber
+from transcribe_demo.whisper_backend import run_whisper_transcriber
 
 
 REALTIME_CHUNK_DURATION = 2.0
@@ -286,13 +287,7 @@ class ChunkCollectorWithStitching:
                 text = text[:-1].rstrip()
         return text
 
-    def _display_partial_chunk(
-        self,
-        chunk_index: int,
-        text: str,
-        absolute_end: float,
-        inference_seconds: float | None,
-    ) -> None:
+    def _display_partial_chunk(self, chunk: TranscriptionChunk) -> None:
         """Display a partial transcription, overwriting same segment on TTY."""
         import sys
 
@@ -300,24 +295,24 @@ class ChunkCollectorWithStitching:
         is_tty = sys.stdout.isatty()
 
         # Format the partial transcription
-        if inference_seconds is not None:
-            timing_suffix = f" | t={absolute_end:.2f}s | inference: {inference_seconds:.2f}s"
+        if chunk.inference_seconds is not None:
+            timing_suffix = f" | t={chunk.end_time:.2f}s | inference: {chunk.inference_seconds:.2f}s"
         else:
-            timing_suffix = f" | t={absolute_end:.2f}s"
+            timing_suffix = f" | t={chunk.end_time:.2f}s"
 
         # Display full accumulated text (no truncation)
-        text_display = text.strip()
+        text_display = chunk.text.strip()
 
         if is_tty:
             yellow = "\x1b[33m"
             reset = "\x1b[0m"
             bold = "\x1b[1m"
             dim = "\x1b[2m"
-            label = f"{bold}{yellow}[PARTIAL {chunk_index:03d}{timing_suffix}]{reset}"
+            label = f"{bold}{yellow}[PARTIAL {chunk.index:03d}{timing_suffix}]{reset}"
             line = f"{label} {dim}{text_display}{reset}"
 
             # Handle line clearing/newlines based on segment changes
-            if self._last_partial_chunk_index == chunk_index:
+            if self._last_partial_chunk_index == chunk.index:
                 # Same segment: overwrite with \r and clear line
                 self._stream.write(f"\r\x1b[2K{line}")
             else:
@@ -327,40 +322,25 @@ class ChunkCollectorWithStitching:
                 self._stream.write(line)
         else:
             # Non-TTY: always print on new line for logs
-            label = f"[PARTIAL {chunk_index:03d}{timing_suffix}]"
+            label = f"[PARTIAL {chunk.index:03d}{timing_suffix}]"
             line = f"{label} {text_display}"
             self._stream.write(line + "\n")
 
         # Update tracking
-        self._last_partial_chunk_index = chunk_index
+        self._last_partial_chunk_index = chunk.index
         self._stream.flush()
 
-    def __call__(
-        self,
-        chunk_index: int,
-        text: str,
-        absolute_start: float,
-        absolute_end: float,
-        inference_seconds: float | None = None,
-        is_partial: bool = False,
-    ) -> None:
-        if not text:
+    def __call__(self, chunk: TranscriptionChunk) -> None:
+        """Process a transcription chunk (implements ChunkConsumer protocol)."""
+        if not chunk.text:
             return
 
         # Handle partial transcription (don't store, just display)
-        if is_partial:
-            self._display_partial_chunk(chunk_index, text, absolute_end, inference_seconds)
+        if chunk.is_partial:
+            self._display_partial_chunk(chunk)
             return
 
         # Store the chunk
-        chunk = TranscriptionChunk(
-            index=chunk_index,
-            text=text,
-            start_time=absolute_start,
-            end_time=absolute_end,
-            overlap_start=max(0.0, self._last_time),
-            inference_seconds=inference_seconds,
-        )
         self._chunks.append(chunk)
 
         # TODO: Sliding window refinement feature (--refine-with-context)
@@ -395,17 +375,17 @@ class ChunkCollectorWithStitching:
             self._last_partial_chunk_index = None
 
         # Display the individual chunk
-        if inference_seconds is not None:
+        if chunk.inference_seconds is not None:
             # Whisper mode: show actual audio duration and inference time
-            chunk_audio_duration = absolute_end - absolute_start
+            chunk_audio_duration = chunk.end_time - chunk.start_time
             timing_suffix = (
-                f" | t={absolute_end:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {inference_seconds:.2f}s"
+                f" | t={chunk.end_time:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {chunk.inference_seconds:.2f}s"
             )
-            label = f"[chunk {chunk_index:03d}{timing_suffix}]"
+            label = f"[chunk {chunk.index:03d}{timing_suffix}]"
         else:
             # Realtime mode: show absolute timestamp from session start
-            timing_suffix = f" | t={absolute_end:.2f}s"
-            label = f"[chunk {chunk_index:03d}{timing_suffix}]"
+            timing_suffix = f" | t={chunk.end_time:.2f}s"
+            label = f"[chunk {chunk.index:03d}{timing_suffix}]"
         use_color = bool(getattr(self._stream, "isatty", lambda: False)())
 
         cyan = ""
@@ -418,16 +398,16 @@ class ChunkCollectorWithStitching:
             reset = "\x1b[0m"
             bold = "\x1b[1m"
             label_colored = f"{bold}{cyan}{label}{reset}"
-            line = f"{label_colored} {text.strip()}"
+            line = f"{label_colored} {chunk.text.strip()}"
         else:
-            line = f"{label} {text.strip()}"
+            line = f"{label} {chunk.text.strip()}"
 
         self._stream.write(line + "\n")
         self._stream.flush()
-        self._last_time = max(self._last_time, absolute_end)
+        self._last_time = max(self._last_time, chunk.end_time)
 
         # Show stitched result every few chunks
-        if (chunk_index + 1) % 3 == 0:
+        if (chunk.index + 1) % 3 == 0:
             # Clean trailing punctuation from all chunks except the last one
             cleaned_chunks = [
                 self._clean_chunk_text(c.text, is_final_chunk=(i == len(self._chunks) - 1))

@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import websockets
@@ -22,20 +22,9 @@ if TYPE_CHECKING:
     import websockets.asyncio.client
 
 from transcribe_demo import audio_capture as audio_capture_lib
+from transcribe_demo.backend_protocol import ChunkConsumer, TranscriptionChunk
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
-
-
-class ChunkConsumer(Protocol):
-    def __call__(
-        self,
-        *,
-        chunk_index: int,
-        text: str,
-        absolute_start: float,
-        absolute_end: float,
-        inference_seconds: float | None,
-    ) -> None: ...
 
 
 def float_to_pcm16(audio: np.ndarray) -> bytes:
@@ -479,13 +468,15 @@ def run_realtime_transcriber(
                                     chunk_counter[0] += 1
 
                                 if chunk_consumer:
-                                    chunk_consumer(
-                                        chunk_index=current_chunk_index,
+                                    chunk = TranscriptionChunk(
+                                        index=current_chunk_index,
                                         text=final_text,
-                                        absolute_start=chunk_start,
-                                        absolute_end=chunk_end,
+                                        start_time=chunk_start,
+                                        end_time=chunk_end,
                                         inference_seconds=None,  # Signals realtime mode
+                                        is_partial=False,
                                     )
+                                    chunk_consumer(chunk)
                                 else:
                                     label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
                                     print(f"{label} {final_text}", flush=True)
@@ -561,13 +552,15 @@ def run_realtime_transcriber(
                                         chunk_counter[0] += 1
 
                                     if chunk_consumer:
-                                        chunk_consumer(
-                                            chunk_index=current_chunk_index,
+                                        chunk = TranscriptionChunk(
+                                            index=current_chunk_index,
                                             text=final_text,
-                                            absolute_start=chunk_start,
-                                            absolute_end=chunk_end,
+                                            start_time=chunk_start,
+                                            end_time=chunk_end,
                                             inference_seconds=None,  # Signals realtime mode
+                                            is_partial=False,
                                         )
+                                        chunk_consumer(chunk)
                                     else:
                                         label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
                                         if final_text:
