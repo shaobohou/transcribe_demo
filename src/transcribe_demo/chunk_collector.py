@@ -129,21 +129,50 @@ class ChunkCollector:
         if chunk.inference_seconds is not None:
             # Whisper mode: show actual audio duration and inference time
             chunk_audio_duration = chunk.end_time - chunk.start_time
-            print(
-                f"[chunk {chunk.index:03d} | t={chunk.end_time:.2f}s | "
-                f"audio: {chunk_audio_duration:.2f}s | inference: {chunk.inference_seconds:.2f}s] {chunk.text}",
-                file=self._stream,
-                flush=True,
+            timing_suffix = (
+                f" | t={chunk.end_time:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {chunk.inference_seconds:.2f}s"
             )
+            label = f"[chunk {chunk.index:03d}{timing_suffix}]"
         else:
-            # Realtime mode: just show timestamp
-            print(
-                f"[chunk {chunk.index:03d} | {chunk.end_time:.2f}s] {chunk.text}",
-                file=self._stream,
-                flush=True,
-            )
+            # Realtime mode: show absolute timestamp from session start
+            timing_suffix = f" | t={chunk.end_time:.2f}s"
+            label = f"[chunk {chunk.index:03d}{timing_suffix}]"
 
-        self._last_time = chunk.end_time
+        use_color = bool(getattr(self._stream, "isatty", lambda: False)())
+
+        cyan = ""
+        green = ""
+        reset = ""
+        bold = ""
+        if use_color:
+            cyan = "\x1b[36m"
+            green = "\x1b[32m"
+            reset = "\x1b[0m"
+            bold = "\x1b[1m"
+            label_colored = f"{bold}{cyan}{label}{reset}"
+            line = f"{label_colored} {chunk.text.strip()}"
+        else:
+            line = f"{label} {chunk.text.strip()}"
+
+        self._stream.write(line + "\n")
+        self._stream.flush()
+        self._last_time = max(self._last_time, chunk.end_time)
+
+        # Show stitched result every few chunks for progress updates
+        if (chunk.index + 1) % 3 == 0:
+            # Clean trailing punctuation from all chunks except the last one
+            cleaned_chunks = [
+                self._clean_chunk_text(c.text, is_final_chunk=(i == len(self._chunks) - 1))
+                for i, c in enumerate(self._chunks)
+            ]
+            stitched_text = " ".join(chunk for chunk in cleaned_chunks if chunk)
+
+            if use_color:
+                stitched_label = f"\n{bold}{green}[STITCHED]{reset}"
+            else:
+                stitched_label = "\n[STITCHED]"
+            self._stream.write(f"{stitched_label} {stitched_text}\n\n")
+            self._stream.flush()
 
     def get_final_stitched_text(self) -> str:
         """
