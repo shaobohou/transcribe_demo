@@ -136,13 +136,12 @@ def handle_start_transcription(data: dict[str, Any]) -> None:
     temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False, mode="wb")
     temp_path = Path(temp_file.name)
 
-    # Initialize WAV file
-    sample_rate = 16000
+    # Initialize WAV file (sample rate will be set when first chunk arrives)
     channels = 1
     wav_writer = wave.open(temp_file, "wb")
     wav_writer.setnchannels(channels)
     wav_writer.setsampwidth(2)  # 16-bit audio
-    wav_writer.setframerate(sample_rate)
+    # Note: setframerate will be called in handle_audio_chunk when we receive the actual sample rate
 
     # Generate unique transcription ID
     global _transcription_counter
@@ -164,6 +163,8 @@ def handle_start_transcription(data: dict[str, Any]) -> None:
         "partial_transcription": partial_transcription,
         "is_transcribing": False,  # Track if background transcription is active
         "stop_requested": False,  # Flag to signal thread should stop
+        "sample_rate": None,  # Will be set from first audio chunk
+        "sample_rate_set": False,  # Track if we've set the WAV file sample rate
         "lock": threading.Lock(),
     }
 
@@ -186,6 +187,9 @@ def handle_audio_chunk(data: dict[str, Any]) -> None:
     if not audio_data:
         return
 
+    # Get sample rate from client (browser's actual capture rate)
+    client_sample_rate = data.get("sample_rate")
+
     # Handle both binary data (new format) and JSON array (legacy format for backwards compatibility)
     if isinstance(audio_data, bytes):
         audio_bytes = audio_data
@@ -199,6 +203,19 @@ def handle_audio_chunk(data: dict[str, Any]) -> None:
     # Write to WAV file
     with session["lock"]:
         try:
+            # Set sample rate from first chunk if not already set
+            if not session["sample_rate_set"] and client_sample_rate:
+                session["sample_rate"] = int(client_sample_rate)
+                session["wav_writer"].setframerate(session["sample_rate"])
+                session["sample_rate_set"] = True
+                logger.info(f"Session {session_id}: Set WAV sample rate to {session['sample_rate']} Hz")
+            elif not session["sample_rate_set"]:
+                # Fallback to 16kHz if client doesn't send sample rate
+                session["sample_rate"] = 16000
+                session["wav_writer"].setframerate(16000)
+                session["sample_rate_set"] = True
+                logger.warning(f"Session {session_id}: No sample rate from client, defaulting to 16000 Hz")
+
             session["wav_writer"].writeframes(audio_bytes)
         except Exception as e:
             logger.error(f"Error writing audio chunk: {e}")
@@ -229,14 +246,14 @@ def handle_stop_transcription() -> None:
     min_silence_duration = session.get("min_silence_duration", 0.2)
     max_chunk_duration = session.get("max_chunk_duration", 60.0)
     partial_transcription = session.get("partial_transcription", False)
+    sample_rate = session.get("sample_rate", 16000)  # Use actual browser sample rate
+
+    # Mark as transcribing BEFORE starting thread to prevent premature cleanup
+    # (critical: prevents race condition if client disconnects immediately after stopping)
+    session["is_transcribing"] = True
 
     # Start transcription in background thread
     def run_transcription() -> None:
-        # Mark as transcribing to prevent premature cleanup
-        current_session = active_sessions.get(session_id)
-        if current_session and current_session.get("transcription_id") == transcription_id:
-            current_session["is_transcribing"] = True
-
         try:
             # Check if stop was requested before starting
             current_session = active_sessions.get(session_id)
@@ -285,7 +302,7 @@ def handle_stop_transcription() -> None:
                     api_key=api_key,
                     endpoint="wss://api.openai.com/v1/realtime",
                     model=model if model != "base.en" else "gpt-realtime-mini",
-                    sample_rate=16000,
+                    sample_rate=sample_rate,
                     channels=1,
                     chunk_duration=2.0,
                     instructions="Transcribe the audio accurately.",
@@ -334,7 +351,7 @@ def handle_stop_transcription() -> None:
 
                 run_whisper_transcriber(
                     model_name=model,
-                    sample_rate=16000,
+                    sample_rate=sample_rate,
                     channels=1,
                     temp_file=None,
                     ca_cert=None,

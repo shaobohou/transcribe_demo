@@ -480,6 +480,7 @@
         let mediaRecorder = null;
         let audioContext = null;
         let mediaStream = null;
+        let audioWorkletNode = null;
         let isRecording = false;
 
         // Advanced settings toggle
@@ -546,42 +547,43 @@
                     }
                 });
 
-                // Create audio context and media recorder
+                // Create audio context
                 // Note: Browser may not honor the requested sample rate, so capture the actual rate
                 audioContext = new AudioContext({ sampleRate: 16000 });
                 const actualSampleRate = audioContext.sampleRate;
-                const source = audioContext.createMediaStreamSource(mediaStream);
 
                 // Log actual sample rate if different from requested
                 if (actualSampleRate !== 16000) {
                     console.warn(`Browser using ${actualSampleRate}Hz instead of requested 16000Hz`);
                 }
 
-                // Create ScriptProcessor for raw audio data
-                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                // Load AudioWorklet module (modern replacement for deprecated ScriptProcessor)
+                await audioContext.audioWorklet.addModule('/static/audio-processor.js');
 
-                processor.onaudioprocess = (e) => {
+                // Create AudioWorklet node
+                audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-capture-processor');
+
+                // Handle audio data from the worklet
+                audioWorkletNode.port.onmessage = (event) => {
                     if (!isRecording) return;
 
-                    const inputData = e.inputBuffer.getChannelData(0);
-                    // Convert float32 to int16
-                    const int16Data = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        const s = Math.max(-1, Math.min(1, inputData[i]));
-                        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-                    }
-
                     // Send to server as binary data (ArrayBuffer)
+                    // The audio data is already in int16 format from the worklet
                     socket.emit('audio_chunk', {
-                        audio: int16Data.buffer,
+                        audio: event.data.audio,
                         sample_rate: actualSampleRate
                     });
                 };
 
-                source.connect(processor);
-                processor.connect(audioContext.destination);
+                // Connect audio pipeline
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                source.connect(audioWorkletNode);
+                // Note: AudioWorklet doesn't need to connect to destination unless you want playback
 
+                // Start recording in the worklet
                 isRecording = true;
+                audioWorkletNode.port.postMessage({ command: 'start' });
+
                 startBtn.disabled = true;
                 stopBtn.disabled = false;
                 recordingAnimation.classList.add('active');
@@ -601,6 +603,15 @@
         });
 
         function stopRecording() {
+            // Stop recording in the worklet
+            isRecording = false;
+            if (audioWorkletNode) {
+                audioWorkletNode.port.postMessage({ command: 'stop' });
+                audioWorkletNode.disconnect();
+                audioWorkletNode = null;
+            }
+
+            // Close audio context
             if (audioContext) {
                 audioContext.close();
                 audioContext = null;
@@ -612,7 +623,6 @@
                 mediaStream = null;
             }
 
-            isRecording = false;
             socket.emit('stop_transcription');
 
             startBtn.disabled = false;
