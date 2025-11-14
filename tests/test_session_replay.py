@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from transcribe_demo.backend_protocol import TranscriptionChunk
 from transcribe_demo.session_logger import SessionLogger
 from transcribe_demo.session_replay import (
     SessionInfo,
@@ -438,8 +439,8 @@ def test_retranscribe_session_whisper(temp_session_dir: Path, create_test_sessio
         # Call the chunk consumer with some fake chunks
         if "chunk_consumer" in kwargs:
             consumer = kwargs["chunk_consumer"]
-            consumer(0, "Retranscribed chunk 0.", 0.0, 2.5, 0.1)
-            consumer(1, "Retranscribed chunk 1.", 2.5, 5.0, 0.1)
+            consumer(TranscriptionChunk(index=0, text="Retranscribed chunk 0.", start_time=0.0, end_time=2.5, inference_seconds=0.1))
+            consumer(TranscriptionChunk(index=1, text="Retranscribed chunk 1.", start_time=2.5, end_time=5.0, inference_seconds=0.1))
         # Also log chunks if session_logger is provided
         if "session_logger" in kwargs:
             session_logger = kwargs["session_logger"]
@@ -504,8 +505,8 @@ def test_retranscribe_session_realtime(temp_session_dir: Path, create_test_sessi
         # Call the chunk consumer with some fake chunks
         if "chunk_consumer" in kwargs:
             consumer = kwargs["chunk_consumer"]
-            consumer(0, "Realtime chunk 0.", 0.0, 2.0, None)
-            consumer(1, "Realtime chunk 1.", 2.0, 4.0, None)
+            consumer(TranscriptionChunk(index=0, text="Realtime chunk 0.", start_time=0.0, end_time=2.0, inference_seconds=None))
+            consumer(TranscriptionChunk(index=1, text="Realtime chunk 1.", start_time=2.0, end_time=4.0, inference_seconds=None))
         return FakeRealtimeResult(capture_duration=5.0, metadata={"realtime_model": "gpt-realtime-mini"})
 
     monkeypatch.setattr("transcribe_demo.realtime_backend.run_realtime_transcriber", fake_realtime_runner)
@@ -594,7 +595,7 @@ def test_retranscribe_session_preserves_audio(temp_session_dir: Path, create_tes
     def fake_whisper_runner(**kwargs):
         if "chunk_consumer" in kwargs:
             consumer = kwargs["chunk_consumer"]
-            consumer(0, "Test chunk.", 0.0, 3.0, 0.1)
+            consumer(TranscriptionChunk(index=0, text="Test chunk.", start_time=0.0, end_time=3.0, inference_seconds=0.1))
         return FakeWhisperResult(capture_duration=3.0, full_audio_transcription=None, metadata={"model": "turbo"})
 
     monkeypatch.setattr("transcribe_demo.whisper_backend.run_whisper_transcriber", fake_whisper_runner)

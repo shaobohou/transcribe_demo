@@ -17,7 +17,7 @@ from transcribe_demo.realtime_backend import (
     transcribe_full_audio_realtime,
 )
 from transcribe_demo.session_logger import SessionLogger
-from transcribe_demo.whisper_backend import run_whisper_transcriber
+from transcribe_demo.whisper_backend import WhisperTranscriptionResult, run_whisper_transcriber
 
 
 REALTIME_CHUNK_DURATION = 2.0
@@ -633,6 +633,76 @@ def _generate_diff_snippets(
     return snippets
 
 
+def _finalize_transcription_session(
+    collector: ChunkCollectorWithStitching,
+    result: WhisperTranscriptionResult | RealtimeTranscriptionResult | None,
+    session_logger: SessionLogger,
+    compare_transcripts: bool,
+    min_log_duration: float,
+    full_audio_transcription: str | None = None,
+) -> None:
+    """
+    Finalize transcription session with common cleanup logic.
+
+    This function consolidates the finalization logic shared between Whisper
+    and Realtime backends, eliminating code duplication.
+
+    Args:
+        collector: Chunk collector with stitched results
+        result: Transcription result from backend
+        session_logger: Session logger for persistence
+        compare_transcripts: Whether to compare and show diffs
+        min_log_duration: Minimum duration for logging
+        full_audio_transcription: Optional full audio transcription (for Realtime)
+    """
+    # Get final stitched result
+    final = collector.get_final_stitched()
+
+    # Update session logger with cleaned chunk text
+    for chunk_index, cleaned_text in collector.get_cleaned_chunks():
+        session_logger.update_chunk_cleaned_text(chunk_index, cleaned_text)
+
+    # Compute diff if comparison is enabled
+    similarity = None
+    diff_snippets = None
+    comparison_text = full_audio_transcription
+
+    if result is not None:
+        # For Whisper, use result.full_audio_transcription
+        # For Realtime, use the passed full_audio_transcription
+        if isinstance(result, WhisperTranscriptionResult):
+            comparison_text = result.full_audio_transcription
+        elif hasattr(result, "full_audio_transcription") and result.full_audio_transcription:
+            # Support duck-typed results (e.g., test mocks)
+            comparison_text = result.full_audio_transcription
+
+        if comparison_text:
+            similarity, diff_snippets = compute_transcription_diff(final, comparison_text)
+
+    # Finalize session logging
+    if result is not None:
+        session_logger.finalize(
+            capture_duration=result.capture_duration,
+            full_audio_transcription=comparison_text,
+            stitched_transcription=final,
+            extra_metadata=result.metadata,
+            min_duration=min_log_duration,
+            transcription_similarity=similarity,
+            transcription_diffs=diff_snippets,
+        )
+
+    # Print results
+    if compare_transcripts:
+        complete_audio_text = comparison_text or ""
+        print_transcription_summary(sys.stdout, final, complete_audio_text)
+    else:
+        _print_final_stitched(sys.stdout, final)
+
+    # Print captured duration
+    if result is not None:
+        print(f"Total captured audio duration: {result.capture_duration:.2f} seconds", file=sys.stderr)
+
+
 def main(argv: list[str]) -> None:
     # Check for unimplemented features
     if FLAGS.refine_with_context:
@@ -725,51 +795,13 @@ def main(argv: list[str]) -> None:
                 max_partial_buffer_seconds=FLAGS.max_partial_buffer_seconds,
             )
         finally:
-            final = collector.get_final_stitched()
-
-            # Update session logger with cleaned chunk text
-            for chunk_index, cleaned_text in collector.get_cleaned_chunks():
-                session_logger.update_chunk_cleaned_text(chunk_index, cleaned_text)
-
-            # Compute diff if comparison is enabled
-            similarity = None
-            diff_snippets = None
-            if whisper_result is not None and whisper_result.full_audio_transcription:
-                similarity, diff_snippets = compute_transcription_diff(final, whisper_result.full_audio_transcription)
-
-            # Finalize session logging with both transcriptions
-            if whisper_result is not None:
-                session_logger.finalize(
-                    capture_duration=whisper_result.capture_duration,
-                    full_audio_transcription=whisper_result.full_audio_transcription,
-                    stitched_transcription=final,
-                    extra_metadata=whisper_result.metadata,
-                    min_duration=FLAGS.min_log_duration,
-                    transcription_similarity=similarity,
-                    transcription_diffs=diff_snippets,
-                )
-
-            if FLAGS.compare_transcripts:
-                complete_audio_text = ""
-                try:
-                    complete_audio_text = (
-                        whisper_result.full_audio_transcription
-                        if whisper_result and whisper_result.full_audio_transcription
-                        else ""
-                    )
-                except Exception as exc:
-                    print(
-                        f"WARNING: Unable to retrieve full audio transcription: {exc}",
-                        file=sys.stderr,
-                    )
-                print_transcription_summary(sys.stdout, final, complete_audio_text)
-            else:
-                # Just show final stitched result without comparison
-                _print_final_stitched(sys.stdout, final)
-
-            # Print actual captured audio duration
-            if whisper_result is not None:
-                print(f"Total captured audio duration: {whisper_result.capture_duration:.2f} seconds", file=sys.stderr)
+            _finalize_transcription_session(
+                collector=collector,
+                result=whisper_result,
+                session_logger=session_logger,
+                compare_transcripts=FLAGS.compare_transcripts,
+                min_log_duration=FLAGS.min_log_duration,
+            )
         return
 
     api_key = FLAGS.api_key or os.getenv("OPENAI_API_KEY")
@@ -805,62 +837,35 @@ def main(argv: list[str]) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        # Show final stitched result
-        final = collector.get_final_stitched()
+        # Get full audio transcription for comparison if enabled (Realtime-specific)
+        if realtime_result is not None and FLAGS.compare_transcripts and realtime_result.full_audio.size > 0:
+            try:
+                full_audio_transcription = transcribe_full_audio_realtime(
+                    realtime_result.full_audio,
+                    sample_rate=realtime_result.sample_rate,
+                    chunk_duration=REALTIME_CHUNK_DURATION,
+                    api_key=api_key,
+                    endpoint=FLAGS.realtime_endpoint,
+                    model=FLAGS.realtime_model,
+                    instructions=FLAGS.realtime_instructions,
+                    disable_ssl_verify=FLAGS.disable_ssl_verify,
+                    language=language_pref,
+                )
+            except Exception as exc:
+                print(
+                    f"WARNING: Unable to transcribe full audio for comparison: {exc}",
+                    file=sys.stderr,
+                )
 
-        # Update session logger with cleaned chunk text
-        for chunk_index, cleaned_text in collector.get_cleaned_chunks():
-            session_logger.update_chunk_cleaned_text(chunk_index, cleaned_text)
-
-        # Finalize session logging with both transcriptions
-        if realtime_result is not None:
-            # Get full audio transcription for comparison if enabled
-            if FLAGS.compare_transcripts and realtime_result.full_audio.size > 0:
-                try:
-                    full_audio_transcription = transcribe_full_audio_realtime(
-                        realtime_result.full_audio,
-                        sample_rate=realtime_result.sample_rate,
-                        chunk_duration=REALTIME_CHUNK_DURATION,
-                        api_key=api_key,
-                        endpoint=FLAGS.realtime_endpoint,
-                        model=FLAGS.realtime_model,
-                        instructions=FLAGS.realtime_instructions,
-                        disable_ssl_verify=FLAGS.disable_ssl_verify,
-                        language=language_pref,
-                    )
-                except Exception as exc:
-                    print(
-                        f"WARNING: Unable to transcribe full audio for comparison: {exc}",
-                        file=sys.stderr,
-                    )
-
-            # Compute diff if we have full audio transcription
-            similarity = None
-            diff_snippets = None
-            if full_audio_transcription:
-                similarity, diff_snippets = compute_transcription_diff(final, full_audio_transcription)
-
-            session_logger.finalize(
-                capture_duration=realtime_result.capture_duration,
-                full_audio_transcription=full_audio_transcription,
-                stitched_transcription=final,
-                extra_metadata=realtime_result.metadata,
-                min_duration=FLAGS.min_log_duration,
-                transcription_similarity=similarity,
-                transcription_diffs=diff_snippets,
-            )
-
-        if FLAGS.compare_transcripts:
-            # Reuse the full_audio_transcription we already computed above
-            complete_audio_text = full_audio_transcription or ""
-            print_transcription_summary(sys.stdout, final, complete_audio_text)
-        else:
-            # Just show final stitched result without comparison
-            _print_final_stitched(sys.stdout, final)
-
-        # Print actual captured audio duration
-        if realtime_result is not None:
-            print(f"Total captured audio duration: {realtime_result.capture_duration:.2f} seconds", file=sys.stderr)
+        # Use common finalization logic
+        _finalize_transcription_session(
+            collector=collector,
+            result=realtime_result,
+            session_logger=session_logger,
+            compare_transcripts=FLAGS.compare_transcripts,
+            min_log_duration=FLAGS.min_log_duration,
+            full_audio_transcription=full_audio_transcription,
+        )
 
 
 def cli_main() -> None:

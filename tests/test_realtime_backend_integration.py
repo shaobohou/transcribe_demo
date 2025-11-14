@@ -85,9 +85,9 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
 
     monkeypatch.setattr(realtime_backend.websockets, "connect", fake_connect)
 
-    def collect_chunk(chunk_index, text, absolute_start, absolute_end, inference_seconds):
-        if text:
-            chunk_texts.append(text)
+    def collect_chunk(chunk):
+        if chunk.text:
+            chunk_texts.append(chunk.text)
 
     monkeypatch.setattr(
         realtime_backend,
