@@ -59,13 +59,23 @@ def resample_audio(audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarra
 
 @dataclass
 class RealtimeTranscriptionResult:
-    """Aggregate data returned after a realtime transcription session."""
+    """
+    Aggregate data returned after a realtime transcription session.
+
+    Implements backend_protocol.TranscriptionResult protocol.
+    """
 
     full_audio: np.ndarray
     sample_rate: int
     chunks: list[str] | None = None
     capture_duration: float = 0.0
     metadata: dict[str, Any] | None = None
+    full_audio_transcription: str | None = None  # Computed separately via transcribe_full_audio_realtime
+
+    def __post_init__(self) -> None:
+        """Ensure metadata is never None for protocol compatibility."""
+        if self.metadata is None:
+            self.metadata = {}
 
 
 async def _send_json(

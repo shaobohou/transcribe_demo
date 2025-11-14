@@ -35,11 +35,20 @@ class TranscriptionChunk:
 
 @dataclass
 class WhisperTranscriptionResult:
-    """Aggregate result returned after a Whisper transcription session."""
+    """
+    Aggregate result returned after a Whisper transcription session.
+
+    Implements backend_protocol.TranscriptionResult protocol.
+    """
 
     full_audio_transcription: str | None
     capture_duration: float = 0.0
     metadata: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        """Ensure metadata is never None for protocol compatibility."""
+        if self.metadata is None:
+            self.metadata = {}
 
 
 def _mps_available() -> bool:
