@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     import websockets.asyncio.client
 
 from transcribe_demo import audio_capture as audio_capture_lib
+from transcribe_demo.async_utils import run_async
 from transcribe_demo.backend_protocol import ChunkConsumer, TranscriptionChunk
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
@@ -100,17 +101,6 @@ def _create_session_update(
             "silence_duration_ms": vad_silence_duration_ms,
         }
     return {"type": "session.update", "session": session}
-
-
-def _run_async(coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
-    try:
-        return asyncio.run(coro_factory())
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(coro_factory())
-        finally:
-            loop.close()
 
 
 def transcribe_full_audio_realtime(
@@ -250,7 +240,7 @@ def transcribe_full_audio_realtime(
             await ws.close()
         return " ".join(completed).strip()
 
-    return _run_async(_transcribe)
+    return run_async(_transcribe)
 
 
 def run_realtime_transcriber(

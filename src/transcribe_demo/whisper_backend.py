@@ -17,6 +17,7 @@ import webrtcvad
 import whisper
 
 from transcribe_demo import audio_capture as audio_capture_lib
+from transcribe_demo.async_utils import run_async
 from transcribe_demo.backend_protocol import ChunkConsumer, TranscriptionChunk
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
@@ -708,17 +709,7 @@ def run_whisper_transcriber(
             if temp_file is not None and temp_file.exists():
                 temp_file.unlink()
 
-    def run_asyncio_pipeline() -> None:
-        try:
-            asyncio.run(orchestrate())
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(orchestrate())
-            finally:
-                loop.close()
-
-    run_asyncio_pipeline()
+    run_async(orchestrate)
 
     if transcriber_error:
         raise RuntimeError(f"Transcription worker error: {transcriber_error[0]}") from transcriber_error[0]

@@ -3,7 +3,7 @@ import json
 
 import numpy as np
 
-from transcribe_demo import realtime_backend
+from transcribe_demo import async_utils, realtime_backend
 
 
 def test_float_to_pcm16_clips_and_scales():
@@ -25,7 +25,7 @@ def test_resample_audio_adjusts_length():
 
 
 def test_run_async_falls_back_to_manual_loop(monkeypatch):
-    original_new_loop = realtime_backend.asyncio.new_event_loop
+    original_new_loop = async_utils.asyncio.new_event_loop
 
     async def coro():
         await asyncio.sleep(0)
@@ -42,10 +42,10 @@ def test_run_async_falls_back_to_manual_loop(monkeypatch):
         loop_holder["loop"] = loop
         return loop
 
-    monkeypatch.setattr(realtime_backend.asyncio, "run", failing_run)
-    monkeypatch.setattr(realtime_backend.asyncio, "new_event_loop", new_loop_wrapper)
+    monkeypatch.setattr(async_utils.asyncio, "run", failing_run)
+    monkeypatch.setattr(async_utils.asyncio, "new_event_loop", new_loop_wrapper)
 
-    result = realtime_backend._run_async(lambda: coro())
+    result = async_utils.run_async(lambda: coro())
     assert result == "ok"
     assert "loop" in loop_holder
 
