@@ -13,14 +13,15 @@ from typing import TextIO
 from absl import app
 from absl import flags
 
-from transcribe_demo.backend_protocol import TranscriptionChunk
+from transcribe_demo.backend_protocol import AudioSource, TranscriptionChunk
 from transcribe_demo.realtime_backend import (
+    RealtimeBackend,
     RealtimeTranscriptionResult,
     run_realtime_transcriber,
     transcribe_full_audio_realtime,
 )
 from transcribe_demo.session_logger import SessionLogger
-from transcribe_demo.whisper_backend import WhisperTranscriptionResult, run_whisper_transcriber
+from transcribe_demo.whisper_backend import WhisperBackend, WhisperTranscriptionResult, run_whisper_transcriber
 
 
 REALTIME_CHUNK_DURATION = 2.0
@@ -707,38 +708,8 @@ def _finalize_transcription_session(
 
 
 def transcribe(
-    backend: str,
-    model_name: str | None,
-    sample_rate: int,
-    channels: int,
-    temp_file: Path | None,
-    ca_cert: Path | None,
-    disable_ssl_verify: bool,
-    device_preference: str | None,
-    require_gpu: bool,
-    vad_aggressiveness: int,
-    vad_min_silence_duration: float,
-    vad_min_speech_duration: float,
-    vad_speech_pad_duration: float,
-    max_chunk_duration: float,
-    compare_transcripts: bool,
-    max_capture_duration: float,
-    language: str,
-    session_logger: SessionLogger | None,
-    min_log_duration: float,
-    audio_file: str | None,
-    playback_speed: float,
-    enable_partial_transcription: bool,
-    partial_model: str,
-    partial_interval: float,
-    max_partial_buffer_seconds: float,
-    api_key: str | None,
-    realtime_endpoint: str,
-    realtime_model: str,
-    realtime_instructions: str,
-    realtime_vad_threshold: float,
-    realtime_vad_silence_duration_ms: int,
-    realtime_debug: bool,
+    backend: WhisperBackend | RealtimeBackend,
+    audio_source: AudioSource,
 ) -> Generator[TranscriptionChunk, None, WhisperTranscriptionResult | RealtimeTranscriptionResult]:
     """
     Generator that yields transcription chunks from the specified backend.
@@ -749,14 +720,21 @@ def transcribe(
     3. Returning the final transcription result
 
     Args:
-        backend: Backend to use ("whisper" or "realtime")
-        (see FLAGS definitions for other parameters)
+        backend: Configured backend instance (WhisperBackend or RealtimeBackend)
+        audio_source: Configured audio source (FileAudioSource or AudioCaptureManager)
 
     Yields:
         TranscriptionChunk: Individual transcription chunks with metadata
 
     Returns:
         Final transcription result (WhisperTranscriptionResult or RealtimeTranscriptionResult)
+
+    Example:
+        backend = WhisperBackend(model_name="turbo", language="en")
+        audio_source = FileAudioSource("audio.mp3", sample_rate=16000)
+
+        for chunk in transcribe(backend, audio_source):
+            print(chunk.text)
     """
     chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
     result_container: list[WhisperTranscriptionResult | RealtimeTranscriptionResult] = []
@@ -765,61 +743,7 @@ def transcribe(
     def backend_worker() -> None:
         """Worker thread that runs the backend and puts chunks in the queue."""
         try:
-            if backend == "whisper":
-                result = run_whisper_transcriber(
-                    model_name=model_name or "turbo",
-                    sample_rate=sample_rate,
-                    channels=channels,
-                    temp_file=temp_file,
-                    ca_cert=ca_cert,
-                    disable_ssl_verify=disable_ssl_verify,
-                    device_preference=device_preference or "auto",
-                    require_gpu=require_gpu,
-                    chunk_queue=chunk_queue,
-                    vad_aggressiveness=vad_aggressiveness,
-                    vad_min_silence_duration=vad_min_silence_duration,
-                    vad_min_speech_duration=vad_min_speech_duration,
-                    vad_speech_pad_duration=vad_speech_pad_duration,
-                    max_chunk_duration=max_chunk_duration,
-                    compare_transcripts=compare_transcripts,
-                    max_capture_duration=max_capture_duration,
-                    language=language,
-                    session_logger=session_logger,
-                    min_log_duration=min_log_duration,
-                    audio_file=audio_file,
-                    playback_speed=playback_speed,
-                    enable_partial_transcription=enable_partial_transcription,
-                    partial_model=partial_model,
-                    partial_interval=partial_interval,
-                    max_partial_buffer_seconds=max_partial_buffer_seconds,
-                )
-            else:  # realtime
-                if api_key is None:
-                    raise RuntimeError(
-                        "OpenAI API key required for realtime transcription. "
-                        "Provide --api-key or set OPENAI_API_KEY."
-                    )
-                result = run_realtime_transcriber(
-                    api_key=api_key,
-                    endpoint=realtime_endpoint,
-                    model=realtime_model,
-                    sample_rate=sample_rate,
-                    channels=channels,
-                    chunk_duration=REALTIME_CHUNK_DURATION,
-                    instructions=realtime_instructions,
-                    disable_ssl_verify=disable_ssl_verify,
-                    chunk_queue=chunk_queue,
-                    compare_transcripts=compare_transcripts,
-                    max_capture_duration=max_capture_duration,
-                    language=language,
-                    session_logger=session_logger,
-                    min_log_duration=min_log_duration,
-                    audio_file=audio_file,
-                    playback_speed=playback_speed,
-                    vad_threshold=realtime_vad_threshold,
-                    vad_silence_duration_ms=realtime_vad_silence_duration_ms,
-                    debug=realtime_debug,
-                )
+            result = backend.run(audio_source, chunk_queue)
             result_container.append(result)
         except BaseException as e:
             error_container.append(e)

@@ -669,3 +669,85 @@ def run_realtime_transcriber(
             "language": language_value or "auto",
         },
     )
+
+
+@dataclass
+class RealtimeBackend:
+    """
+    Realtime API transcription backend.
+
+    This class encapsulates all Realtime API-specific configuration and provides
+    a clean interface for running transcription.
+    """
+
+    # API configuration
+    api_key: str
+    endpoint: str = "wss://api.openai.com/v1/realtime"
+    model: str = "gpt-realtime-mini"
+    instructions: str = (
+        "You are a high-accuracy transcription service. "
+        "Return a concise verbatim transcript of the most recent audio buffer. "
+        "Do not add commentary or speaker labels."
+    )
+
+    # VAD configuration
+    vad_threshold: float = 0.3
+    vad_silence_duration_ms: int = 200
+    debug: bool = False
+
+    # Session configuration
+    language: str = "en"
+    compare_transcripts: bool = True
+    session_logger: SessionLogger | None = None
+    min_log_duration: float = 0.0
+
+    # SSL configuration
+    disable_ssl_verify: bool = False
+
+    def run(
+        self,
+        audio_source: Any,  # AudioSource protocol
+        chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
+    ) -> RealtimeTranscriptionResult:
+        """
+        Run Realtime API transcription on the given audio source.
+
+        Args:
+            audio_source: Audio source (FileAudioSource or AudioCaptureManager)
+            chunk_queue: Optional queue to put transcription chunks into
+
+        Returns:
+            RealtimeTranscriptionResult with metadata and full audio
+        """
+        # Extract audio source parameters
+        sample_rate = audio_source.sample_rate if hasattr(audio_source, "sample_rate") else 16000
+        channels = audio_source.channels if hasattr(audio_source, "channels") else 1
+        max_capture_duration = (
+            audio_source.max_capture_duration
+            if hasattr(audio_source, "max_capture_duration")
+            else 120.0
+        )
+        playback_speed = audio_source.playback_speed if hasattr(audio_source, "playback_speed") else 1.0
+        audio_file = audio_source.audio_file if hasattr(audio_source, "audio_file") else None
+
+        return run_realtime_transcriber(
+            api_key=self.api_key,
+            endpoint=self.endpoint,
+            model=self.model,
+            sample_rate=sample_rate,
+            channels=channels,
+            chunk_duration=2.0,  # Fixed for realtime API
+            instructions=self.instructions,
+            disable_ssl_verify=self.disable_ssl_verify,
+            chunk_queue=chunk_queue,
+            compare_transcripts=self.compare_transcripts,
+            max_capture_duration=max_capture_duration,
+            language=self.language,
+            session_logger=self.session_logger,
+            min_log_duration=self.min_log_duration,
+            audio_file=audio_file,
+            playback_speed=playback_speed,
+            vad_threshold=self.vad_threshold,
+            vad_silence_duration_ms=self.vad_silence_duration_ms,
+            debug=self.debug,
+        )

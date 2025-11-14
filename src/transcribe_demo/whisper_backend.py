@@ -818,3 +818,96 @@ def transcribe_full_audio(
         language=normalized_language,
     )
     return _extract_whisper_text(result)
+
+
+@dataclass
+class WhisperBackend:
+    """
+    Whisper transcription backend.
+
+    This class encapsulates all Whisper-specific configuration and provides
+    a clean interface for running transcription.
+    """
+
+    # Model configuration
+    model_name: str = "turbo"
+    device_preference: str = "auto"
+    require_gpu: bool = False
+
+    # VAD configuration
+    vad_aggressiveness: int = 2
+    vad_min_silence_duration: float = 0.2
+    vad_min_speech_duration: float = 0.25
+    vad_speech_pad_duration: float = 0.2
+    max_chunk_duration: float = 60.0
+
+    # Partial transcription configuration
+    enable_partial_transcription: bool = False
+    partial_model: str = "base.en"
+    partial_interval: float = 1.0
+    max_partial_buffer_seconds: float = 10.0
+
+    # Session configuration
+    language: str = "en"
+    compare_transcripts: bool = True
+    session_logger: SessionLogger | None = None
+    min_log_duration: float = 0.0
+
+    # SSL configuration
+    ca_cert: Path | None = None
+    disable_ssl_verify: bool = False
+    temp_file: Path | None = None
+
+    def run(
+        self,
+        audio_source: Any,  # AudioSource protocol
+        chunk_queue: queue.Queue[TranscriptionChunk | None],
+    ) -> WhisperTranscriptionResult:
+        """
+        Run Whisper transcription on the given audio source.
+
+        Args:
+            audio_source: Audio source (FileAudioSource or AudioCaptureManager)
+            chunk_queue: Queue to put transcription chunks into
+
+        Returns:
+            WhisperTranscriptionResult with metadata and full audio transcription
+        """
+        # Extract audio source parameters
+        sample_rate = audio_source.sample_rate if hasattr(audio_source, "sample_rate") else 16000
+        channels = audio_source.channels if hasattr(audio_source, "channels") else 1
+        max_capture_duration = (
+            audio_source.max_capture_duration
+            if hasattr(audio_source, "max_capture_duration")
+            else 120.0
+        )
+        playback_speed = audio_source.playback_speed if hasattr(audio_source, "playback_speed") else 1.0
+        audio_file = audio_source.audio_file if hasattr(audio_source, "audio_file") else None
+
+        return run_whisper_transcriber(
+            model_name=self.model_name,
+            sample_rate=sample_rate,
+            channels=channels,
+            temp_file=self.temp_file,
+            ca_cert=self.ca_cert,
+            disable_ssl_verify=self.disable_ssl_verify,
+            device_preference=self.device_preference,
+            require_gpu=self.require_gpu,
+            chunk_queue=chunk_queue,
+            vad_aggressiveness=self.vad_aggressiveness,
+            vad_min_silence_duration=self.vad_min_silence_duration,
+            vad_min_speech_duration=self.vad_min_speech_duration,
+            vad_speech_pad_duration=self.vad_speech_pad_duration,
+            max_chunk_duration=self.max_chunk_duration,
+            compare_transcripts=self.compare_transcripts,
+            max_capture_duration=max_capture_duration,
+            language=self.language,
+            session_logger=self.session_logger,
+            min_log_duration=self.min_log_duration,
+            audio_file=audio_file,
+            playback_speed=playback_speed,
+            enable_partial_transcription=self.enable_partial_transcription,
+            partial_model=self.partial_model,
+            partial_interval=self.partial_interval,
+            max_partial_buffer_seconds=self.max_partial_buffer_seconds,
+        )
