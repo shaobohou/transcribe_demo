@@ -46,7 +46,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --help        Show this help message"
             echo ""
             echo "Environment variables:"
-            echo "  ANTHROPIC_API_KEY    Required for Realtime backend"
+            echo "  OPENAI_API_KEY       Required for Realtime backend"
             exit 0
             ;;
         *)

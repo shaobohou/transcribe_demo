@@ -35,7 +35,7 @@ A tasteful web interface for real-time audio transcription, mimicking the functi
 
 ### Dual Backend Support
 - **Whisper**: Local processing (CPU/GPU)
-- **Realtime**: Cloud-based via Anthropic API (requires `OPENAI_API_KEY`)
+- **Realtime**: Cloud-based via OpenAI Realtime API (requires `OPENAI_API_KEY`)
 
 ### Modern Interface
 - Clean, responsive dark mode design
