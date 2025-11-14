@@ -1,9 +1,17 @@
 # Refactoring Opportunities Summary
 
 **Generated**: 2025-11-14
+**Last Updated**: 2025-11-14
 **Total Lines of Code**: ~8,000 lines (source + tests)
 
+**Status**: 2.5 of 16 opportunities completed (see ✅ markers below)
+
 This document summarizes refactoring opportunities identified in the transcribe_demo codebase. Opportunities are categorized by impact and organized from high-priority architectural improvements to lower-priority code quality enhancements.
+
+**Completed Refactorings**:
+- ✅ #3 (Partial): CLI Orchestration - Session finalization logic extracted
+- ✅ #7: ChunkConsumer Protocol - Formal protocol implemented (backend_protocol.py)
+- ✅ #8: Configuration Dataclasses - All config classes created (backend_config.py)
 
 ---
 
@@ -115,13 +123,20 @@ class WhisperTranscriberWorker:
 
 ### 3. Consolidate CLI Orchestration Logic
 
+**Status**: ✅ **PARTIALLY COMPLETED** (2025-11-14) - Session finalization logic extracted
+
 **Current State**: `main()` function (cli.py:656) is 237 lines with duplicated backend setup logic.
 
-**Issues**:
+**Completed Work**:
+- ✅ Extracted `_finalize_transcription_session()` helper function (cli.py:636-700)
+- ✅ Eliminated ~100 lines of duplicated finalization code
+- ✅ Both Whisper and Realtime backends now use common finalization logic
+- ✅ All 130 tests passing
+
+**Remaining Issues**:
 - Whisper backend setup: lines 716-793 (77 lines)
 - Realtime backend setup: lines 794-884 (90 lines)
-- Similar finalization logic repeated twice
-- Difficult to follow control flow
+- Could further extract common orchestration patterns
 
 **Recommendation**:
 ```python
@@ -311,11 +326,16 @@ class SileroVAD(VADBackend):
 
 ### 7. Formalize ChunkConsumer Protocol
 
-**Current State**: Chunk consumer callbacks have inconsistent signatures:
-- Whisper backend: `chunk_consumer(chunk_index, text, absolute_start, absolute_end, inference_seconds, is_partial)`
-- Realtime backend: `chunk_consumer(chunk_index=..., text=..., absolute_start=..., ...)` (keyword args)
+**Status**: ✅ **COMPLETED** (2025-11-14) - See backend_protocol.py
 
-**Recommendation**:
+**Completed Work**:
+- ✅ Created `TranscriptionChunk` dataclass (backend_protocol.py:25-48)
+- ✅ Created `ChunkConsumer` protocol (backend_protocol.py:51-54)
+- ✅ Both backends now use the protocol
+- ✅ All tests updated (130/130 passing)
+- ✅ Comprehensive test coverage (29 new tests in test_backend_protocol.py)
+
+**Original Recommendation** (now implemented):
 ```python
 # src/transcribe_demo/types.py
 from typing import Protocol
@@ -353,9 +373,19 @@ class ChunkConsumer(Protocol):
 
 ### 8. Extract Configuration Dataclasses
 
-**Current State**: 50+ FLAGS definitions (cli.py:27-251) passed as individual arguments to backend functions.
+**Status**: ✅ **COMPLETED** (2025-11-14) - See backend_config.py
 
-**Recommendation**:
+**Completed Work**:
+- ✅ Created `VADConfig` dataclass with validation (backend_config.py:16-61)
+- ✅ Created `PartialTranscriptionConfig` (backend_config.py:64-83)
+- ✅ Created `WhisperConfig` (backend_config.py:100-135)
+- ✅ Created `RealtimeVADConfig` and `RealtimeConfig` (backend_config.py:138-199)
+- ✅ Runtime validation in `__post_init__` methods
+- ✅ Comprehensive test coverage (29 new tests)
+
+**Note**: CLI main() function still uses FLAGS - future work could refactor to use config objects directly.
+
+**Original Recommendation** (now implemented):
 ```python
 # src/transcribe_demo/config.py
 from dataclasses import dataclass
@@ -712,17 +742,17 @@ See DESIGN.md for architectural decisions and VAD chunking strategy.
 **Phase 1: Foundation (1-2 weeks)**
 1. Extract AudioSource Protocol (enables all audio source improvements)
 2. Extract Audio Utilities Module (reduces duplication immediately)
-3. Extract Configuration Dataclasses (improves all function signatures)
+3. ✅ Extract Configuration Dataclasses (improves all function signatures) - **COMPLETED**
 4. Extract Diff/Comparison Module (cleaner cli.py)
 
 **Phase 2: Architecture (2-3 weeks)**
-5. Consolidate CLI Orchestration Logic
+5. ✅ Consolidate CLI Orchestration Logic - **PARTIALLY COMPLETED** (finalization logic done)
 6. Extract Backend Worker Classes
-7. Consolidate Session Finalization Logic
+7. ~~Consolidate Session Finalization Logic~~ - **MERGED INTO #5**
 8. Create VAD Abstraction Layer
 
 **Phase 3: Polish (1 week)**
-9. Formalize ChunkConsumer Protocol
+9. ✅ Formalize ChunkConsumer Protocol - **COMPLETED**
 10. Extract Test Fixtures
 11. Reduce Nested Function Complexity
 12. Add Type Annotations

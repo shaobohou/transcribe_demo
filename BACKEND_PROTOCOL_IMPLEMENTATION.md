@@ -60,12 +60,18 @@ Updated both backends to use the new protocol:
 
 ### 4. CLI Refactoring (`cli.py`)
 
-Updated CLI to use the new chunk consumer interface:
+Updated CLI to use the new chunk consumer interface and eliminate code duplication:
 
 **ChunkCollectorWithStitching:**
 - `__call__` now accepts `TranscriptionChunk` instead of 6 positional arguments
 - Implements `ChunkConsumer` protocol explicitly
 - Cleaner, more maintainable code
+
+**Session Finalization Consolidation:**
+- Extracted `_finalize_transcription_session()` helper function (cli.py:636-700)
+- Eliminated ~100 lines of duplicated finalization code
+- Both Whisper and Realtime backends now use common finalization logic
+- Handles diff computation, session logging, and result printing in one place
 
 ### 5. Result Types Updated
 
@@ -106,18 +112,27 @@ Created comprehensive test suite (`test_backend_protocol.py`) with **29 tests**:
 
 ### Lines Changed
 
-- **Added**: 818 lines (3 new files)
-- **Removed**: 95 lines (duplicate code, old interfaces)
-- **Net**: +723 lines (includes tests and documentation)
+- **Added**: 883 lines (3 new files + finalization helper)
+- **Removed**: 195 lines (duplicate code, old interfaces)
+- **Net**: +688 lines (includes tests and documentation)
 
 ### Files Modified
 
+**Initial Backend Protocol Implementation:**
 1. `src/transcribe_demo/backend_protocol.py` (new, 188 lines)
 2. `src/transcribe_demo/backend_config.py` (new, 200 lines)
 3. `tests/test_backend_protocol.py` (new, 430 lines)
 4. `src/transcribe_demo/cli.py` (modified, -50 lines)
 5. `src/transcribe_demo/whisper_backend.py` (modified, -30 lines)
 6. `src/transcribe_demo/realtime_backend.py` (modified, -15 lines)
+
+**CLI Finalization Consolidation (2025-11-14):**
+7. `src/transcribe_demo/cli.py` (modified, +65 lines helper, -100 lines duplication)
+8. `tests/test_backend_time_limits.py` (modified, updated chunk consumers)
+9. `tests/test_realtime_backend_integration.py` (modified, updated chunk consumers)
+10. `tests/test_whisper_backend_integration.py` (modified, updated chunk consumers)
+11. `tests/test_main_utils.py` (modified, updated chunk consumers)
+12. `tests/test_session_replay.py` (modified, updated chunk consumers)
 
 ## Migration Guide
 
@@ -165,11 +180,16 @@ new_consumer = adapt_legacy_consumer(old_consumer)
 
 ## Future Work
 
-### Immediate Next Steps (Not Implemented)
+### Completed Since Initial Implementation
+
+1. ✅ **Consolidate orchestration logic** - Extracted common finalization code (2025-11-14)
+   - `_finalize_transcription_session()` helper function eliminates ~100 lines of duplication
+   - Handles diff computation, session logging, and result printing
+
+### Immediate Next Steps (Not Yet Implemented)
 
 1. **Refactor CLI main() to use Config objects** - Replace FLAGS with WhisperConfig/RealtimeConfig
-2. **Consolidate orchestration logic** - Extract common finalization code
-3. **Implement TranscriptionBackend protocol** - Make backends conformant classes
+2. **Implement TranscriptionBackend protocol** - Make backends conformant classes
 
 ### Longer Term (From REFACTORING_OPPORTUNITIES.md)
 
@@ -187,10 +207,11 @@ new_consumer = adapt_legacy_consumer(old_consumer)
 - ✅ Compile-time detection of interface mismatches
 
 ### Code Quality
-- ✅ Eliminated 95 lines of duplicate code
+- ✅ Eliminated 195 lines of duplicate code (95 initial + 100 finalization)
 - ✅ Single source of truth for chunk data structure
 - ✅ Self-documenting interfaces via protocols
 - ✅ Configuration validation catches errors early
+- ✅ DRY principle applied to session finalization (cli.py:636-700)
 
 ### Maintainability
 - ✅ Easier to add new backends (just implement protocol)
@@ -221,6 +242,12 @@ new_consumer = adapt_legacy_consumer(old_consumer)
 
 This refactoring successfully establishes a formal, type-safe interface for transcription backends while maintaining 100% test coverage (130/130 tests passing). The new protocol-based design eliminates code duplication, improves type safety, and provides a solid foundation for future refactorings.
 
-**Status**: ✅ Complete and tested
-**Impact**: High (foundation for future improvements)
+**Recent Updates (2025-11-14):**
+- CLI finalization consolidation completes the backend protocol refactoring
+- ~100 additional lines of duplicate code eliminated
+- Consistent finalization logic across Whisper and Realtime backends
+- All session logging, diff computation, and result printing centralized
+
+**Status**: ✅ Complete and tested (with CLI consolidation)
+**Impact**: High (foundation for future improvements + immediate code quality gains)
 **Risk**: Low (all tests pass, no breaking changes to user-facing CLI)
