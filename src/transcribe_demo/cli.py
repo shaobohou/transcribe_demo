@@ -742,7 +742,8 @@ def main(argv: list[str]) -> None:
         if (
             FLAGS.backend == "realtime"
             and result is not None
-            and isinstance(result, RealtimeTranscriptionResult)
+            and hasattr(result, "full_audio")
+            and hasattr(result, "sample_rate")
             and FLAGS.compare_transcripts
             and result.full_audio.size > 0
         ):
