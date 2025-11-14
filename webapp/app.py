@@ -62,10 +62,21 @@ if not flask_secret:
 app.config["SECRET_KEY"] = flask_secret
 
 # CORS configuration
-# WARNING: Default allows all origins (*) - INSECURE FOR PRODUCTION
-# Set CORS_ALLOWED_ORIGINS environment variable to restrict origins in production
+# Default: Allow only same-origin requests (secure by default)
+# Set CORS_ALLOWED_ORIGINS environment variable to allow specific origins in production
 # Example: export CORS_ALLOWED_ORIGINS="https://yourdomain.com,https://app.yourdomain.com"
-cors_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "*")
+# Use CORS_ALLOWED_ORIGINS="*" only for development (insecure)
+cors_origins_env = os.environ.get("CORS_ALLOWED_ORIGINS")
+if cors_origins_env:
+    cors_origins = cors_origins_env
+    if cors_origins == "*":
+        print(
+            "WARNING: CORS set to allow all origins (*). This is insecure for production.",
+            file=sys.stderr,
+        )
+else:
+    # Default: same-origin only (most secure)
+    cors_origins = []
 socketio = SocketIO(app, cors_allowed_origins=cors_origins, max_http_buffer_size=10 * 1024 * 1024)
 
 # Configure logging
@@ -170,16 +181,20 @@ def handle_audio_chunk(data: dict[str, Any]) -> None:
 
     session = active_sessions[session_id]
 
-    # Get audio data (list of int16 samples)
+    # Get audio data (binary ArrayBuffer from browser)
     audio_data = data.get("audio")
     if not audio_data:
         return
 
-    # Convert from list to bytes
-    if isinstance(audio_data, list):
+    # Handle both binary data (new format) and JSON array (legacy format for backwards compatibility)
+    if isinstance(audio_data, bytes):
+        audio_bytes = audio_data
+    elif isinstance(audio_data, list):
+        # Legacy format: convert from list to bytes
         audio_bytes = np.array(audio_data, dtype=np.int16).tobytes()
     else:
-        audio_bytes = audio_data
+        logger.warning(f"Unexpected audio data type: {type(audio_data)}")
+        return
 
     # Write to WAV file
     with session["lock"]:
@@ -223,6 +238,11 @@ def handle_stop_transcription() -> None:
             current_session["is_transcribing"] = True
 
         try:
+            # Check if stop was requested before starting
+            current_session = active_sessions.get(session_id)
+            if not current_session or current_session.get("stop_requested"):
+                return
+
             socketio.emit("transcription_status", {"message": "Processing audio..."}, to=session_id)
 
             # Run appropriate backend
@@ -237,6 +257,13 @@ def handle_stop_transcription() -> None:
                     inference_seconds: float | None,
                 ) -> None:
                     """Send transcription chunks to client."""
+                    # Check if this is still the active transcription and stop wasn't requested
+                    current_session = active_sessions.get(session_id)
+                    if not current_session or current_session.get("transcription_id") != transcription_id:
+                        return
+                    if current_session.get("stop_requested"):
+                        return
+
                     socketio.emit(
                         "transcription_chunk",
                         {
@@ -286,6 +313,13 @@ def handle_stop_transcription() -> None:
                     is_final: bool,
                 ) -> None:
                     """Send transcription chunks to client."""
+                    # Check if this is still the active transcription and stop wasn't requested
+                    current_session = active_sessions.get(session_id)
+                    if not current_session or current_session.get("transcription_id") != transcription_id:
+                        return
+                    if current_session.get("stop_requested"):
+                        return
+
                     socketio.emit(
                         "transcription_chunk",
                         {

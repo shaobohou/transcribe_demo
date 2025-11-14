@@ -479,6 +479,7 @@
         // Audio recording
         let mediaRecorder = null;
         let audioContext = null;
+        let mediaStream = null;
         let isRecording = false;
 
         // Advanced settings toggle
@@ -536,7 +537,7 @@
                 socket.emit('start_transcription', config);
 
                 // Request microphone access
-                const stream = await navigator.mediaDevices.getUserMedia({
+                mediaStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         channelCount: 1,
                         sampleRate: 16000,
@@ -546,8 +547,15 @@
                 });
 
                 // Create audio context and media recorder
+                // Note: Browser may not honor the requested sample rate, so capture the actual rate
                 audioContext = new AudioContext({ sampleRate: 16000 });
-                const source = audioContext.createMediaStreamSource(stream);
+                const actualSampleRate = audioContext.sampleRate;
+                const source = audioContext.createMediaStreamSource(mediaStream);
+
+                // Log actual sample rate if different from requested
+                if (actualSampleRate !== 16000) {
+                    console.warn(`Browser using ${actualSampleRate}Hz instead of requested 16000Hz`);
+                }
 
                 // Create ScriptProcessor for raw audio data
                 const processor = audioContext.createScriptProcessor(4096, 1, 1);
@@ -563,8 +571,11 @@
                         int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
                     }
 
-                    // Send to server
-                    socket.emit('audio_chunk', { audio: Array.from(int16Data) });
+                    // Send to server as binary data (ArrayBuffer)
+                    socket.emit('audio_chunk', {
+                        audio: int16Data.buffer,
+                        sample_rate: actualSampleRate
+                    });
                 };
 
                 source.connect(processor);
@@ -593,6 +604,12 @@
             if (audioContext) {
                 audioContext.close();
                 audioContext = null;
+            }
+
+            // Stop all MediaStream tracks to release microphone
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
             }
 
             isRecording = false;
