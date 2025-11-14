@@ -167,3 +167,19 @@ class ChunkCollector:
     def get_chunks(self) -> list[TranscriptionChunk]:
         """Get all collected chunks."""
         return self._chunks.copy()
+
+    def get_cleaned_chunks(self) -> list[tuple[int, str]]:
+        """
+        Get cleaned text for each chunk.
+
+        Returns:
+            List of (chunk_index, cleaned_text) tuples
+        """
+        cleaned_chunks = [
+            (
+                chunk.index,
+                self._clean_chunk_text(chunk.text, is_final_chunk=(i == len(self._chunks) - 1)),
+            )
+            for i, chunk in enumerate(self._chunks)
+        ]
+        return cleaned_chunks
