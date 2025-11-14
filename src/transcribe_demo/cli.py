@@ -14,7 +14,12 @@ from absl import app
 from absl import flags
 
 from transcribe_demo.audio_capture import AudioCaptureManager
-from transcribe_demo.backend_protocol import AudioSource, TranscriptionChunk
+from transcribe_demo.backend_protocol import (
+    AudioSource,
+    TranscriptionBackend,
+    TranscriptionChunk,
+    TranscriptionResult,
+)
 from transcribe_demo.chunk_collector import ChunkCollector
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.realtime_backend import (
@@ -452,8 +457,8 @@ def _generate_diff_snippets(
 
 
 def _finalize_transcription_session(
-    collector: ChunkCollectorWithStitching,
-    result: WhisperTranscriptionResult | RealtimeTranscriptionResult | None,
+    collector: ChunkCollector,
+    result: TranscriptionResult | None,
     session_logger: SessionLogger,
     compare_transcripts: bool,
     min_log_duration: float,
@@ -467,7 +472,7 @@ def _finalize_transcription_session(
 
     Args:
         collector: Chunk collector with stitched results
-        result: Transcription result from backend
+        result: Transcription result from backend (TranscriptionResult protocol)
         session_logger: Session logger for persistence
         compare_transcripts: Whether to compare and show diffs
         min_log_duration: Minimum duration for logging
@@ -488,10 +493,8 @@ def _finalize_transcription_session(
     if result is not None:
         # For Whisper, use result.full_audio_transcription
         # For Realtime, use the passed full_audio_transcription
-        if isinstance(result, WhisperTranscriptionResult):
-            comparison_text = result.full_audio_transcription
-        elif hasattr(result, "full_audio_transcription") and result.full_audio_transcription:
-            # Support duck-typed results (e.g., test mocks)
+        # The protocol guarantees this property exists
+        if result.full_audio_transcription and not comparison_text:
             comparison_text = result.full_audio_transcription
 
         if comparison_text:
@@ -522,9 +525,9 @@ def _finalize_transcription_session(
 
 
 def transcribe(
-    backend: WhisperBackend | RealtimeBackend,
+    backend: TranscriptionBackend,
     audio_source: AudioSource,
-) -> Generator[TranscriptionChunk, None, WhisperTranscriptionResult | RealtimeTranscriptionResult]:
+) -> Generator[TranscriptionChunk, None, TranscriptionResult]:
     """
     Generator that yields transcription chunks from the specified backend.
 
@@ -534,14 +537,14 @@ def transcribe(
     3. Returning the final transcription result
 
     Args:
-        backend: Configured backend instance (WhisperBackend or RealtimeBackend)
-        audio_source: Configured audio source (FileAudioSource or AudioCaptureManager)
+        backend: Transcription backend implementing TranscriptionBackend protocol
+        audio_source: Audio source implementing AudioSource protocol
 
     Yields:
         TranscriptionChunk: Individual transcription chunks with metadata
 
     Returns:
-        Final transcription result (WhisperTranscriptionResult or RealtimeTranscriptionResult)
+        TranscriptionResult: Final transcription result from the backend
 
     Example:
         backend = WhisperBackend(model_name="turbo", language="en")
@@ -551,7 +554,7 @@ def transcribe(
             print(chunk.text)
     """
     chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
-    result_container: list[WhisperTranscriptionResult | RealtimeTranscriptionResult] = []
+    result_container: list[TranscriptionResult] = []
     error_container: list[BaseException] = []
 
     def backend_worker() -> None:
@@ -673,7 +676,7 @@ def main(argv: list[str]) -> None:
 
     # Create backend
     if FLAGS.backend == "whisper":
-        backend: WhisperBackend | RealtimeBackend = WhisperBackend(
+        backend: TranscriptionBackend = WhisperBackend(
             model_name=FLAGS.model or "turbo",
             device_preference=FLAGS.device or "auto",
             require_gpu=FLAGS.require_gpu,
@@ -716,7 +719,7 @@ def main(argv: list[str]) -> None:
         )
 
     # Run transcription using the generator
-    result: WhisperTranscriptionResult | RealtimeTranscriptionResult | None = None
+    result: TranscriptionResult | None = None
     full_audio_transcription: str | None = None
     try:
         # Create transcription generator
