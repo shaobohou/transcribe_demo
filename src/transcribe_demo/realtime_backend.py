@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     import websockets.asyncio.client
 
 from transcribe_demo import audio_capture as audio_capture_lib
-from transcribe_demo.backend_protocol import ChunkConsumer, TranscriptionChunk
+from transcribe_demo.backend_protocol import TranscriptionChunk
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
 
@@ -262,7 +262,6 @@ def run_realtime_transcriber(
     chunk_duration: float,
     instructions: str,
     disable_ssl_verify: bool = False,
-    chunk_consumer: ChunkConsumer | None = None,
     chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
     compare_transcripts: bool = True,
     max_capture_duration: float = 120.0,
@@ -275,16 +274,6 @@ def run_realtime_transcriber(
     vad_silence_duration_ms: int = 200,
     debug: bool = False,
 ) -> RealtimeTranscriptionResult:
-    # Handle both chunk_consumer (legacy) and chunk_queue (new)
-    def emit_chunk(chunk: TranscriptionChunk) -> None:
-        """Emit chunk to both consumer and queue if provided."""
-        if chunk_consumer is not None:
-            chunk_consumer(chunk)
-        if chunk_queue is not None:
-            chunk_queue.put(chunk)
-
-    # Determine if we should emit chunks
-    should_emit = chunk_consumer is not None or chunk_queue is not None
 
     # Initialize audio source (either from file or microphone)
     if audio_file is not None:
@@ -483,11 +472,8 @@ def run_realtime_transcriber(
                                     is_partial=False,
                                 )
 
-                                if should_emit:
-                                    emit_chunk(chunk)
-                                else:
-                                    label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
-                                    print(f"{label} {final_text}", flush=True)
+                                if chunk_queue is not None:
+                                    chunk_queue.put(chunk)
 
                                 chunk_texts.append(final_text)
 
@@ -568,14 +554,8 @@ def run_realtime_transcriber(
                                         is_partial=False,
                                     )
 
-                                    if should_emit:
-                                        emit_chunk(chunk)
-                                    else:
-                                        label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
-                                        if final_text:
-                                            print(f"{label} {final_text}", flush=True)
-                                        else:
-                                            print(label, flush=True)
+                                    if chunk_queue is not None:
+                                        chunk_queue.put(chunk)
 
                                     if final_text:
                                         chunk_texts.append(final_text)

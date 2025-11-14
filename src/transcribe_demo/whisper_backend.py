@@ -17,7 +17,7 @@ import webrtcvad
 import whisper
 
 from transcribe_demo import audio_capture as audio_capture_lib
-from transcribe_demo.backend_protocol import ChunkConsumer, TranscriptionChunk
+from transcribe_demo.backend_protocol import TranscriptionChunk
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
 
@@ -265,8 +265,7 @@ def run_whisper_transcriber(
     disable_ssl_verify: bool,
     device_preference: str,
     require_gpu: bool,
-    chunk_consumer: ChunkConsumer | None = None,
-    chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
+    chunk_queue: queue.Queue[TranscriptionChunk | None],
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,
@@ -284,17 +283,6 @@ def run_whisper_transcriber(
     partial_interval: float = 1.0,
     max_partial_buffer_seconds: float = 10.0,
 ) -> WhisperTranscriptionResult:
-    # Handle both chunk_consumer (legacy) and chunk_queue (new)
-    # Create a unified handler that works with both
-    def emit_chunk(chunk: TranscriptionChunk) -> None:
-        """Emit chunk to both consumer and queue if provided."""
-        if chunk_consumer is not None:
-            chunk_consumer(chunk)
-        if chunk_queue is not None:
-            chunk_queue.put(chunk)
-
-    # Determine if we should emit chunks (either to consumer or queue)
-    should_emit = chunk_consumer is not None or chunk_queue is not None
 
     model, device, fp16 = load_whisper_model(
         model_name=model_name,
@@ -554,15 +542,7 @@ def run_whisper_transcriber(
                     inference_seconds=inference_duration,
                     is_partial=False,
                 )
-
-                if should_emit:
-                    emit_chunk(chunk)
-                else:
-                    print(
-                        f"[chunk {chunk_index:03d} | t={chunk_absolute_end:.2f}s | "
-                        f"audio: {chunk_audio_duration:.2f}s | inference: {inference_duration:.2f}s] {text}",
-                        flush=True,
-                    )
+                chunk_queue.put(chunk)
 
                 if session_logger is not None:
                     session_logger.log_chunk(
@@ -585,7 +565,7 @@ def run_whisper_transcriber(
         Segments are printed on separate lines when they complete or grow.
         """
         nonlocal buffer
-        if not enable_partial_transcription or partial_whisper_model is None or not should_emit:
+        if not enable_partial_transcription or partial_whisper_model is None:
             return
 
         try:
@@ -686,7 +666,7 @@ def run_whisper_transcriber(
                             inference_seconds=inference_duration,
                             is_partial=True,
                         )
-                        emit_chunk(chunk)
+                        chunk_queue.put(chunk)
 
                         # Check if segment is complete (reached boundary)
                         if segment_audio_end >= current_segment_end:
