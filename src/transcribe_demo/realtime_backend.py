@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -58,13 +58,8 @@ class RealtimeTranscriptionResult:
     sample_rate: int
     chunks: list[str] | None = None
     capture_duration: float = 0.0
-    metadata: dict[str, Any] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     full_audio_transcription: str | None = None  # Computed separately via transcribe_full_audio_realtime
-
-    def __post_init__(self) -> None:
-        """Ensure metadata is never None for protocol compatibility."""
-        if self.metadata is None:
-            self.metadata = {}
 
 
 async def _send_json(

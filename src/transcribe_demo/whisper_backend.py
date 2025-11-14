@@ -7,7 +7,7 @@ import ssl
 import struct
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,7 +17,7 @@ import webrtcvad
 import whisper
 
 from transcribe_demo import audio_capture as audio_capture_lib
-from transcribe_demo.backend_protocol import TranscriptionChunk
+from transcribe_demo.backend_protocol import ChunkConsumer, TranscriptionChunk
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
 
@@ -32,12 +32,7 @@ class WhisperTranscriptionResult:
 
     full_audio_transcription: str | None
     capture_duration: float = 0.0
-    metadata: dict[str, Any] | None = None
-
-    def __post_init__(self) -> None:
-        """Ensure metadata is never None for protocol compatibility."""
-        if self.metadata is None:
-            self.metadata = {}
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def _mps_available() -> bool:
@@ -270,7 +265,7 @@ def run_whisper_transcriber(
     disable_ssl_verify: bool,
     device_preference: str,
     require_gpu: bool,
-    chunk_consumer: Callable[[int, str, float, float, float | None, bool], None] | None = None,
+    chunk_consumer: ChunkConsumer | None = None,
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,

@@ -181,12 +181,11 @@ class TestTranscriptionResultProtocol:
         assert result.full_audio_transcription == "Hello world"
         assert result.metadata == {"model": "turbo", "device": "cuda"}
 
-    def test_whisper_result_none_metadata_becomes_empty_dict(self) -> None:
-        """Test that None metadata is converted to empty dict."""
+    def test_whisper_result_default_metadata_is_empty_dict(self) -> None:
+        """Test that default metadata is an empty dict."""
         result = WhisperTranscriptionResult(
             full_audio_transcription=None,
             capture_duration=0.0,
-            metadata=None,
         )
 
         assert result.metadata == {}
@@ -209,12 +208,11 @@ class TestTranscriptionResultProtocol:
         assert result.full_audio_transcription == "Test transcription"
         assert result.metadata == {"model": "gpt-realtime-mini"}
 
-    def test_realtime_result_none_metadata_becomes_empty_dict(self) -> None:
-        """Test that None metadata is converted to empty dict."""
+    def test_realtime_result_default_metadata_is_empty_dict(self) -> None:
+        """Test that default metadata is an empty dict."""
         result = RealtimeTranscriptionResult(
             full_audio=np.zeros(100, dtype=np.float32),
             sample_rate=16000,
-            metadata=None,
         )
 
         assert result.metadata == {}

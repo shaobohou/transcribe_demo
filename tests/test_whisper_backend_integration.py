@@ -120,7 +120,7 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
         disable_ssl_verify=False,
         device_preference="cpu",
         require_gpu=False,
-        chunk_consumer=lambda *args: None,
+        chunk_consumer=lambda chunk: None,
         vad_aggressiveness=0,
         vad_min_silence_duration=0.2,
         vad_min_speech_duration=0.05,
