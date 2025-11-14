@@ -7,7 +7,7 @@ import ssl
 import struct
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,29 +17,22 @@ import webrtcvad
 import whisper
 
 from transcribe_demo import audio_capture as audio_capture_lib
+from transcribe_demo.backend_protocol import ChunkConsumer, TranscriptionChunk
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
 
 
 @dataclass
-class TranscriptionChunk:
-    """Stores a transcription chunk with its timing information."""
-
-    index: int
-    text: str
-    start_time: float
-    end_time: float
-    overlap_start: float  # Start of overlap region from previous chunk
-    inference_seconds: float | None = None
-
-
-@dataclass
 class WhisperTranscriptionResult:
-    """Aggregate result returned after a Whisper transcription session."""
+    """
+    Aggregate result returned after a Whisper transcription session.
+
+    Implements backend_protocol.TranscriptionResult protocol.
+    """
 
     full_audio_transcription: str | None
     capture_duration: float = 0.0
-    metadata: dict[str, Any] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def _mps_available() -> bool:
@@ -272,7 +265,7 @@ def run_whisper_transcriber(
     disable_ssl_verify: bool,
     device_preference: str,
     require_gpu: bool,
-    chunk_consumer: Callable[[int, str, float, float, float | None, bool], None] | None = None,
+    chunk_consumer: ChunkConsumer | None = None,
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,
@@ -541,14 +534,15 @@ def run_whisper_transcriber(
                 chunk_absolute_start = max(0.0, chunk_absolute_end - chunk_audio_duration)
 
                 if chunk_consumer is not None:
-                    chunk_consumer(
-                        chunk_index,
-                        text,
-                        chunk_absolute_start,
-                        chunk_absolute_end,
-                        inference_duration,
-                        False,  # is_partial
+                    chunk = TranscriptionChunk(
+                        index=chunk_index,
+                        text=text,
+                        start_time=chunk_absolute_start,
+                        end_time=chunk_absolute_end,
+                        inference_seconds=inference_duration,
+                        is_partial=False,
                     )
+                    chunk_consumer(chunk)
                 else:
                     print(
                         f"[chunk {chunk_index:03d} | t={chunk_absolute_end:.2f}s | "
@@ -670,14 +664,15 @@ def run_whisper_transcriber(
                         # Display the segment transcription
                         # Use segment_index as a unique identifier
                         display_index = chunk_idx * 1000 + current_segment_index
-                        chunk_consumer(
-                            display_index,
-                            text,
-                            chunk_absolute_start,
-                            chunk_absolute_end,
-                            inference_duration,
-                            True,  # is_partial
+                        chunk = TranscriptionChunk(
+                            index=display_index,
+                            text=text,
+                            start_time=chunk_absolute_start,
+                            end_time=chunk_absolute_end,
+                            inference_seconds=inference_duration,
+                            is_partial=True,
                         )
+                        chunk_consumer(chunk)
 
                         # Check if segment is complete (reached boundary)
                         if segment_audio_end >= current_segment_end:

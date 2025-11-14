@@ -85,9 +85,9 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
 
     monkeypatch.setattr(realtime_backend.websockets, "connect", fake_connect)
 
-    def collect_chunk(chunk_index, text, absolute_start, absolute_end, inference_seconds):
-        if text:
-            chunk_texts.append(text)
+    def collect_chunk(chunk):
+        if chunk.text:
+            chunk_texts.append(chunk.text)
 
     monkeypatch.setattr(
         realtime_backend,
@@ -199,7 +199,7 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
         chunk_duration=0.2,
         instructions="transcribe precisely",
         disable_ssl_verify=False,
-        chunk_consumer=lambda *, chunk_index, text, absolute_start, absolute_end, inference_seconds: None,
+        chunk_consumer=lambda chunk: None,
         compare_transcripts=True,  # Must be True to enable full audio collection
         max_capture_duration=len(audio) / sample_rate,
         language="en",

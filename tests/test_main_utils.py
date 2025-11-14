@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from absl.testing import flagsaver
 
+from transcribe_demo.backend_protocol import TranscriptionChunk
 from transcribe_demo.cli import (
     ChunkCollectorWithStitching,
     FLAGS,
@@ -32,27 +33,9 @@ def test_chunk_collector_writes_and_stitches_chunks():
     stream = io.StringIO()
     collector = ChunkCollectorWithStitching(stream)
 
-    collector(
-        chunk_index=0,
-        text="Hello, ",
-        absolute_start=0.0,
-        absolute_end=1.5,
-        inference_seconds=0.25,
-    )
-    collector(
-        chunk_index=1,
-        text="world.",
-        absolute_start=1.5,
-        absolute_end=3.0,
-        inference_seconds=0.30,
-    )
-    collector(
-        chunk_index=2,
-        text="How are you?",
-        absolute_start=3.0,
-        absolute_end=5.0,
-        inference_seconds=0.45,
-    )
+    collector(TranscriptionChunk(index=0, text="Hello, ", start_time=0.0, end_time=1.5, inference_seconds=0.25))
+    collector(TranscriptionChunk(index=1, text="world.", start_time=1.5, end_time=3.0, inference_seconds=0.30))
+    collector(TranscriptionChunk(index=2, text="How are you?", start_time=3.0, end_time=5.0, inference_seconds=0.45))
 
     output = stream.getvalue()
     assert "[chunk 000 | t=1.50s" in output
@@ -66,13 +49,7 @@ def test_chunk_collector_colorized_output_in_realtime_mode():
     stream = ColorStream()
     collector = ChunkCollectorWithStitching(stream)
 
-    collector(
-        chunk_index=0,
-        text="Realtime chunk",
-        absolute_start=0.0,
-        absolute_end=2.0,
-        inference_seconds=None,
-    )
+    collector(TranscriptionChunk(index=0, text="Realtime chunk", start_time=0.0, end_time=2.0, inference_seconds=None))
 
     output = stream.getvalue()
     assert "\x1b[36m" in output  # cyan label
@@ -169,9 +146,9 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
             self.stream = stream
             self.calls = []
 
-        def __call__(self, chunk_index, text, absolute_start, absolute_end, inference_seconds):
-            self.calls.append((chunk_index, text, absolute_start, absolute_end, inference_seconds))
-            self.stream.write(f"[fake {chunk_index}] {text}\n")
+        def __call__(self, chunk):
+            self.calls.append((chunk.index, chunk.text, chunk.start_time, chunk.end_time, chunk.inference_seconds))
+            self.stream.write(f"[fake {chunk.index}] {chunk.text}\n")
 
         def get_final_stitched(self):
             return "stitched text"

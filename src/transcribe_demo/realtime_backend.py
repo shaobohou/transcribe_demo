@@ -11,9 +11,9 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import websockets
@@ -22,20 +22,9 @@ if TYPE_CHECKING:
     import websockets.asyncio.client
 
 from transcribe_demo import audio_capture as audio_capture_lib
+from transcribe_demo.backend_protocol import ChunkConsumer, TranscriptionChunk
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
-
-
-class ChunkConsumer(Protocol):
-    def __call__(
-        self,
-        *,
-        chunk_index: int,
-        text: str,
-        absolute_start: float,
-        absolute_end: float,
-        inference_seconds: float | None,
-    ) -> None: ...
 
 
 def float_to_pcm16(audio: np.ndarray) -> bytes:
@@ -59,13 +48,18 @@ def resample_audio(audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarra
 
 @dataclass
 class RealtimeTranscriptionResult:
-    """Aggregate data returned after a realtime transcription session."""
+    """
+    Aggregate data returned after a realtime transcription session.
+
+    Implements backend_protocol.TranscriptionResult protocol.
+    """
 
     full_audio: np.ndarray
     sample_rate: int
     chunks: list[str] | None = None
     capture_duration: float = 0.0
-    metadata: dict[str, Any] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    full_audio_transcription: str | None = None  # Computed separately via transcribe_full_audio_realtime
 
 
 async def _send_json(
@@ -469,13 +463,15 @@ def run_realtime_transcriber(
                                     chunk_counter[0] += 1
 
                                 if chunk_consumer:
-                                    chunk_consumer(
-                                        chunk_index=current_chunk_index,
+                                    chunk = TranscriptionChunk(
+                                        index=current_chunk_index,
                                         text=final_text,
-                                        absolute_start=chunk_start,
-                                        absolute_end=chunk_end,
+                                        start_time=chunk_start,
+                                        end_time=chunk_end,
                                         inference_seconds=None,  # Signals realtime mode
+                                        is_partial=False,
                                     )
+                                    chunk_consumer(chunk)
                                 else:
                                     label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
                                     print(f"{label} {final_text}", flush=True)
@@ -551,13 +547,15 @@ def run_realtime_transcriber(
                                         chunk_counter[0] += 1
 
                                     if chunk_consumer:
-                                        chunk_consumer(
-                                            chunk_index=current_chunk_index,
+                                        chunk = TranscriptionChunk(
+                                            index=current_chunk_index,
                                             text=final_text,
-                                            absolute_start=chunk_start,
-                                            absolute_end=chunk_end,
+                                            start_time=chunk_start,
+                                            end_time=chunk_end,
                                             inference_seconds=None,  # Signals realtime mode
+                                            is_partial=False,
                                         )
+                                        chunk_consumer(chunk)
                                     else:
                                         label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
                                         if final_text:

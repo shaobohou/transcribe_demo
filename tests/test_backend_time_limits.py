@@ -39,9 +39,14 @@ def test_whisper_backend_respects_time_limit(monkeypatch):
         create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
     )
 
-    def capture_chunk(index, text, start, end, inference_seconds, is_partial=False):
-        if not is_partial:
-            chunks.append({"index": index, "text": text, "start": start, "end": end})
+    def capture_chunk(chunk):
+        if not chunk.is_partial:
+            chunks.append({
+                "index": chunk.index,
+                "text": chunk.text,
+                "start": chunk.start_time,
+                "end": chunk.end_time,
+            })
 
     result = whisper_backend.run_whisper_transcriber(
         model_name="fixture",
@@ -102,9 +107,14 @@ def test_whisper_backend_transcribes_incomplete_chunk_on_timeout(monkeypatch):
         create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
     )
 
-    def capture_chunk(index, text, start, end, inference_seconds, is_partial=False):
-        if not is_partial:
-            chunks.append({"index": index, "text": text, "start": start, "end": end})
+    def capture_chunk(chunk):
+        if not chunk.is_partial:
+            chunks.append({
+                "index": chunk.index,
+                "text": chunk.text,
+                "start": chunk.start_time,
+                "end": chunk.end_time,
+            })
 
     result = whisper_backend.run_whisper_transcriber(
         model_name="fixture",
@@ -169,9 +179,14 @@ def test_whisper_backend_logs_session(monkeypatch, temp_session_dir):
         create_fake_audio_capture_factory(audio, sample_rate),
     )
 
-    def capture_chunk(index, text, start, end, inference_seconds, is_partial=False):
-        if not is_partial:
-            chunks.append({"index": index, "text": text, "start": start, "end": end})
+    def capture_chunk(chunk):
+        if not chunk.is_partial:
+            chunks.append({
+                "index": chunk.index,
+                "text": chunk.text,
+                "start": chunk.start_time,
+                "end": chunk.end_time,
+            })
 
     # Create session logger with temp directory
     session_logger = SessionLogger(
@@ -275,9 +290,9 @@ def test_realtime_backend_respects_time_limit(monkeypatch):
 
     monkeypatch.setattr(realtime_backend.websockets, "connect", fake_connect)
 
-    def collect_chunk(chunk_index, text, absolute_start, absolute_end, inference_seconds):
-        if text:
-            chunk_texts.append(text)
+    def collect_chunk(chunk):
+        if chunk.text:
+            chunk_texts.append(chunk.text)
 
     monkeypatch.setattr(
         realtime_backend,
@@ -337,9 +352,9 @@ def test_realtime_backend_logs_session(monkeypatch, temp_session_dir):
 
     monkeypatch.setattr(realtime_backend.websockets, "connect", fake_connect)
 
-    def collect_chunk(chunk_index, text, absolute_start, absolute_end, inference_seconds):
-        if text:
-            chunk_texts.append(text)
+    def collect_chunk(chunk):
+        if chunk.text:
+            chunk_texts.append(chunk.text)
 
     monkeypatch.setattr(
         realtime_backend,
@@ -435,9 +450,9 @@ def test_realtime_backend_compares_stitched_vs_complete(monkeypatch):
 
     monkeypatch.setattr(realtime_backend.websockets, "connect", fake_connect)
 
-    def collect_chunk(chunk_index, text, absolute_start, absolute_end, inference_seconds):
-        if text:
-            chunk_texts.append(text)
+    def collect_chunk(chunk):
+        if chunk.text:
+            chunk_texts.append(chunk.text)
 
     def fake_transcribe_full(audio, *args, **kwargs):
         nonlocal full_audio_transcribed
@@ -544,9 +559,9 @@ def test_realtime_backend_flushes_partial_chunks_on_timeout(monkeypatch):
 
     monkeypatch.setattr(realtime_backend.websockets, "connect", fake_connect)
 
-    def collect_chunk(chunk_index, text, absolute_start, absolute_end, inference_seconds):
-        if text:
-            chunk_texts.append(text)
+    def collect_chunk(chunk):
+        if chunk.text:
+            chunk_texts.append(chunk.text)
 
     monkeypatch.setattr(
         realtime_backend,
@@ -604,9 +619,9 @@ def test_session_logger_respects_min_duration(monkeypatch, temp_session_dir):
         create_fake_audio_capture_factory(audio, sample_rate),
     )
 
-    def capture_chunk(index, text, start, end, inference_seconds, is_partial=False):
-        if not is_partial:
-            chunks.append({"index": index, "text": text})
+    def capture_chunk(chunk):
+        if not chunk.is_partial:
+            chunks.append({"index": chunk.index, "text": chunk.text})
 
     # Create session logger with temp directory
     session_logger = SessionLogger(
