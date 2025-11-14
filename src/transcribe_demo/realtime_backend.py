@@ -263,17 +263,29 @@ def run_realtime_transcriber(
     instructions: str,
     disable_ssl_verify: bool = False,
     chunk_consumer: ChunkConsumer | None = None,
+    chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
     compare_transcripts: bool = True,
     max_capture_duration: float = 120.0,
     language: str = "en",
     session_logger: SessionLogger | None = None,
     min_log_duration: float = 0.0,
-    audio_file: Path | None = None,
+    audio_file: str | None = None,
     playback_speed: float = 1.0,
     vad_threshold: float = 0.3,
     vad_silence_duration_ms: int = 200,
     debug: bool = False,
 ) -> RealtimeTranscriptionResult:
+    # Handle both chunk_consumer (legacy) and chunk_queue (new)
+    def emit_chunk(chunk: TranscriptionChunk) -> None:
+        """Emit chunk to both consumer and queue if provided."""
+        if chunk_consumer is not None:
+            chunk_consumer(chunk)
+        if chunk_queue is not None:
+            chunk_queue.put(chunk)
+
+    # Determine if we should emit chunks
+    should_emit = chunk_consumer is not None or chunk_queue is not None
+
     # Initialize audio source (either from file or microphone)
     if audio_file is not None:
         audio_capture = FileAudioSource(
@@ -462,16 +474,17 @@ def run_realtime_transcriber(
                                     current_chunk_index = chunk_counter[0]
                                     chunk_counter[0] += 1
 
-                                if chunk_consumer:
-                                    chunk = TranscriptionChunk(
-                                        index=current_chunk_index,
-                                        text=final_text,
-                                        start_time=chunk_start,
-                                        end_time=chunk_end,
-                                        inference_seconds=None,  # Signals realtime mode
-                                        is_partial=False,
-                                    )
-                                    chunk_consumer(chunk)
+                                chunk = TranscriptionChunk(
+                                    index=current_chunk_index,
+                                    text=final_text,
+                                    start_time=chunk_start,
+                                    end_time=chunk_end,
+                                    inference_seconds=None,  # Signals realtime mode
+                                    is_partial=False,
+                                )
+
+                                if should_emit:
+                                    emit_chunk(chunk)
                                 else:
                                     label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
                                     print(f"{label} {final_text}", flush=True)
@@ -546,16 +559,17 @@ def run_realtime_transcriber(
                                         current_chunk_index = chunk_counter[0]
                                         chunk_counter[0] += 1
 
-                                    if chunk_consumer:
-                                        chunk = TranscriptionChunk(
-                                            index=current_chunk_index,
-                                            text=final_text,
-                                            start_time=chunk_start,
-                                            end_time=chunk_end,
-                                            inference_seconds=None,  # Signals realtime mode
-                                            is_partial=False,
-                                        )
-                                        chunk_consumer(chunk)
+                                    chunk = TranscriptionChunk(
+                                        index=current_chunk_index,
+                                        text=final_text,
+                                        start_time=chunk_start,
+                                        end_time=chunk_end,
+                                        inference_seconds=None,  # Signals realtime mode
+                                        is_partial=False,
+                                    )
+
+                                    if should_emit:
+                                        emit_chunk(chunk)
                                     else:
                                         label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
                                         if final_text:

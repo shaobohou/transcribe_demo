@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import difflib
 import os
+import queue
 import re
 import sys
+import threading
+from collections.abc import Generator
 from pathlib import Path
 from typing import TextIO
 
@@ -703,6 +706,152 @@ def _finalize_transcription_session(
         print(f"Total captured audio duration: {result.capture_duration:.2f} seconds", file=sys.stderr)
 
 
+def transcribe(
+    backend: str,
+    model_name: str | None,
+    sample_rate: int,
+    channels: int,
+    temp_file: Path | None,
+    ca_cert: Path | None,
+    disable_ssl_verify: bool,
+    device_preference: str | None,
+    require_gpu: bool,
+    vad_aggressiveness: int,
+    vad_min_silence_duration: float,
+    vad_min_speech_duration: float,
+    vad_speech_pad_duration: float,
+    max_chunk_duration: float,
+    compare_transcripts: bool,
+    max_capture_duration: float,
+    language: str,
+    session_logger: SessionLogger | None,
+    min_log_duration: float,
+    audio_file: str | None,
+    playback_speed: float,
+    enable_partial_transcription: bool,
+    partial_model: str,
+    partial_interval: float,
+    max_partial_buffer_seconds: float,
+    api_key: str | None,
+    realtime_endpoint: str,
+    realtime_model: str,
+    realtime_instructions: str,
+    realtime_vad_threshold: float,
+    realtime_vad_silence_duration_ms: int,
+    realtime_debug: bool,
+) -> Generator[TranscriptionChunk, None, WhisperTranscriptionResult | RealtimeTranscriptionResult]:
+    """
+    Generator that yields transcription chunks from the specified backend.
+
+    This function orchestrates the transcription process by:
+    1. Running the backend in a background thread
+    2. Yielding chunks as they are produced
+    3. Returning the final transcription result
+
+    Args:
+        backend: Backend to use ("whisper" or "realtime")
+        (see FLAGS definitions for other parameters)
+
+    Yields:
+        TranscriptionChunk: Individual transcription chunks with metadata
+
+    Returns:
+        Final transcription result (WhisperTranscriptionResult or RealtimeTranscriptionResult)
+    """
+    chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
+    result_container: list[WhisperTranscriptionResult | RealtimeTranscriptionResult] = []
+    error_container: list[BaseException] = []
+
+    def backend_worker() -> None:
+        """Worker thread that runs the backend and puts chunks in the queue."""
+        try:
+            if backend == "whisper":
+                result = run_whisper_transcriber(
+                    model_name=model_name or "turbo",
+                    sample_rate=sample_rate,
+                    channels=channels,
+                    temp_file=temp_file,
+                    ca_cert=ca_cert,
+                    disable_ssl_verify=disable_ssl_verify,
+                    device_preference=device_preference or "auto",
+                    require_gpu=require_gpu,
+                    chunk_queue=chunk_queue,
+                    vad_aggressiveness=vad_aggressiveness,
+                    vad_min_silence_duration=vad_min_silence_duration,
+                    vad_min_speech_duration=vad_min_speech_duration,
+                    vad_speech_pad_duration=vad_speech_pad_duration,
+                    max_chunk_duration=max_chunk_duration,
+                    compare_transcripts=compare_transcripts,
+                    max_capture_duration=max_capture_duration,
+                    language=language,
+                    session_logger=session_logger,
+                    min_log_duration=min_log_duration,
+                    audio_file=audio_file,
+                    playback_speed=playback_speed,
+                    enable_partial_transcription=enable_partial_transcription,
+                    partial_model=partial_model,
+                    partial_interval=partial_interval,
+                    max_partial_buffer_seconds=max_partial_buffer_seconds,
+                )
+            else:  # realtime
+                if api_key is None:
+                    raise RuntimeError(
+                        "OpenAI API key required for realtime transcription. "
+                        "Provide --api-key or set OPENAI_API_KEY."
+                    )
+                result = run_realtime_transcriber(
+                    api_key=api_key,
+                    endpoint=realtime_endpoint,
+                    model=realtime_model,
+                    sample_rate=sample_rate,
+                    channels=channels,
+                    chunk_duration=REALTIME_CHUNK_DURATION,
+                    instructions=realtime_instructions,
+                    disable_ssl_verify=disable_ssl_verify,
+                    chunk_queue=chunk_queue,
+                    compare_transcripts=compare_transcripts,
+                    max_capture_duration=max_capture_duration,
+                    language=language,
+                    session_logger=session_logger,
+                    min_log_duration=min_log_duration,
+                    audio_file=audio_file,
+                    playback_speed=playback_speed,
+                    vad_threshold=realtime_vad_threshold,
+                    vad_silence_duration_ms=realtime_vad_silence_duration_ms,
+                    debug=realtime_debug,
+                )
+            result_container.append(result)
+        except BaseException as e:
+            error_container.append(e)
+        finally:
+            # Always send sentinel to unblock the generator
+            chunk_queue.put(None)
+
+    # Start backend worker thread
+    worker_thread = threading.Thread(target=backend_worker, daemon=True)
+    worker_thread.start()
+
+    # Yield chunks as they arrive
+    try:
+        while True:
+            chunk = chunk_queue.get()
+            if chunk is None:  # Sentinel value
+                break
+            yield chunk
+    finally:
+        # Wait for worker to complete
+        worker_thread.join()
+
+    # Check for errors
+    if error_container:
+        raise error_container[0]
+
+    # Return final result
+    if not result_container:
+        raise RuntimeError("Backend worker completed without producing a result")
+    return result_container[0]
+
+
 def main(argv: list[str]) -> None:
     # Check for unimplemented features
     if FLAGS.refine_with_context:
@@ -763,66 +912,32 @@ def main(argv: list[str]) -> None:
         audio_format=FLAGS.audio_format,
     )
 
-    if FLAGS.backend == "whisper":
-        collector = ChunkCollectorWithStitching(sys.stdout)
-        whisper_result = None
-        try:
-            whisper_result = run_whisper_transcriber(
-                model_name=FLAGS.model,
-                sample_rate=FLAGS.samplerate,
-                channels=FLAGS.channels,
-                temp_file=Path(FLAGS.temp_file) if FLAGS.temp_file else None,
-                ca_cert=Path(FLAGS.ca_cert) if FLAGS.ca_cert else None,
-                disable_ssl_verify=FLAGS.disable_ssl_verify,
-                device_preference=FLAGS.device,
-                require_gpu=FLAGS.require_gpu,
-                chunk_consumer=collector,
-                vad_aggressiveness=FLAGS.vad_aggressiveness,
-                vad_min_silence_duration=FLAGS.vad_min_silence_duration,
-                vad_min_speech_duration=FLAGS.vad_min_speech_duration,
-                vad_speech_pad_duration=FLAGS.vad_speech_pad_duration,
-                max_chunk_duration=FLAGS.max_chunk_duration,
-                compare_transcripts=FLAGS.compare_transcripts,
-                max_capture_duration=FLAGS.max_capture_duration,
-                language=language_pref,
-                session_logger=session_logger,
-                min_log_duration=FLAGS.min_log_duration,
-                audio_file=FLAGS.audio_file,
-                playback_speed=FLAGS.playback_speed,
-                enable_partial_transcription=FLAGS.enable_partial_transcription,
-                partial_model=FLAGS.partial_model,
-                partial_interval=FLAGS.partial_interval,
-                max_partial_buffer_seconds=FLAGS.max_partial_buffer_seconds,
-            )
-        finally:
-            _finalize_transcription_session(
-                collector=collector,
-                result=whisper_result,
-                session_logger=session_logger,
-                compare_transcripts=FLAGS.compare_transcripts,
-                min_log_duration=FLAGS.min_log_duration,
-            )
-        return
-
-    api_key = FLAGS.api_key or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "OpenAI API key required for realtime transcription. Provide --api-key or set OPENAI_API_KEY."
-        )
+    # Create chunk collector
     collector = ChunkCollectorWithStitching(sys.stdout)
-    realtime_result: RealtimeTranscriptionResult | None = None
+
+    # Get API key if needed
+    api_key = FLAGS.api_key or os.getenv("OPENAI_API_KEY") if FLAGS.backend == "realtime" else None
+
+    # Run transcription using the generator
+    result: WhisperTranscriptionResult | RealtimeTranscriptionResult | None = None
     full_audio_transcription: str | None = None
     try:
-        realtime_result = run_realtime_transcriber(
-            api_key=api_key,
-            endpoint=FLAGS.realtime_endpoint,
-            model=FLAGS.realtime_model,
+        # Create transcription generator
+        transcription_gen = transcribe(
+            backend=FLAGS.backend,
+            model_name=FLAGS.model,
             sample_rate=FLAGS.samplerate,
             channels=FLAGS.channels,
-            chunk_duration=REALTIME_CHUNK_DURATION,
-            instructions=FLAGS.realtime_instructions,
+            temp_file=Path(FLAGS.temp_file) if FLAGS.temp_file else None,
+            ca_cert=Path(FLAGS.ca_cert) if FLAGS.ca_cert else None,
             disable_ssl_verify=FLAGS.disable_ssl_verify,
-            chunk_consumer=collector,
+            device_preference=FLAGS.device,
+            require_gpu=FLAGS.require_gpu,
+            vad_aggressiveness=FLAGS.vad_aggressiveness,
+            vad_min_silence_duration=FLAGS.vad_min_silence_duration,
+            vad_min_speech_duration=FLAGS.vad_min_speech_duration,
+            vad_speech_pad_duration=FLAGS.vad_speech_pad_duration,
+            max_chunk_duration=FLAGS.max_chunk_duration,
             compare_transcripts=FLAGS.compare_transcripts,
             max_capture_duration=FLAGS.max_capture_duration,
             language=language_pref,
@@ -830,21 +945,46 @@ def main(argv: list[str]) -> None:
             min_log_duration=FLAGS.min_log_duration,
             audio_file=FLAGS.audio_file,
             playback_speed=FLAGS.playback_speed,
-            vad_threshold=FLAGS.realtime_vad_threshold,
-            vad_silence_duration_ms=FLAGS.realtime_vad_silence_duration_ms,
-            debug=FLAGS.realtime_debug,
+            enable_partial_transcription=FLAGS.enable_partial_transcription,
+            partial_model=FLAGS.partial_model,
+            partial_interval=FLAGS.partial_interval,
+            max_partial_buffer_seconds=FLAGS.max_partial_buffer_seconds,
+            api_key=api_key,
+            realtime_endpoint=FLAGS.realtime_endpoint,
+            realtime_model=FLAGS.realtime_model,
+            realtime_instructions=FLAGS.realtime_instructions,
+            realtime_vad_threshold=FLAGS.realtime_vad_threshold,
+            realtime_vad_silence_duration_ms=FLAGS.realtime_vad_silence_duration_ms,
+            realtime_debug=FLAGS.realtime_debug,
         )
+
+        # Consume chunks and collect result
+        for chunk in transcription_gen:
+            collector(chunk)
+
+        # Get the final result from the generator's return value
+        try:
+            result = transcription_gen.send(None)
+        except StopIteration as e:
+            result = e.value
+
     except KeyboardInterrupt:
         pass
     finally:
         # Get full audio transcription for comparison if enabled (Realtime-specific)
-        if realtime_result is not None and FLAGS.compare_transcripts and realtime_result.full_audio.size > 0:
+        if (
+            FLAGS.backend == "realtime"
+            and result is not None
+            and isinstance(result, RealtimeTranscriptionResult)
+            and FLAGS.compare_transcripts
+            and result.full_audio.size > 0
+        ):
             try:
                 full_audio_transcription = transcribe_full_audio_realtime(
-                    realtime_result.full_audio,
-                    sample_rate=realtime_result.sample_rate,
+                    result.full_audio,
+                    sample_rate=result.sample_rate,
                     chunk_duration=REALTIME_CHUNK_DURATION,
-                    api_key=api_key,
+                    api_key=api_key or "",
                     endpoint=FLAGS.realtime_endpoint,
                     model=FLAGS.realtime_model,
                     instructions=FLAGS.realtime_instructions,
@@ -860,7 +1000,7 @@ def main(argv: list[str]) -> None:
         # Use common finalization logic
         _finalize_transcription_session(
             collector=collector,
-            result=realtime_result,
+            result=result,
             session_logger=session_logger,
             compare_transcripts=FLAGS.compare_transcripts,
             min_log_duration=FLAGS.min_log_duration,
