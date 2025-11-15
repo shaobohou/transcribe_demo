@@ -12,7 +12,6 @@ import threading
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -273,7 +272,6 @@ def run_realtime_transcriber(
 
     # Use the provided audio source
     audio_capture = audio_source
-    max_capture_duration = audio_source.max_capture_duration
 
     session_sample_rate = 24000
     chunk_texts: list[str] = []

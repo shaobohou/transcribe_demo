@@ -13,6 +13,7 @@ import numpy as np
 import soundfile as sf
 import wave
 
+from transcribe_demo.backend_protocol import TranscriptionChunk
 from transcribe_demo.session_logger import SessionLogger, SessionMetadata
 
 
@@ -390,6 +391,14 @@ def retranscribe_session(
             chunk_queue: queue_module.Queue[TranscriptionChunk | None] = queue_module.Queue()
             result_container: list = []
 
+            # Create audio source
+            audio_source = FakeAudioCaptureManager(
+                sample_rate=loaded_session.sample_rate,
+                channels=loaded_session.metadata.channels,
+                max_capture_duration=0.0,  # No duration limit for retranscription
+                collect_full_audio=backend_kwargs.get("compare_transcripts", False),
+            )
+
             # Run Whisper backend in background thread
             def backend_worker():
                 result = run_whisper_transcriber(
@@ -401,6 +410,7 @@ def retranscribe_session(
                     disable_ssl_verify=backend_kwargs.get("disable_ssl_verify", False),
                     device_preference=backend_kwargs.get("device", "auto"),
                     require_gpu=backend_kwargs.get("require_gpu", False),
+                    audio_source=audio_source,
                     chunk_queue=chunk_queue,
                     vad_aggressiveness=backend_kwargs.get("vad_aggressiveness", 2),
                     vad_min_silence_duration=backend_kwargs.get("vad_min_silence_duration", 0.2),
@@ -408,7 +418,6 @@ def retranscribe_session(
                     vad_speech_pad_duration=backend_kwargs.get("vad_speech_pad_duration", 0.2),
                     max_chunk_duration=backend_kwargs.get("max_chunk_duration", 60.0),
                     compare_transcripts=backend_kwargs.get("compare_transcripts", False),
-                    max_capture_duration=0.0,  # No duration limit for retranscription
                     language=backend_kwargs.get("language", "en"),
                     session_logger=session_logger,
                     min_log_duration=0.0,  # Always save retranscription
@@ -463,6 +472,14 @@ def retranscribe_session(
             chunk_queue: queue_module.Queue[TranscriptionChunk | None] = queue_module.Queue()
             result_container: list = []
 
+            # Create audio source
+            audio_source = FakeAudioCaptureManager(
+                sample_rate=loaded_session.sample_rate,
+                channels=loaded_session.metadata.channels,
+                max_capture_duration=0.0,  # No duration limit for retranscription
+                collect_full_audio=backend_kwargs.get("compare_transcripts", False),
+            )
+
             # Run Realtime backend in background thread
             def backend_worker():
                 result = run_realtime_transcriber(
@@ -478,10 +495,10 @@ def retranscribe_session(
                         "Return a concise verbatim transcript of the most recent audio buffer. "
                         "Do not add commentary or speaker labels.",
                     ),
+                    audio_source=audio_source,
                     disable_ssl_verify=backend_kwargs.get("disable_ssl_verify", False),
                     chunk_queue=chunk_queue,
                     compare_transcripts=backend_kwargs.get("compare_transcripts", False),
-                    max_capture_duration=0.0,  # No duration limit for retranscription
                     language=backend_kwargs.get("language", "en"),
                 )
                 result_container.append(result)

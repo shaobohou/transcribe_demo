@@ -6,10 +6,9 @@ import json
 import queue
 
 import numpy as np
-import pytest
 
-from test_helpers import FakeWebSocket, create_fake_audio_capture_factory, generate_synthetic_audio
-from transcribe_demo import realtime_backend, whisper_backend
+from test_helpers import generate_synthetic_audio
+from transcribe_demo import whisper_backend
 from transcribe_demo.backend_protocol import TranscriptionChunk
 from transcribe_demo.session_logger import SessionLogger
 

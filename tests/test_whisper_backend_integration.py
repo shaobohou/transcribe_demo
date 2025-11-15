@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from test_helpers import create_fake_audio_capture_factory, generate_synthetic_audio
+from test_helpers import generate_synthetic_audio
 from transcribe_demo import whisper_backend
 from transcribe_demo.backend_protocol import TranscriptionChunk
 

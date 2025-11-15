@@ -433,7 +433,7 @@ def _create_whisper_backend(language: str, session_logger: SessionLogger | None)
 
 
 def _create_realtime_backend(
-    api_key: str, language: str, session_logger: SessionLogger | None
+    api_key: str | None, language: str, session_logger: SessionLogger | None
 ) -> RealtimeBackend:
     """
     Create and configure a Realtime backend from FLAGS.

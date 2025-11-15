@@ -139,7 +139,6 @@ def test_main_exits_when_refine_flag_enabled(monkeypatch):
 
 
 def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
-    import queue
     from test_helpers import create_fake_audio_capture_factory, generate_synthetic_audio
 
     class FakeCollector:
