@@ -81,7 +81,7 @@ class ChunkCollector:
         self._last_partial_chunk_index = chunk.index
         self._stream.flush()
 
-    def __call__(self, *, chunk: transcribe_demo.backend_protocol.TranscriptionChunk) -> None:
+    def __call__(self, chunk: transcribe_demo.backend_protocol.TranscriptionChunk) -> None:
         """Process a transcription chunk (implements ChunkConsumer protocol)."""
         if not chunk.text:
             return
