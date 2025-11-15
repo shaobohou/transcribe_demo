@@ -31,5 +31,11 @@ jobs:
     - name: Install dependencies
       run: uv sync --project ci --refresh
 
-    - name: Run all checks
-      run: ./run-checks.sh --ci
+    - name: Run tests
+      run: uv --project ci run pytest -v --timeout=30 --timeout-method=thread
+
+    - name: Run type checker
+      run: uv --project ci run pyright
+
+    - name: Run linter
+      run: uv --project ci run ruff check

@@ -29,7 +29,7 @@ fi
 echo ""
 
 echo "=== Running pytest ==="
-$UV_CMD python -m pytest
+$UV_CMD python -m pytest -v --timeout=30 --timeout-method=thread
 
 echo ""
 echo "=== Running pyright ==="
