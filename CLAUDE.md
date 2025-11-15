@@ -45,7 +45,12 @@ git push -u origin your-branch-name
 
 **Pre-commit hook** auto-runs: `ruff format`, `ruff check --fix`, `pyright`, `pytest` (blocks commits if any fail).
 
-**Code style:** Use `list[str]` not `List[str]`, use `str | None` not `Optional[str]` (modern Python typing).
+**Code style:**
+- Modern Python typing: `list[str]` not `List[str]`, `str | None` not `Optional[str]`
+- All modules start with `from __future__ import annotations`
+- Use keyword-only parameters (`*,`) for functions/methods (except external callbacks - see gotcha #6)
+- Frozen dataclasses: `@dataclasses.dataclass(frozen=True, kw_only=True)`
+- Minimize public API: prefix internal helpers with `_`
 
 ### Key Files
 
@@ -95,7 +100,7 @@ git push -u origin your-branch-name
 3. **Punctuation stripping:** Don't modify without understanding VAD chunking implications.
 4. **Whisper testing:** VAD makes transcript tests flaky. Use Realtime for transcript comparison.
 5. **Realtime chunking:** Fixed 2.0s chunks, NOT configurable (no VAD).
-6. **Audio callback signature:** `_audio_callback` MUST accept positional args (no `*`). sounddevice.InputStream calls callbacks positionally. See `tests/test_audio_capture.py::test_audio_callback_accepts_positional_args`.
+6. **External callback signatures:** `_audio_callback` MUST accept positional args (no `*`). sounddevice.InputStream calls callbacks positionally. See `tests/test_audio_capture.py::test_audio_callback_accepts_positional_args`.
 7. **SSL/Certificate issues:** For development/testing with corporate proxies or self-signed certs:
    - Use `--ca_cert /path/to/cert.pem` for custom certificate bundles
    - Use `--disable_ssl_verify` as last resort (insecure, not for production)
