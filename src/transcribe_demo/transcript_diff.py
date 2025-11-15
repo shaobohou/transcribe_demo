@@ -11,12 +11,12 @@ import re
 from typing import TextIO
 
 
-def normalize_whitespace(text: str) -> str:
+def normalize_whitespace(*, text: str) -> str:
     """Normalize whitespace in text by collapsing multiple spaces into one."""
     return " ".join(text.split())
 
 
-def print_final_stitched(stream: TextIO, text: str) -> None:
+def print_final_stitched(*, stream: TextIO, text: str) -> None:
     """Print final stitched transcription with appropriate formatting."""
     if not text:
         return
@@ -31,7 +31,7 @@ def print_final_stitched(stream: TextIO, text: str) -> None:
         print(f"\n[FINAL STITCHED] {text}\n", file=stream)
 
 
-def compute_transcription_diff(stitched_text: str, complete_text: str) -> tuple[float, list[dict[str, str]]]:
+def compute_transcription_diff(*, stitched_text: str, complete_text: str) -> tuple[float, list[dict[str, str]]]:
     """
     Compute diff between stitched and complete transcriptions.
 
@@ -47,15 +47,16 @@ def compute_transcription_diff(stitched_text: str, complete_text: str) -> tuple[
     if not (stitched_text.strip() and complete_text.strip()):
         return (0.0, [])
 
-    stitched_tokens_norm = [norm for _, norm in _tokenize_with_original(stitched_text)]
-    complete_tokens_norm = [norm for _, norm in _tokenize_with_original(complete_text)]
+    stitched_tokens_norm = [norm for _, norm in _tokenize_with_original(text=stitched_text)]
+    complete_tokens_norm = [norm for _, norm in _tokenize_with_original(text=complete_text)]
     similarity = difflib.SequenceMatcher(None, stitched_tokens_norm, complete_tokens_norm).ratio()
-    diff_snippets = _generate_diff_snippets(stitched_text, complete_text, use_color=False)
+    diff_snippets = _generate_diff_snippets(stitched_text=stitched_text, complete_text=complete_text, use_color=False)
 
     return (similarity, diff_snippets)
 
 
 def print_transcription_summary(
+    *,
     stream: TextIO,
     final_text: str,
     complete_audio_text: str,
@@ -98,8 +99,8 @@ def print_transcription_summary(
     if not (final_clean and complete_audio_clean):
         return
 
-    stitched_tokens_norm = [norm for _, norm in _tokenize_with_original(final_clean)]
-    complete_tokens_norm = [norm for _, norm in _tokenize_with_original(complete_audio_clean)]
+    stitched_tokens_norm = [norm for _, norm in _tokenize_with_original(text=final_clean)]
+    complete_tokens_norm = [norm for _, norm in _tokenize_with_original(text=complete_audio_clean)]
     stitched_normalized = " ".join(stitched_tokens_norm)
     complete_normalized = " ".join(complete_tokens_norm)
     comparison_label = f"{bold}{green}[COMPARISON]{reset}" if use_color else "[COMPARISON]"
@@ -117,7 +118,7 @@ def print_transcription_summary(
         file=stream,
     )
     diff_label = "\x1b[2;36m[DIFF]\x1b[0m" if use_color else "[DIFF]"
-    diff_snippets = _generate_diff_snippets(final_clean, complete_audio_clean, use_color)
+    diff_snippets = _generate_diff_snippets(stitched_text=final_clean, complete_text=complete_audio_clean, use_color=use_color)
     for snippet in diff_snippets:
         print(
             f"{diff_label} {snippet['tag']}:\n    stitched: {snippet['stitched']}\n    complete: {snippet['complete']}",
@@ -125,7 +126,7 @@ def print_transcription_summary(
         )
 
 
-def _tokenize_with_original(text: str) -> list[tuple[str, str]]:
+def _tokenize_with_original(*, text: str) -> list[tuple[str, str]]:
     """
     Return (raw, normalized) tokens where normalized strips punctuation and lowercases.
 
@@ -144,7 +145,7 @@ def _tokenize_with_original(text: str) -> list[tuple[str, str]]:
     return tokens
 
 
-def _colorize_token(token: str, use_color: bool, color_code: str) -> str:
+def _colorize_token(*, token: str, use_color: bool, color_code: str) -> str:
     """
     Colorize a token with ANSI color codes or bracket notation.
 
@@ -162,6 +163,7 @@ def _colorize_token(token: str, use_color: bool, color_code: str) -> str:
 
 
 def _format_diff_snippet(
+    *,
     tokens: list[tuple[str, str]],
     diff_start: int,
     diff_end: int,
@@ -182,7 +184,7 @@ def _format_diff_snippet(
         Formatted diff snippet string
     """
     if not tokens:
-        return _colorize_token("∅", use_color, color_code)
+        return _colorize_token(token="∅", use_color=use_color, color_code=color_code)
 
     context = 3
     window_end = max(diff_end, diff_start)
@@ -193,12 +195,12 @@ def _format_diff_snippet(
     for idx in range(start, end):
         raw = tokens[idx][0]
         if diff_start <= idx < diff_end:
-            parts.append(_colorize_token(raw, use_color, color_code))
+            parts.append(_colorize_token(token=raw, use_color=use_color, color_code=color_code))
         else:
             parts.append(raw)
 
     if diff_start == diff_end:
-        placeholder = _colorize_token("∅", use_color, color_code)
+        placeholder = _colorize_token(token="∅", use_color=use_color, color_code=color_code)
         insert_at = diff_start - start
         if insert_at < 0:
             parts.insert(0, placeholder)
@@ -212,10 +214,11 @@ def _format_diff_snippet(
         snippet = "... " + snippet
     if end < len(tokens):
         snippet = snippet + " ..."
-    return snippet or _colorize_token("∅", use_color, color_code)
+    return snippet or _colorize_token(token="∅", use_color=use_color, color_code=color_code)
 
 
 def _generate_diff_snippets(
+    *,
     stitched_text: str,
     complete_text: str,
     use_color: bool,
@@ -231,8 +234,8 @@ def _generate_diff_snippets(
     Returns:
         List of diff snippets, each with 'tag', 'stitched', 'complete' keys
     """
-    stitched_tokens = _tokenize_with_original(stitched_text)
-    complete_tokens = _tokenize_with_original(complete_text)
+    stitched_tokens = _tokenize_with_original(text=stitched_text)
+    complete_tokens = _tokenize_with_original(text=complete_text)
     stitched_norm = [norm for _, norm in stitched_tokens]
     complete_norm = [norm for _, norm in complete_tokens]
 
@@ -245,8 +248,8 @@ def _generate_diff_snippets(
         snippets.append(
             {
                 "tag": tag,
-                "stitched": _format_diff_snippet(stitched_tokens, i1, i2, use_color, "33"),
-                "complete": _format_diff_snippet(complete_tokens, j1, j2, use_color, "36"),
+                "stitched": _format_diff_snippet(tokens=stitched_tokens, diff_start=i1, diff_end=i2, use_color=use_color, color_code="33"),
+                "complete": _format_diff_snippet(tokens=complete_tokens, diff_start=j1, diff_end=j2, use_color=use_color, color_code="36"),
             }
         )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import os
 import queue
 import ssl
@@ -8,7 +9,6 @@ import struct
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -17,11 +17,11 @@ import torch
 import webrtcvad
 import whisper
 
-from transcribe_demo.backend_protocol import AudioSource, TranscriptionChunk
-from transcribe_demo.session_logger import SessionLogger
+import transcribe_demo.backend_protocol
+import transcribe_demo.session_logger
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class WhisperTranscriptionResult:
     """
     Aggregate result returned after a Whisper transcription session.
@@ -31,7 +31,7 @@ class WhisperTranscriptionResult:
 
     full_audio_transcription: str | None
     capture_duration: float = 0.0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 def _mps_available() -> bool:
@@ -66,6 +66,7 @@ def _extract_whisper_text(result: dict[str, Any]) -> str:
 
 
 def load_whisper_model(
+    *,
     model_name: str,
     device_preference: str,
     require_gpu: bool,
@@ -189,7 +190,7 @@ def load_whisper_model(
 class WebRTCVAD:
     """WebRTC VAD wrapper for speech detection."""
 
-    def __init__(self, sample_rate: int, frame_duration_ms: int = 30, aggressiveness: int = 2):
+    def __init__(self, *, sample_rate: int, frame_duration_ms: int = 30, aggressiveness: int = 2):
         """
         Initialize WebRTC VAD.
 
@@ -208,7 +209,7 @@ class WebRTCVAD:
         self.frame_size = int(sample_rate * frame_duration_ms / 1000)
         self.vad = webrtcvad.Vad(aggressiveness)
 
-    def is_speech(self, audio: np.ndarray) -> bool:
+    def is_speech(self, *, audio: np.ndarray) -> bool:
         """
         Detect if audio frame contains speech.
 
@@ -256,6 +257,7 @@ class WebRTCVAD:
 
 
 def run_whisper_transcriber(
+    *,
     model_name: str,
     sample_rate: int,
     channels: int,
@@ -264,8 +266,8 @@ def run_whisper_transcriber(
     disable_ssl_verify: bool,
     device_preference: str,
     require_gpu: bool,
-    audio_source: AudioSource,
-    chunk_queue: queue.Queue[TranscriptionChunk | None],
+    audio_source: transcribe_demo.backend_protocol.AudioSource,
+    chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None],
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,
@@ -273,7 +275,7 @@ def run_whisper_transcriber(
     max_chunk_duration: float = 60.0,
     compare_transcripts: bool = True,
     language: str = "en",
-    session_logger: SessionLogger | None = None,
+    session_logger: transcribe_demo.session_logger.SessionLogger | None = None,
     min_log_duration: float = 0.0,
     enable_partial_transcription: bool = False,
     partial_model: str = "base.en",
@@ -387,7 +389,7 @@ def run_whisper_transcriber(
                     vad_frame_buffer = vad_frame_buffer[vad.frame_size :]
 
                     # Check if frame contains speech
-                    if vad.is_speech(frame):
+                    if vad.is_speech(audio=frame):
                         # Reset silence counter and accumulate speech
                         silence_frames = 0
                         speech_frames += vad.frame_size
@@ -517,7 +519,7 @@ def run_whisper_transcriber(
                 chunk_absolute_end = max(0.0, inference_start - session_start_time)
                 chunk_absolute_start = max(0.0, chunk_absolute_end - chunk_audio_duration)
 
-                chunk = TranscriptionChunk(
+                chunk = transcribe_demo.backend_protocol.TranscriptionChunk(
                     index=chunk_index,
                     text=text,
                     start_time=chunk_absolute_start,
@@ -641,7 +643,7 @@ def run_whisper_transcriber(
                         # Display the segment transcription
                         # Use segment_index as a unique identifier
                         display_index = chunk_idx * 1000 + current_segment_index
-                        chunk = TranscriptionChunk(
+                        chunk = transcribe_demo.backend_protocol.TranscriptionChunk(
                             index=display_index,
                             text=text,
                             start_time=chunk_absolute_start,
@@ -722,7 +724,7 @@ def run_whisper_transcriber(
 
     # Save full audio for session logging (finalization happens in main.py with stitched transcription)
     if session_logger is not None:
-        session_logger.save_full_audio(full_audio, audio_capture.get_capture_duration())
+        session_logger.save_full_audio(audio=full_audio, capture_duration=audio_capture.get_capture_duration())
 
     metadata = {
         "model": model_name,
@@ -750,6 +752,7 @@ def run_whisper_transcriber(
 
 
 def transcribe_full_audio(
+    *,
     audio: np.ndarray,
     sample_rate: int,
     model_name: str,
@@ -803,7 +806,7 @@ def transcribe_full_audio(
     return _extract_whisper_text(result)
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class WhisperBackend:
     """
     Whisper transcription backend.
@@ -833,7 +836,7 @@ class WhisperBackend:
     # Session configuration
     language: str = "en"
     compare_transcripts: bool = True
-    session_logger: SessionLogger | None = None
+    session_logger: transcribe_demo.session_logger.SessionLogger | None = None
     min_log_duration: float = 0.0
 
     # SSL configuration
@@ -843,8 +846,9 @@ class WhisperBackend:
 
     def run(
         self,
-        audio_source: AudioSource,
-        chunk_queue: queue.Queue[TranscriptionChunk | None],
+        *,
+        audio_source: transcribe_demo.backend_protocol.AudioSource,
+        chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None],
     ) -> WhisperTranscriptionResult:
         """
         Run Whisper transcription on the given audio source.

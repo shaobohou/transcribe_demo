@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TextIO
 
-from transcribe_demo.backend_protocol import TranscriptionChunk
+import transcribe_demo.backend_protocol
 
 
 class ChunkCollector:
@@ -16,14 +16,14 @@ class ChunkCollector:
     mid-sentence splits.
     """
 
-    def __init__(self, stream: TextIO) -> None:
+    def __init__(self, *, stream: TextIO) -> None:
         self._stream = stream
         self._last_time = float("-inf")
-        self._chunks: list[TranscriptionChunk] = []
+        self._chunks: list[transcribe_demo.backend_protocol.TranscriptionChunk] = []
         self._last_partial_chunk_index: int | None = None
 
     @staticmethod
-    def _clean_chunk_text(text: str, is_final_chunk: bool = False) -> str:
+    def _clean_chunk_text(*, text: str, is_final_chunk: bool = False) -> str:
         """
         Clean trailing punctuation from chunk text for better stitching.
 
@@ -38,7 +38,7 @@ class ChunkCollector:
                 text = text[:-1].rstrip()
         return text
 
-    def _display_partial_chunk(self, chunk: TranscriptionChunk) -> None:
+    def _display_partial_chunk(self, *, chunk: transcribe_demo.backend_protocol.TranscriptionChunk) -> None:
         """Display a partial transcription, overwriting same segment on TTY."""
         import sys
 
@@ -81,14 +81,14 @@ class ChunkCollector:
         self._last_partial_chunk_index = chunk.index
         self._stream.flush()
 
-    def __call__(self, chunk: TranscriptionChunk) -> None:
+    def __call__(self, *, chunk: transcribe_demo.backend_protocol.TranscriptionChunk) -> None:
         """Process a transcription chunk (implements ChunkConsumer protocol)."""
         if not chunk.text:
             return
 
         # Handle partial transcription (don't store, just display)
         if chunk.is_partial:
-            self._display_partial_chunk(chunk)
+            self._display_partial_chunk(chunk=chunk)
             return
 
         # Store the chunk
@@ -162,7 +162,7 @@ class ChunkCollector:
         if (chunk.index + 1) % 3 == 0:
             # Clean trailing punctuation from all chunks except the last one
             cleaned_chunks = [
-                self._clean_chunk_text(c.text, is_final_chunk=(i == len(self._chunks) - 1))
+                self._clean_chunk_text(text=c.text, is_final_chunk=(i == len(self._chunks) - 1))
                 for i, c in enumerate(self._chunks)
             ]
             stitched_text = " ".join(chunk for chunk in cleaned_chunks if chunk)
@@ -187,13 +187,13 @@ class ChunkCollector:
         cleaned_chunks = []
         for i, chunk in enumerate(self._chunks):
             is_final = i == len(self._chunks) - 1
-            cleaned = self._clean_chunk_text(chunk.text, is_final_chunk=is_final)
+            cleaned = self._clean_chunk_text(text=chunk.text, is_final_chunk=is_final)
             if cleaned:
                 cleaned_chunks.append(cleaned)
 
         return " ".join(cleaned_chunks)
 
-    def get_chunks(self) -> list[TranscriptionChunk]:
+    def get_chunks(self) -> list[transcribe_demo.backend_protocol.TranscriptionChunk]:
         """Get all collected chunks."""
         return self._chunks.copy()
 
@@ -207,7 +207,7 @@ class ChunkCollector:
         cleaned_chunks = [
             (
                 chunk.index,
-                self._clean_chunk_text(chunk.text, is_final_chunk=(i == len(self._chunks) - 1)),
+                self._clean_chunk_text(text=chunk.text, is_final_chunk=(i == len(self._chunks) - 1)),
             )
             for i, chunk in enumerate(self._chunks)
         ]

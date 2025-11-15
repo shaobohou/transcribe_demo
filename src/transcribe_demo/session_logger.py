@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import shutil
 import sys
 import wave
-from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -15,7 +15,7 @@ import numpy as np
 import soundfile as sf
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class ChunkMetadata:
     """Metadata for a single transcription chunk."""
 
@@ -29,7 +29,7 @@ class ChunkMetadata:
     cleaned_text: str | None = None  # Text after stitching punctuation cleanup
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class SessionMetadata:
     """Metadata for an entire transcription session."""
 
@@ -81,6 +81,7 @@ class SessionLogger:
 
     def __init__(
         self,
+        *,
         output_dir: Path,
         sample_rate: int,
         channels: int,
@@ -145,6 +146,7 @@ class SessionLogger:
 
     def log_chunk(
         self,
+        *,
         index: int,
         text: str,
         start_time: float,
@@ -173,7 +175,7 @@ class SessionLogger:
             self._ensure_dirs_exist()  # Create directories if needed
             audio_filename = f"chunk_{index:03d}.{self.audio_format}"
             audio_path = self.chunks_dir / audio_filename
-            self._save_audio(audio, audio_path)
+            self._save_audio(audio=audio, path=audio_path)
 
         # Store chunk metadata
         chunk_meta = ChunkMetadata(
@@ -188,7 +190,7 @@ class SessionLogger:
         )
         self.chunks.append(chunk_meta)
 
-    def update_chunk_cleaned_text(self, index: int, cleaned_text: str) -> None:
+    def update_chunk_cleaned_text(self, *, index: int, cleaned_text: str) -> None:
         """
         Update the cleaned text for a specific chunk.
 
@@ -196,12 +198,13 @@ class SessionLogger:
             index: Chunk index
             cleaned_text: Cleaned text after stitching punctuation cleanup
         """
-        for chunk in self.chunks:
+        for i, chunk in enumerate(self.chunks):
             if chunk.index == index:
-                chunk.cleaned_text = cleaned_text
+                # Replace the frozen dataclass instance
+                self.chunks[i] = dataclasses.replace(chunk, cleaned_text=cleaned_text)
                 return
 
-    def save_full_audio(self, audio: np.ndarray, capture_duration: float) -> None:
+    def save_full_audio(self, *, audio: np.ndarray, capture_duration: float) -> None:
         """
         Save the complete raw audio to disk.
 
@@ -215,11 +218,12 @@ class SessionLogger:
 
         self._ensure_dirs_exist()  # Create directories if needed
         full_audio_path = self.session_dir / f"full_audio.{self.audio_format}"
-        self._save_audio(audio, full_audio_path)
+        self._save_audio(audio=audio, path=full_audio_path)
         print(f"Saved full audio: {full_audio_path}", file=sys.stderr)
 
     def finalize(
         self,
+        *,
         capture_duration: float,
         full_audio_transcription: str | None = None,
         stitched_transcription: str | None = None,
@@ -256,34 +260,35 @@ class SessionLogger:
         # Ensure directories exist before finalizing
         self._ensure_dirs_exist()
 
-        # Build session metadata
+        # Build session metadata with all fields
         timestamp = datetime.now().isoformat()
-        metadata = SessionMetadata(
-            session_id=self.session_id,
-            timestamp=timestamp,
-            backend=self.backend,
-            sample_rate=self.sample_rate,
-            channels=self.channels,
-            capture_duration=capture_duration,
-            total_chunks=len(self.chunks),
-            full_audio_transcription=full_audio_transcription,
-            stitched_transcription=stitched_transcription,
-            transcription_similarity=transcription_similarity,
-            transcription_diffs=transcription_diffs,
-        )
+        metadata_fields = {
+            "session_id": self.session_id,
+            "timestamp": timestamp,
+            "backend": self.backend,
+            "sample_rate": self.sample_rate,
+            "channels": self.channels,
+            "capture_duration": capture_duration,
+            "total_chunks": len(self.chunks),
+            "full_audio_transcription": full_audio_transcription,
+            "stitched_transcription": stitched_transcription,
+            "transcription_similarity": transcription_similarity,
+            "transcription_diffs": transcription_diffs,
+        }
 
-        # Merge extra metadata
+        # Merge extra metadata before creating the frozen dataclass
         if extra_metadata:
             for key, value in extra_metadata.items():
-                if hasattr(metadata, key):
-                    setattr(metadata, key, value)
+                if key in SessionMetadata.__dataclass_fields__:
+                    metadata_fields[key] = value
 
+        metadata = SessionMetadata(**metadata_fields)
         self.session_metadata = metadata
 
         # Save session.json
         session_data = {
-            "metadata": asdict(metadata),
-            "chunks": [asdict(chunk) for chunk in self.chunks],
+            "metadata": dataclasses.asdict(metadata),
+            "chunks": [dataclasses.asdict(chunk) for chunk in self.chunks],
         }
         session_json_path = self.session_dir / "session.json"
         with open(session_json_path, "w", encoding="utf-8") as f:
@@ -296,7 +301,7 @@ class SessionLogger:
         # Create marker file to indicate successful finalization
         self._create_completion_marker()
 
-    def _save_audio(self, audio: np.ndarray, path: Path) -> None:
+    def _save_audio(self, *, audio: np.ndarray, path: Path) -> None:
         """
         Save audio in the configured format (WAV or FLAC).
 

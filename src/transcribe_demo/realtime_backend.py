@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import json
 import queue
 import ssl
@@ -11,7 +12,6 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -20,18 +20,18 @@ import websockets
 if TYPE_CHECKING:
     import websockets.asyncio.client
 
-from transcribe_demo.backend_protocol import AudioSource, TranscriptionChunk
-from transcribe_demo.session_logger import SessionLogger
+import transcribe_demo.backend_protocol
+import transcribe_demo.session_logger
 
 
-def float_to_pcm16(audio: np.ndarray) -> bytes:
+def float_to_pcm16(*, audio: np.ndarray) -> bytes:
     mono = audio.astype(np.float32, copy=False)
     np.clip(mono, -1.0, 1.0, out=mono)
     ints = (mono * 32767.0).astype(np.int16, copy=False)
     return ints.tobytes()
 
 
-def resample_audio(audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
+def resample_audio(*, audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
     if from_rate == to_rate or audio.size == 0:
         return audio
     duration = audio.size / float(from_rate)
@@ -43,7 +43,7 @@ def resample_audio(audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarra
     return np.interp(target_positions, source_positions, audio).astype(np.float32, copy=False)
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class RealtimeTranscriptionResult:
     """
     Aggregate data returned after a realtime transcription session.
@@ -55,11 +55,12 @@ class RealtimeTranscriptionResult:
     sample_rate: int
     chunks: list[str] | None = None
     capture_duration: float = 0.0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
     full_audio_transcription: str | None = None  # Computed separately via transcribe_full_audio_realtime
 
 
 async def _send_json(
+    *,
     ws: websockets.asyncio.client.ClientConnection,
     payload: dict[str, Any],
     lock: asyncio.Lock,
@@ -72,9 +73,9 @@ async def _send_json(
 
 
 def _create_session_update(
+    *,
     instructions: str,
     transcription_config: dict[str, Any],
-    *,
     include_turn_detection: bool,
     vad_threshold: float = 0.3,
     vad_silence_duration_ms: int = 200,
@@ -99,7 +100,7 @@ def _create_session_update(
     return {"type": "session.update", "session": session}
 
 
-def _run_async(coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
+def _run_async(*, coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
     try:
         return asyncio.run(coro_factory())
     except RuntimeError:
@@ -111,6 +112,7 @@ def _run_async(coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
 
 
 def transcribe_full_audio_realtime(
+    *,
     audio: np.ndarray,
     sample_rate: int,
     chunk_duration: float,
@@ -157,13 +159,13 @@ def transcribe_full_audio_realtime(
 
         async with websockets.connect(uri, additional_headers=headers, max_size=None, ssl=ssl_context) as ws:
             await _send_json(
-                ws,
-                _create_session_update(
-                    instructions,
-                    transcription_config,
+                ws=ws,
+                payload=_create_session_update(
+                    instructions=instructions,
+                    transcription_config=transcription_config,
                     include_turn_detection=False,
                 ),
-                lock,
+                lock=lock,
             )
 
             cursor = 0
@@ -172,17 +174,17 @@ def transcribe_full_audio_realtime(
             while cursor < total_samples:
                 window = audio[cursor : cursor + chunk_size]
                 cursor += chunk_size
-                resampled = resample_audio(window, sample_rate, session_sample_rate)
+                resampled = resample_audio(audio=window, from_rate=sample_rate, to_rate=session_sample_rate)
                 if resampled.size == 0:
                     continue
-                payload = base64.b64encode(float_to_pcm16(resampled)).decode("ascii")
+                payload = base64.b64encode(float_to_pcm16(audio=resampled)).decode("ascii")
                 await _send_json(
-                    ws,
-                    {
+                    ws=ws,
+                    payload={
                         "type": "input_audio_buffer.append",
                         "audio": payload,
                     },
-                    lock,
+                    lock=lock,
                 )
                 chunks_sent += 1
 
@@ -190,7 +192,7 @@ def transcribe_full_audio_realtime(
             if chunks_sent == 0:
                 return ""
 
-            await _send_json(ws, {"type": "input_audio_buffer.commit"}, lock)
+            await _send_json(ws=ws, payload={"type": "input_audio_buffer.commit"}, lock=lock)
 
             committed_received = False
             post_commit_timeout = 1.0  # Wait 1 second after commit for final transcriptions
@@ -247,10 +249,11 @@ def transcribe_full_audio_realtime(
             await ws.close()
         return " ".join(completed).strip()
 
-    return _run_async(_transcribe)
+    return _run_async(coro_factory=_transcribe)
 
 
 def run_realtime_transcriber(
+    *,
     api_key: str,
     endpoint: str,
     model: str,
@@ -258,12 +261,12 @@ def run_realtime_transcriber(
     channels: int,
     chunk_duration: float,
     instructions: str,
-    audio_source: AudioSource,
+    audio_source: transcribe_demo.backend_protocol.AudioSource,
     disable_ssl_verify: bool = False,
-    chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
+    chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None] | None = None,
     compare_transcripts: bool = True,
     language: str = "en",
-    session_logger: SessionLogger | None = None,
+    session_logger: transcribe_demo.session_logger.SessionLogger | None = None,
     min_log_duration: float = 0.0,
     vad_threshold: float = 0.3,
     vad_silence_duration_ms: int = 200,
@@ -310,15 +313,15 @@ def run_realtime_transcriber(
                 async with websockets.connect(uri, additional_headers=headers, max_size=None, ssl=ssl_context) as ws:
                     # Session setup
                     await _send_json(
-                        ws,
-                        _create_session_update(
-                            instructions,
-                            transcription_config,
+                        ws=ws,
+                        payload=_create_session_update(
+                            instructions=instructions,
+                            transcription_config=transcription_config,
                             include_turn_detection=True,
                             vad_threshold=vad_threshold,
                             vad_silence_duration_ms=vad_silence_duration_ms,
                         ),
-                        lock,
+                        lock=lock,
                     )
 
                     # Create tasks for sending and receiving
@@ -386,20 +389,20 @@ def run_realtime_transcriber(
                                 window = buffer[:send_count]
                                 buffer = buffer[send_count:]
 
-                                resampled = resample_audio(window, sample_rate, session_sample_rate)
+                                resampled = resample_audio(audio=window, from_rate=sample_rate, to_rate=session_sample_rate)
                                 if len(resampled) == 0:
                                     if force_flush and buffer.size == 0:
                                         break
                                     continue
 
-                                pcm_payload = base64.b64encode(float_to_pcm16(resampled)).decode("ascii")
+                                pcm_payload = base64.b64encode(float_to_pcm16(audio=resampled)).decode("ascii")
                                 await _send_json(
-                                    ws,
-                                    {
+                                    ws=ws,
+                                    payload={
                                         "type": "input_audio_buffer.append",
                                         "audio": pcm_payload,
                                     },
-                                    lock,
+                                    lock=lock,
                                 )
 
                                 if force_flush and buffer.size == 0:
@@ -407,19 +410,19 @@ def run_realtime_transcriber(
 
                             # Send any remaining buffer
                             if buffer.size > 0:
-                                resampled = resample_audio(buffer, sample_rate, session_sample_rate)
+                                resampled = resample_audio(audio=buffer, from_rate=sample_rate, to_rate=session_sample_rate)
                                 if len(resampled) > 0:
-                                    pcm_payload = base64.b64encode(float_to_pcm16(resampled)).decode("ascii")
+                                    pcm_payload = base64.b64encode(float_to_pcm16(audio=resampled)).decode("ascii")
                                     await _send_json(
-                                        ws,
-                                        {
+                                        ws=ws,
+                                        payload={
                                             "type": "input_audio_buffer.append",
                                             "audio": pcm_payload,
                                         },
-                                        lock,
+                                        lock=lock,
                                     )
 
-                            await _send_json(ws, {"type": "input_audio_buffer.commit"}, lock)
+                            await _send_json(ws=ws, payload={"type": "input_audio_buffer.commit"}, lock=lock)
                         except Exception as e:
                             print(f"Audio sender error: {e}", file=sys.stderr)
                             raise
@@ -443,7 +446,7 @@ def run_realtime_transcriber(
                                     current_chunk_index = chunk_counter[0]
                                     chunk_counter[0] += 1
 
-                                chunk = TranscriptionChunk(
+                                chunk = transcribe_demo.backend_protocol.TranscriptionChunk(
                                     index=current_chunk_index,
                                     text=final_text,
                                     start_time=chunk_start,
@@ -525,7 +528,7 @@ def run_realtime_transcriber(
                                         current_chunk_index = chunk_counter[0]
                                         chunk_counter[0] += 1
 
-                                    chunk = TranscriptionChunk(
+                                    chunk = transcribe_demo.backend_protocol.TranscriptionChunk(
                                         index=current_chunk_index,
                                         text=final_text,
                                         start_time=chunk_start,
@@ -635,7 +638,7 @@ def run_realtime_transcriber(
 
     # Save full audio for session logging (finalization happens in main.py with stitched transcription)
     if session_logger is not None:
-        session_logger.save_full_audio(full_audio, audio_capture.get_capture_duration())
+        session_logger.save_full_audio(audio=full_audio, capture_duration=audio_capture.get_capture_duration())
 
     return RealtimeTranscriptionResult(
         full_audio=full_audio,
@@ -651,7 +654,7 @@ def run_realtime_transcriber(
     )
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class RealtimeBackend:
     """
     Realtime API transcription backend.
@@ -678,7 +681,7 @@ class RealtimeBackend:
     # Session configuration
     language: str = "en"
     compare_transcripts: bool = True
-    session_logger: SessionLogger | None = None
+    session_logger: transcribe_demo.session_logger.SessionLogger | None = None
     min_log_duration: float = 0.0
 
     # SSL configuration
@@ -686,8 +689,9 @@ class RealtimeBackend:
 
     def run(
         self,
-        audio_source: AudioSource,
-        chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
+        *,
+        audio_source: transcribe_demo.backend_protocol.AudioSource,
+        chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None] | None = None,
     ) -> RealtimeTranscriptionResult:
         """
         Run Realtime API transcription on the given audio source.
@@ -720,10 +724,11 @@ class RealtimeBackend:
         )
 
         # Get full audio transcription for comparison if enabled
+        full_audio_text = None
         if self.compare_transcripts and result.full_audio.size > 0:
             try:
-                result.full_audio_transcription = transcribe_full_audio_realtime(
-                    result.full_audio,
+                full_audio_text = transcribe_full_audio_realtime(
+                    audio=result.full_audio,
                     sample_rate=result.sample_rate,
                     chunk_duration=2.0,
                     api_key=self.api_key,
@@ -741,4 +746,7 @@ class RealtimeBackend:
                     file=sys.stderr,
                 )
 
+        # Return result with full_audio_transcription if available
+        if full_audio_text is not None:
+            return dataclasses.replace(result, full_audio_transcription=full_audio_text)
         return result

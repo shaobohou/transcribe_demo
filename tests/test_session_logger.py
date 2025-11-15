@@ -61,7 +61,7 @@ def test_session_logger_update_chunk_cleaned_text(temp_session_dir: Path) -> Non
     )
 
     # Update cleaned text
-    logger.update_chunk_cleaned_text(0, "Hello, world")
+    logger.update_chunk_cleaned_text(index=0, cleaned_text="Hello, world")
 
     # Verify update
     assert len(logger.chunks) == 1

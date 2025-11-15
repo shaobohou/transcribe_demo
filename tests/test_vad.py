@@ -57,7 +57,7 @@ class TestWebRTCVADSpeechDetection:
         silent_frame = np.zeros(frame_size, dtype=np.float32)
 
         # Silence should not be detected as speech
-        assert not vad.is_speech(silent_frame)
+        assert not vad.is_speech(audio=silent_frame)
 
     def test_wrong_frame_size(self):
         """Test that wrong frame size returns False."""
@@ -67,7 +67,7 @@ class TestWebRTCVADSpeechDetection:
         wrong_size_frame = np.zeros(100, dtype=np.float32)
 
         # Should return False for wrong frame size
-        assert not vad.is_speech(wrong_size_frame)
+        assert not vad.is_speech(audio=wrong_size_frame)
 
     def test_empty_frame(self):
         """Test that empty frame returns False."""
@@ -77,7 +77,7 @@ class TestWebRTCVADSpeechDetection:
         empty_frame = np.array([], dtype=np.float32)
 
         # Should return False
-        assert not vad.is_speech(empty_frame)
+        assert not vad.is_speech(audio=empty_frame)
 
 
 class TestWebRTCVADIntegration:
@@ -91,7 +91,7 @@ class TestWebRTCVADIntegration:
         # Create 10 silent frames - all should be detected as non-speech
         for _ in range(10):
             silent_frame = np.zeros(frame_size, dtype=np.float32)
-            assert not vad.is_speech(silent_frame)
+            assert not vad.is_speech(audio=silent_frame)
 
     def test_clipped_audio(self):
         """Test that clipped audio at max amplitude is likely detected as speech."""
@@ -102,7 +102,7 @@ class TestWebRTCVADIntegration:
         clipped_frame = np.ones(frame_size, dtype=np.float32)
 
         # Max amplitude should be detected as speech with moderate aggressiveness
-        assert vad.is_speech(clipped_frame)
+        assert vad.is_speech(audio=clipped_frame)
 
     def test_different_sample_rates(self):
         """Test VAD with different sample rates."""
@@ -114,7 +114,7 @@ class TestWebRTCVADIntegration:
             silent_frame = np.zeros(frame_size, dtype=np.float32)
 
             # Should detect as non-speech
-            assert not vad.is_speech(silent_frame)
+            assert not vad.is_speech(audio=silent_frame)
 
 
 class TestVADEdgeCases:
@@ -129,7 +129,7 @@ class TestVADEdgeCases:
         nan_frame = np.full(frame_size, np.nan, dtype=np.float32)
 
         # Should handle gracefully and return False (invalid audio)
-        result = vad.is_speech(nan_frame)
+        result = vad.is_speech(audio=nan_frame)
         assert result is False
 
     def test_inf_values(self):
@@ -141,7 +141,7 @@ class TestVADEdgeCases:
         inf_frame = np.full(frame_size, np.inf, dtype=np.float32)
 
         # Should handle gracefully and return False (invalid audio)
-        result = vad.is_speech(inf_frame)
+        result = vad.is_speech(audio=inf_frame)
         assert result is False
 
     def test_very_large_values(self):
@@ -154,7 +154,7 @@ class TestVADEdgeCases:
 
         # Should warn about clipping and still process
         with pytest.warns(UserWarning, match="Audio values exceeded"):
-            result = vad.is_speech(large_frame)
+            result = vad.is_speech(audio=large_frame)
         # After clipping to max amplitude, should likely be detected as speech
         assert result is True
 
@@ -167,7 +167,7 @@ class TestVADEdgeCases:
         negative_frame = np.full(frame_size, -0.5, dtype=np.float32)
 
         # Negative values are valid audio, high amplitude should be detected as speech
-        result = vad.is_speech(negative_frame)
+        result = vad.is_speech(audio=negative_frame)
         assert result is True
 
 
@@ -189,6 +189,6 @@ def test_webrtc_vad_detects_speech_in_sample_audio():
 
     max_frames = 500  # Limit processing time
     frames = frames[:max_frames]
-    detections = sum(1 for frame in frames if vad.is_speech(frame))
+    detections = sum(1 for frame in frames if vad.is_speech(audio=frame))
 
     assert detections > 0, "VAD failed to detect speech in sample audio."

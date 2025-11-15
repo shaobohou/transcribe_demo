@@ -31,6 +31,7 @@ class FileAudioSource:
 
     def __init__(
         self,
+        *,
         audio_file: Path | str,
         sample_rate: int,
         channels: int,
@@ -80,7 +81,7 @@ class FileAudioSource:
         self._loaded_sample_rate: int = 0
         self._load_audio()
 
-    def _is_url(self, path: str) -> bool:
+    def _is_url(self, *, path: str) -> bool:
         """Check if the provided path is a URL."""
         parsed = urlparse(path)
         return parsed.scheme in ("http", "https")
@@ -98,7 +99,7 @@ class FileAudioSource:
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir
 
-    def _get_cache_key(self, url: str) -> str:
+    def _get_cache_key(self, *, url: str) -> str:
         """
         Generate a cache key for a URL.
 
@@ -110,7 +111,7 @@ class FileAudioSource:
         """
         return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
-    def _get_cached_file(self, url: str) -> Path | None:
+    def _get_cached_file(self, *, url: str) -> Path | None:
         """
         Check if a URL is already cached and return the path if it exists.
 
@@ -121,7 +122,7 @@ class FileAudioSource:
             Path to cached file if it exists, None otherwise
         """
         cache_dir = self._get_cache_dir()
-        cache_key = self._get_cache_key(url)
+        cache_key = self._get_cache_key(url=url)
 
         # Determine file extension from URL
         parsed_url = urlparse(url)
@@ -134,7 +135,7 @@ class FileAudioSource:
             return cached_file
         return None
 
-    def _download_from_url(self, url: str) -> Path:
+    def _download_from_url(self, *, url: str) -> Path:
         """
         Download audio file from URL to cache, or return cached file if available.
 
@@ -145,7 +146,7 @@ class FileAudioSource:
             Path to the cached file
         """
         # Check cache first
-        cached_file = self._get_cached_file(url)
+        cached_file = self._get_cached_file(url=url)
         if cached_file is not None:
             print(f"Using cached audio from URL: {url}", file=sys.stderr)
             print(f"Cache location: {cached_file}", file=sys.stderr)
@@ -161,7 +162,7 @@ class FileAudioSource:
 
         # Create cache file path
         cache_dir = self._get_cache_dir()
-        cache_key = self._get_cache_key(url)
+        cache_key = self._get_cache_key(url=url)
         cache_file = cache_dir / f"{cache_key}{suffix}"
 
         # Download to a temporary file first, then move to cache
@@ -209,9 +210,9 @@ class FileAudioSource:
     def _load_audio(self) -> None:
         """Load audio file and prepare for playback."""
         # Check if input is a URL
-        if self._is_url(self.audio_file_input):
+        if self._is_url(path=self.audio_file_input):
             # Download to cache (or use cached file)
-            audio_path = self._download_from_url(self.audio_file_input)
+            audio_path = self._download_from_url(url=self.audio_file_input)
             display_name = self.audio_file_input
             # Note: We don't set self._temp_file because cached files are persistent
         else:
@@ -241,7 +242,7 @@ class FileAudioSource:
                     f"Resampling from {file_sample_rate}Hz to {self.sample_rate}Hz...",
                     file=sys.stderr,
                 )
-                audio = self._resample(audio, file_sample_rate, self.sample_rate)
+                audio = self._resample(audio=audio, from_rate=file_sample_rate, to_rate=self.sample_rate)
 
             # Limit to max_capture_duration if specified
             if self._max_capture_samples > 0 and len(audio) > self._max_capture_samples:
@@ -257,7 +258,7 @@ class FileAudioSource:
         except Exception as e:
             raise RuntimeError(f"Failed to load audio file {self.audio_file_input}: {e}") from e
 
-    def _resample(self, audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
+    def _resample(self, *, audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
         """
         Resample audio using linear interpolation.
 

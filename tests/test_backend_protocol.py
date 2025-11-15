@@ -121,7 +121,7 @@ class TestLegacyConsumerAdapter:
 
     def test_adapt_none(self) -> None:
         """Test adapting None returns None."""
-        result = adapt_legacy_consumer(None)
+        result = adapt_legacy_consumer(legacy_consumer=None)
         assert result is None
 
     def test_adapt_legacy_consumer(self) -> None:
@@ -138,7 +138,7 @@ class TestLegacyConsumerAdapter:
         ) -> None:
             received_args.append((chunk_index, text, absolute_start, absolute_end, inference_seconds, is_partial))
 
-        adapted = adapt_legacy_consumer(legacy_consumer)
+        adapted = adapt_legacy_consumer(legacy_consumer=legacy_consumer)
         assert adapted is not None
 
         # Use adapted consumer with new TranscriptionChunk interface

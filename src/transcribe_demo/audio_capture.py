@@ -28,6 +28,7 @@ class AudioCaptureManager:
 
     def __init__(
         self,
+        *,
         sample_rate: int,
         channels: int,
         max_capture_duration: float = 0.0,
@@ -66,6 +67,7 @@ class AudioCaptureManager:
 
     def _audio_callback(
         self,
+        *,
         indata: np.ndarray,
         frames: int,
         time: Structure,

@@ -60,7 +60,7 @@ def create_test_session(temp_session_dir: Path):
         audio = np.random.randn(num_samples).astype(np.float32) * 0.1
 
         # Save full audio
-        logger.save_full_audio(audio, duration)
+        logger.save_full_audio(audio=audio, capture_duration=duration)
 
         # Finalize session
         logger.finalize(
@@ -444,8 +444,8 @@ def test_retranscribe_session_whisper(temp_session_dir: Path, create_test_sessio
         # Also log chunks if session_logger is provided
         if "session_logger" in kwargs:
             session_logger = kwargs["session_logger"]
-            session_logger.log_chunk(0, "Retranscribed chunk 0.", 0.0, 2.5, 0.1)
-            session_logger.log_chunk(1, "Retranscribed chunk 1.", 2.5, 5.0, 0.1)
+            session_logger.log_chunk(index=0, text="Retranscribed chunk 0.", start_time=0.0, end_time=2.5, inference_seconds=0.1)
+            session_logger.log_chunk(index=1, text="Retranscribed chunk 1.", start_time=2.5, end_time=5.0, inference_seconds=0.1)
         return FakeWhisperResult(
             capture_duration=5.0,
             full_audio_transcription=None,
