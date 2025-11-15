@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import queue
 from typing import Any
 
 import numpy as np
@@ -7,6 +8,7 @@ import pytest
 
 from test_helpers import create_fake_audio_capture_factory, load_test_fixture
 from transcribe_demo import whisper_backend
+from transcribe_demo.backend_protocol import TranscriptionChunk
 
 
 @pytest.mark.integration
@@ -37,7 +39,34 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
         create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
     )
 
-    def capture_chunk(chunk):
+    duration_seconds = len(audio) / sample_rate
+    chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
+
+    result = whisper_backend.run_whisper_transcriber(
+        model_name="fixture",
+        sample_rate=sample_rate,
+        channels=1,
+        temp_file=None,
+        ca_cert=None,
+        disable_ssl_verify=False,
+        device_preference="cpu",
+        require_gpu=False,
+        chunk_queue=chunk_queue,
+        vad_aggressiveness=0,
+        vad_min_silence_duration=0.2,
+        vad_min_speech_duration=0.05,
+        vad_speech_pad_duration=0.0,
+        max_chunk_duration=5.0,
+        compare_transcripts=False,
+        max_capture_duration=duration_seconds,
+        language="en",
+    )
+
+    # Collect chunks from queue
+    while True:
+        chunk = chunk_queue.get()
+        if chunk is None:
+            break
         if not chunk.is_partial:
             chunks.append(
                 {
@@ -48,27 +77,6 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
                     "inference": chunk.inference_seconds,
                 }
             )
-
-    duration_seconds = len(audio) / sample_rate
-    result = whisper_backend.run_whisper_transcriber(
-        model_name="fixture",
-        sample_rate=sample_rate,
-        channels=1,
-        temp_file=None,
-        ca_cert=None,
-        disable_ssl_verify=False,
-        device_preference="cpu",
-        require_gpu=False,
-        chunk_consumer=capture_chunk,
-        vad_aggressiveness=0,
-        vad_min_silence_duration=0.2,
-        vad_min_speech_duration=0.05,
-        vad_speech_pad_duration=0.0,
-        max_chunk_duration=5.0,
-        compare_transcripts=False,
-        max_capture_duration=duration_seconds,
-        language="en",
-    )
 
     assert result.full_audio_transcription is None
     assert dummy_model.calls, "Model was never invoked"
@@ -111,6 +119,8 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
     )
 
     duration_seconds = len(audio) / sample_rate
+    chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
+
     whisper_backend.run_whisper_transcriber(
         model_name="fixture",
         sample_rate=sample_rate,
@@ -120,7 +130,7 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
         disable_ssl_verify=False,
         device_preference="cpu",
         require_gpu=False,
-        chunk_consumer=lambda chunk: None,
+        chunk_queue=chunk_queue,
         vad_aggressiveness=0,
         vad_min_silence_duration=0.2,
         vad_min_speech_duration=0.05,
@@ -130,6 +140,12 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
         max_capture_duration=duration_seconds,
         language="en",
     )
+
+    # Drain the queue
+    while True:
+        chunk = chunk_queue.get()
+        if chunk is None:
+            break
 
     # Verify that the full audio captured matches the original input
     if TYPE_CHECKING:

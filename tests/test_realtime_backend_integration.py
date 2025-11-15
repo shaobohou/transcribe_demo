@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import queue
 
 import numpy as np
 import pytest
 
 from test_helpers import create_fake_audio_capture_factory, load_test_fixture
 from transcribe_demo import realtime_backend
+from transcribe_demo.backend_protocol import TranscriptionChunk
 
 
 @pytest.mark.integration
@@ -85,15 +87,13 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
 
     monkeypatch.setattr(realtime_backend.websockets, "connect", fake_connect)
 
-    def collect_chunk(chunk):
-        if chunk.text:
-            chunk_texts.append(chunk.text)
-
     monkeypatch.setattr(
         realtime_backend,
         "transcribe_full_audio_realtime",
         lambda *args, **kwargs: "full hello fox",
     )
+
+    chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
 
     result = realtime_backend.run_realtime_transcriber(
         api_key="test-key",
@@ -104,11 +104,19 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
         chunk_duration=0.2,
         instructions="transcribe precisely",
         disable_ssl_verify=False,
-        chunk_consumer=collect_chunk,
+        chunk_queue=chunk_queue,
         compare_transcripts=True,
         max_capture_duration=len(audio) / sample_rate,
         language="en",
     )
+
+    # Collect chunks from queue
+    while True:
+        chunk = chunk_queue.get()
+        if chunk is None:
+            break
+        if chunk.text:
+            chunk_texts.append(chunk.text)
 
     assert result.chunks == ["hello fox"]
     assert result.full_audio.size > 0
@@ -190,6 +198,8 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
         lambda *args, **kwargs: "test audio full",
     )
 
+    chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
+
     result = realtime_backend.run_realtime_transcriber(
         api_key="test-key",
         endpoint="wss://example.com",
@@ -199,11 +209,17 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
         chunk_duration=0.2,
         instructions="transcribe precisely",
         disable_ssl_verify=False,
-        chunk_consumer=lambda chunk: None,
+        chunk_queue=chunk_queue,
         compare_transcripts=True,  # Must be True to enable full audio collection
         max_capture_duration=len(audio) / sample_rate,
         language="en",
     )
+
+    # Drain the queue
+    while True:
+        chunk = chunk_queue.get()
+        if chunk is None:
+            break
 
     # Verify that the full audio in the result matches the original input
     assert result.full_audio.size > 0, "No audio was captured"

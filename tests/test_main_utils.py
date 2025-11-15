@@ -140,6 +140,9 @@ def test_main_exits_when_refine_flag_enabled(monkeypatch):
 
 
 def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
+    import queue
+    from test_helpers import create_fake_audio_capture_factory, generate_synthetic_audio
+
     class FakeCollector:
         def __init__(self, stream):
             self.stream = stream
@@ -161,6 +164,9 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
             self.capture_duration = 15.0
             self.metadata = {"model": "test", "device": "cpu"}
 
+    # Create synthetic audio for mocking
+    audio, sample_rate = generate_synthetic_audio(duration_seconds=2.0)
+
     stdout = io.StringIO()
     stderr = io.StringIO()
     monkeypatch.setattr(sys, "stdout", stdout)
@@ -169,9 +175,28 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
         "transcribe_demo.chunk_collector.ChunkCollector",
         FakeCollector,
     )
+
+    # Mock AudioCaptureManager
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
+    )
+
+    # Mock backend to put chunks in queue
+    def fake_run_whisper(**kwargs):
+        chunk_queue = kwargs.get("chunk_queue")
+        if chunk_queue:
+            # Put one test chunk
+            from transcribe_demo.backend_protocol import TranscriptionChunk
+            chunk_queue.put(TranscriptionChunk(
+                index=0, text="test", start_time=0.0, end_time=1.0, inference_seconds=0.1
+            ))
+            chunk_queue.put(None)  # Sentinel
+        return DummyResult()
+
     monkeypatch.setattr(
         "transcribe_demo.whisper_backend.run_whisper_transcriber",
-        lambda **kwargs: DummyResult(),
+        fake_run_whisper,
     )
 
     with flagsaver.flagsaver(
@@ -189,6 +214,8 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
 
 
 def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
+    from test_helpers import create_fake_audio_capture_factory, generate_synthetic_audio
+
     class FakeCollector:
         def __init__(self, stream):
             self.stream = stream
@@ -209,15 +236,37 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
             self.capture_duration = 15.0
             self.metadata = {"model": "test-realtime"}
 
+    # Create synthetic audio for mocking
+    audio, sample_rate = generate_synthetic_audio(duration_seconds=2.0)
+
     stdout = io.StringIO()
     stderr = io.StringIO()
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
     monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setattr("transcribe_demo.chunk_collector.ChunkCollector", FakeCollector)
+
+    # Mock AudioCaptureManager
+    monkeypatch.setattr(
+        "transcribe_demo.audio_capture.AudioCaptureManager",
+        create_fake_audio_capture_factory(audio, sample_rate, frame_size=320),
+    )
+
+    # Mock backend to put chunks in queue
+    def fake_run_realtime(**kwargs):
+        chunk_queue = kwargs.get("chunk_queue")
+        if chunk_queue:
+            # Put one test chunk
+            from transcribe_demo.backend_protocol import TranscriptionChunk
+            chunk_queue.put(TranscriptionChunk(
+                index=0, text="realtime", start_time=0.0, end_time=1.0, inference_seconds=None
+            ))
+            chunk_queue.put(None)  # Sentinel
+        return DummyRealtimeResult()
+
     monkeypatch.setattr(
         "transcribe_demo.realtime_backend.run_realtime_transcriber",
-        lambda **kwargs: DummyRealtimeResult(),
+        fake_run_realtime,
     )
     monkeypatch.setattr(
         "transcribe_demo.realtime_backend.transcribe_full_audio_realtime",
