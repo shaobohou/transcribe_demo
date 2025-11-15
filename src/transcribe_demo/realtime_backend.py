@@ -273,10 +273,15 @@ def run_realtime_transcriber(
     vad_threshold: float = 0.3,
     vad_silence_duration_ms: int = 200,
     debug: bool = False,
+    audio_source: Any = None,  # AudioSource protocol - if provided, use instead of creating one
 ) -> RealtimeTranscriptionResult:
 
-    # Initialize audio source (either from file or microphone)
-    if audio_file is not None:
+    # Initialize audio source
+    # If audio_source is provided (via backend protocol), use it directly
+    # Otherwise create one from parameters (for backward compatibility)
+    if audio_source is not None:
+        audio_capture = audio_source
+    elif audio_file is not None:
         audio_capture = FileAudioSource(
             audio_file=audio_file,
             sample_rate=sample_rate,
@@ -719,16 +724,10 @@ class RealtimeBackend:
         Returns:
             RealtimeTranscriptionResult with metadata and full audio
         """
-        # Extract audio source parameters
+        # Pass audio_source directly to avoid recreating it
+        # Extract only the minimum required parameters not in the backend config
         sample_rate = audio_source.sample_rate if hasattr(audio_source, "sample_rate") else 16000
         channels = audio_source.channels if hasattr(audio_source, "channels") else 1
-        max_capture_duration = (
-            audio_source.max_capture_duration
-            if hasattr(audio_source, "max_capture_duration")
-            else 120.0
-        )
-        playback_speed = audio_source.playback_speed if hasattr(audio_source, "playback_speed") else 1.0
-        audio_file = audio_source.audio_file if hasattr(audio_source, "audio_file") else None
 
         result = run_realtime_transcriber(
             api_key=self.api_key,
@@ -741,15 +740,16 @@ class RealtimeBackend:
             disable_ssl_verify=self.disable_ssl_verify,
             chunk_queue=chunk_queue,
             compare_transcripts=self.compare_transcripts,
-            max_capture_duration=max_capture_duration,
+            max_capture_duration=0.0,  # Will be ignored when audio_source is provided
             language=self.language,
             session_logger=self.session_logger,
             min_log_duration=self.min_log_duration,
-            audio_file=audio_file,
-            playback_speed=playback_speed,
+            audio_file=None,  # Will be ignored when audio_source is provided
+            playback_speed=1.0,  # Will be ignored when audio_source is provided
             vad_threshold=self.vad_threshold,
             vad_silence_duration_ms=self.vad_silence_duration_ms,
             debug=self.debug,
+            audio_source=audio_source,  # Pass the audio_source directly
         )
 
         # Get full audio transcription for comparison if enabled
