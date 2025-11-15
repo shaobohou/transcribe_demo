@@ -21,7 +21,7 @@ from transcribe_demo.chunk_collector import ChunkCollector
 from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.realtime_backend import RealtimeBackend
 from transcribe_demo.session_logger import SessionLogger
-from transcribe_demo.transcription_comparison import (
+from transcribe_demo.transcript_diff import (
     compute_transcription_diff,
     print_final_stitched,
     print_transcription_summary,
