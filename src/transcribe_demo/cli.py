@@ -750,10 +750,13 @@ def main(argv: list[str]) -> None:
         )
 
     # Create backend
-    if FLAGS.backend == "whisper":
-        backend: TranscriptionBackend = _create_whisper_backend(language_pref, session_logger)
-    else:  # realtime
-        backend = _create_realtime_backend(api_key, language_pref, session_logger)
+    match FLAGS.backend:
+        case "whisper":
+            backend: TranscriptionBackend = _create_whisper_backend(language_pref, session_logger)
+        case "realtime":
+            backend = _create_realtime_backend(api_key, language_pref, session_logger)
+        case _:
+            raise ValueError(f"Unknown backend: {FLAGS.backend}")
 
     # Run transcription using the generator
     result: TranscriptionResult | None = None
