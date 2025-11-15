@@ -56,10 +56,15 @@ def test_whisper_backend_respects_time_limit(monkeypatch):
 
     monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
 
-    # Use helper to create fake audio capture manager
-    monkeypatch.setattr(
-        "transcribe_demo.audio_capture.AudioCaptureManager",
-        create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
+    # Create fake audio source with time limit
+    from test_helpers import FakeAudioCaptureManager
+    audio_source = FakeAudioCaptureManager(
+        audio=audio,
+        sample_rate=sample_rate,
+        channels=1,
+        max_capture_duration=time_limit,
+        collect_full_audio=True,
+        frame_size=480,
     )
 
     result = whisper_backend.run_whisper_transcriber(
@@ -78,8 +83,8 @@ def test_whisper_backend_respects_time_limit(monkeypatch):
         vad_speech_pad_duration=0.0,
         max_chunk_duration=1.5,  # Short max chunk to get chunks faster
         compare_transcripts=True,
-        max_capture_duration=time_limit,
         language="en",
+        audio_source=audio_source,
     )
 
     # Collect chunks from queue
@@ -119,9 +124,15 @@ def test_whisper_backend_transcribes_incomplete_chunk_on_timeout(monkeypatch):
 
     monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
 
-    monkeypatch.setattr(
-        "transcribe_demo.audio_capture.AudioCaptureManager",
-        create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
+    # Create fake audio source with time limit
+    from test_helpers import FakeAudioCaptureManager
+    audio_source = FakeAudioCaptureManager(
+        audio=audio,
+        sample_rate=sample_rate,
+        channels=1,
+        max_capture_duration=time_limit,
+        collect_full_audio=True,
+        frame_size=480,
     )
 
     result = whisper_backend.run_whisper_transcriber(
@@ -140,8 +151,8 @@ def test_whisper_backend_transcribes_incomplete_chunk_on_timeout(monkeypatch):
         vad_speech_pad_duration=0.0,
         max_chunk_duration=10.0,  # High value - won't trigger before timeout
         compare_transcripts=True,
-        max_capture_duration=time_limit,
         language="en",
+        audio_source=audio_source,
     )
 
     # Collect chunks from queue
@@ -185,9 +196,15 @@ def test_whisper_backend_logs_session(monkeypatch, temp_session_dir):
 
     monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
 
-    monkeypatch.setattr(
-        "transcribe_demo.audio_capture.AudioCaptureManager",
-        create_fake_audio_capture_factory(audio, sample_rate),
+    # Create fake audio source with time limit
+    from test_helpers import FakeAudioCaptureManager
+    audio_source = FakeAudioCaptureManager(
+        audio=audio,
+        sample_rate=sample_rate,
+        channels=1,
+        max_capture_duration=time_limit,
+        collect_full_audio=True,
+        frame_size=480,
     )
 
     # Create session logger with temp directory
@@ -216,10 +233,10 @@ def test_whisper_backend_logs_session(monkeypatch, temp_session_dir):
         vad_speech_pad_duration=0.1,
         max_chunk_duration=5.0,
         compare_transcripts=True,
-        max_capture_duration=time_limit,
         language="en",
         session_logger=session_logger,
         min_log_duration=0.0,
+        audio_source=audio_source,
     )
 
     # Collect chunks from queue

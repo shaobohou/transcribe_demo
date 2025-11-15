@@ -6,8 +6,7 @@ import pytest
 from absl.testing import flagsaver
 
 from transcribe_demo.backend_protocol import TranscriptionChunk
-from transcribe_demo.chunk_collector import ChunkCollector
-from transcribe_demo.cli import FLAGS, main as main_entry
+from transcribe_demo.cli import ChunkCollector, FLAGS, main as main_entry
 from transcribe_demo.transcript_diff import (
     _colorize_token,
     _format_diff_snippet,

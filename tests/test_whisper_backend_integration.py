@@ -33,13 +33,18 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
 
     monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
 
-    # Use helper to create fake audio capture manager
-    monkeypatch.setattr(
-        "transcribe_demo.audio_capture.AudioCaptureManager",
-        create_fake_audio_capture_factory(audio, sample_rate, frame_size=480),
+    # Create fake audio source
+    from test_helpers import FakeAudioCaptureManager
+    duration_seconds = len(audio) / sample_rate
+    audio_source = FakeAudioCaptureManager(
+        audio=audio,
+        sample_rate=sample_rate,
+        channels=1,
+        max_capture_duration=duration_seconds,
+        collect_full_audio=False,
+        frame_size=480,
     )
 
-    duration_seconds = len(audio) / sample_rate
     chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
 
     result = whisper_backend.run_whisper_transcriber(
@@ -51,6 +56,7 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
         disable_ssl_verify=False,
         device_preference="cpu",
         require_gpu=False,
+        audio_source=audio_source,
         chunk_queue=chunk_queue,
         vad_aggressiveness=0,
         vad_min_silence_duration=0.2,
@@ -58,7 +64,6 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
         vad_speech_pad_duration=0.0,
         max_chunk_duration=5.0,
         compare_transcripts=False,
-        max_capture_duration=duration_seconds,
         language="en",
     )
 
@@ -105,20 +110,19 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
 
     monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
 
-    # Use helper to create fake audio capture manager and capture reference
-    factory = create_fake_audio_capture_factory(audio, sample_rate, frame_size=480)
-
-    def factory_with_capture(*args, **kwargs):
-        manager = factory(*args, **kwargs)
-        audio_capture_holder["manager"] = manager
-        return manager
-
-    monkeypatch.setattr(
-        "transcribe_demo.audio_capture.AudioCaptureManager",
-        factory_with_capture,
-    )
-
+    # Create fake audio source directly
+    from test_helpers import FakeAudioCaptureManager
     duration_seconds = len(audio) / sample_rate
+    audio_source = FakeAudioCaptureManager(
+        audio=audio,
+        sample_rate=sample_rate,
+        channels=1,
+        max_capture_duration=duration_seconds,
+        collect_full_audio=True,  # Must be True for full audio comparison
+        frame_size=480,
+    )
+    audio_capture_holder["manager"] = audio_source
+
     chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
 
     whisper_backend.run_whisper_transcriber(
@@ -130,6 +134,7 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
         disable_ssl_verify=False,
         device_preference="cpu",
         require_gpu=False,
+        audio_source=audio_source,
         chunk_queue=chunk_queue,
         vad_aggressiveness=0,
         vad_min_silence_duration=0.2,
@@ -137,7 +142,6 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
         vad_speech_pad_duration=0.0,
         max_chunk_duration=5.0,
         compare_transcripts=True,  # Must be True to enable full audio collection
-        max_capture_duration=duration_seconds,
         language="en",
     )
 

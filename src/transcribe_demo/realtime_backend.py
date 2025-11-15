@@ -261,42 +261,21 @@ def run_realtime_transcriber(
     channels: int,
     chunk_duration: float,
     instructions: str,
+    audio_source: Any,  # AudioSource protocol - required
     disable_ssl_verify: bool = False,
     chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
     compare_transcripts: bool = True,
-    max_capture_duration: float = 120.0,
     language: str = "en",
     session_logger: SessionLogger | None = None,
     min_log_duration: float = 0.0,
-    audio_file: str | None = None,
-    playback_speed: float = 1.0,
     vad_threshold: float = 0.3,
     vad_silence_duration_ms: int = 200,
     debug: bool = False,
-    audio_source: Any = None,  # AudioSource protocol - if provided, use instead of creating one
 ) -> RealtimeTranscriptionResult:
 
-    # Initialize audio source
-    # If audio_source is provided (via backend protocol), use it directly
-    # Otherwise create one from parameters (for backward compatibility)
-    if audio_source is not None:
-        audio_capture = audio_source
-    elif audio_file is not None:
-        audio_capture = FileAudioSource(
-            audio_file=audio_file,
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=compare_transcripts or (session_logger is not None),
-            playback_speed=playback_speed,
-        )
-    else:
-        audio_capture = audio_capture_lib.AudioCaptureManager(
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=compare_transcripts or (session_logger is not None),
-        )
+    # Use the provided audio source
+    audio_capture = audio_source
+    max_capture_duration = audio_source.max_capture_duration
 
     session_sample_rate = 24000
     chunk_texts: list[str] = []
@@ -724,32 +703,24 @@ class RealtimeBackend:
         Returns:
             RealtimeTranscriptionResult with metadata and full audio
         """
-        # Pass audio_source directly to avoid recreating it
-        # Extract only the minimum required parameters not in the backend config
-        sample_rate = audio_source.sample_rate if hasattr(audio_source, "sample_rate") else 16000
-        channels = audio_source.channels if hasattr(audio_source, "channels") else 1
-
         result = run_realtime_transcriber(
             api_key=self.api_key,
             endpoint=self.endpoint,
             model=self.model,
-            sample_rate=sample_rate,
-            channels=channels,
+            sample_rate=audio_source.sample_rate,
+            channels=audio_source.channels,
             chunk_duration=2.0,  # Fixed for realtime API
             instructions=self.instructions,
             disable_ssl_verify=self.disable_ssl_verify,
             chunk_queue=chunk_queue,
             compare_transcripts=self.compare_transcripts,
-            max_capture_duration=0.0,  # Will be ignored when audio_source is provided
             language=self.language,
             session_logger=self.session_logger,
             min_log_duration=self.min_log_duration,
-            audio_file=None,  # Will be ignored when audio_source is provided
-            playback_speed=1.0,  # Will be ignored when audio_source is provided
             vad_threshold=self.vad_threshold,
             vad_silence_duration_ms=self.vad_silence_duration_ms,
             debug=self.debug,
-            audio_source=audio_source,  # Pass the audio_source directly
+            audio_source=audio_source,
         )
 
         # Get full audio transcription for comparison if enabled

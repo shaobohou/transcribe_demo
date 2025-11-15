@@ -265,6 +265,7 @@ def run_whisper_transcriber(
     disable_ssl_verify: bool,
     device_preference: str,
     require_gpu: bool,
+    audio_source: Any,  # AudioSource protocol - required
     chunk_queue: queue.Queue[TranscriptionChunk | None],
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
@@ -272,17 +273,13 @@ def run_whisper_transcriber(
     vad_speech_pad_duration: float = 0.2,
     max_chunk_duration: float = 60.0,
     compare_transcripts: bool = True,
-    max_capture_duration: float = 120.0,
     language: str = "en",
     session_logger: SessionLogger | None = None,
     min_log_duration: float = 0.0,
-    audio_file: str | None = None,
-    playback_speed: float = 1.0,
     enable_partial_transcription: bool = False,
     partial_model: str = "base.en",
     partial_interval: float = 1.0,
     max_partial_buffer_seconds: float = 10.0,
-    audio_source: Any = None,  # AudioSource protocol - if provided, use instead of creating one
 ) -> WhisperTranscriptionResult:
 
     model, device, fp16 = load_whisper_model(
@@ -318,27 +315,8 @@ def run_whisper_transcriber(
     # Track wall-clock start of the transcription session for absolute timestamps
     session_start_time = time.perf_counter()
 
-    # Initialize audio source
-    # If audio_source is provided (via backend protocol), use it directly
-    # Otherwise create one from parameters (for backward compatibility with session_replay)
-    if audio_source is not None:
-        audio_capture = audio_source
-    elif audio_file is not None:
-        audio_capture = FileAudioSource(
-            audio_file=audio_file,
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=compare_transcripts or (session_logger is not None),
-            playback_speed=playback_speed,
-        )
-    else:
-        audio_capture = audio_capture_lib.AudioCaptureManager(
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=compare_transcripts or (session_logger is not None),
-        )
+    # Use the provided audio source
+    audio_capture = audio_source
 
     buffer = np.zeros(0, dtype=np.float32)
 
@@ -350,6 +328,7 @@ def run_whisper_transcriber(
     min_speech_frames = int(sample_rate * vad_min_speech_duration)
     speech_pad_samples = int(sample_rate * vad_speech_pad_duration)
 
+    max_capture_duration = audio_source.max_capture_duration
     if max_capture_duration > 0:
         print(
             f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, "
@@ -878,15 +857,10 @@ class WhisperBackend:
         Returns:
             WhisperTranscriptionResult with metadata and full audio transcription
         """
-        # Pass audio_source directly to avoid recreating it
-        # Extract only the minimum required parameters not in the backend config
-        sample_rate = audio_source.sample_rate if hasattr(audio_source, "sample_rate") else 16000
-        channels = audio_source.channels if hasattr(audio_source, "channels") else 1
-
         return run_whisper_transcriber(
             model_name=self.model_name,
-            sample_rate=sample_rate,
-            channels=channels,
+            sample_rate=audio_source.sample_rate,
+            channels=audio_source.channels,
             temp_file=self.temp_file,
             ca_cert=self.ca_cert,
             disable_ssl_verify=self.disable_ssl_verify,
@@ -899,15 +873,12 @@ class WhisperBackend:
             vad_speech_pad_duration=self.vad_speech_pad_duration,
             max_chunk_duration=self.max_chunk_duration,
             compare_transcripts=self.compare_transcripts,
-            max_capture_duration=0.0,  # Will be ignored when audio_source is provided
             language=self.language,
             session_logger=self.session_logger,
             min_log_duration=self.min_log_duration,
-            audio_file=None,  # Will be ignored when audio_source is provided
-            playback_speed=1.0,  # Will be ignored when audio_source is provided
             enable_partial_transcription=self.enable_partial_transcription,
             partial_model=self.partial_model,
             partial_interval=self.partial_interval,
             max_partial_buffer_seconds=self.max_partial_buffer_seconds,
-            audio_source=audio_source,  # Pass the audio_source directly
+            audio_source=audio_source,
         )

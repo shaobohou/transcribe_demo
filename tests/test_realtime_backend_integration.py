@@ -18,10 +18,15 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
     chunk_texts: list[str] = []
     fake_ws_holder: dict[str, "FakeWebSocket"] = {}
 
-    # Use helper to create fake audio capture manager
-    monkeypatch.setattr(
-        "transcribe_demo.audio_capture.AudioCaptureManager",
-        create_fake_audio_capture_factory(audio, sample_rate, frame_size=320),  # 20ms for realtime
+    # Create fake audio source
+    from test_helpers import FakeAudioCaptureManager
+    audio_source = FakeAudioCaptureManager(
+        audio=audio,
+        sample_rate=sample_rate,
+        channels=1,
+        max_capture_duration=len(audio) / sample_rate,
+        collect_full_audio=True,
+        frame_size=320,  # 20ms for realtime
     )
 
     # Custom FakeWebSocket for this test with specific events
@@ -106,8 +111,8 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
         disable_ssl_verify=False,
         chunk_queue=chunk_queue,
         compare_transcripts=True,
-        max_capture_duration=len(audio) / sample_rate,
         language="en",
+        audio_source=audio_source,
     )
 
     # Backend doesn't put sentinel - that's the caller's responsibility
@@ -136,10 +141,15 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
     """Test that full audio returned from realtime backend matches the original input audio."""
     audio, sample_rate = load_test_fixture()
 
-    # Use helper to create fake audio capture manager
-    monkeypatch.setattr(
-        "transcribe_demo.audio_capture.AudioCaptureManager",
-        create_fake_audio_capture_factory(audio, sample_rate, frame_size=320),
+    # Create fake audio source
+    from test_helpers import FakeAudioCaptureManager
+    audio_source = FakeAudioCaptureManager(
+        audio=audio,
+        sample_rate=sample_rate,
+        channels=1,
+        max_capture_duration=len(audio) / sample_rate,
+        collect_full_audio=True,
+        frame_size=320,
     )
 
     # Custom FakeWebSocket for this test
@@ -223,8 +233,8 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
         disable_ssl_verify=False,
         chunk_queue=chunk_queue,
         compare_transcripts=True,  # Must be True to enable full audio collection
-        max_capture_duration=len(audio) / sample_rate,
         language="en",
+        audio_source=audio_source,
     )
 
     # Backend doesn't put sentinel - that's the caller's responsibility
