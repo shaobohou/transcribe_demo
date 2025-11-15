@@ -21,9 +21,7 @@ import websockets
 if TYPE_CHECKING:
     import websockets.asyncio.client
 
-from transcribe_demo import audio_capture as audio_capture_lib
 from transcribe_demo.backend_protocol import TranscriptionChunk
-from transcribe_demo.file_audio_source import FileAudioSource
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -697,7 +695,7 @@ class RealtimeBackend:
         Run Realtime API transcription on the given audio source.
 
         Args:
-            audio_source: Audio source (FileAudioSource or AudioCaptureManager)
+            audio_source: Audio source implementing AudioSource protocol
             chunk_queue: Optional queue to put transcription chunks into
 
         Returns:
