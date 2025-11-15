@@ -6,15 +6,14 @@ import pytest
 from absl.testing import flagsaver
 
 from transcribe_demo.backend_protocol import TranscriptionChunk
-from transcribe_demo.cli import (
-    ChunkCollectorWithStitching,
-    FLAGS,
+from transcribe_demo.chunk_collector import ChunkCollector
+from transcribe_demo.cli import FLAGS, main as main_entry
+from transcribe_demo.transcript_diff import (
     _colorize_token,
     _format_diff_snippet,
     _generate_diff_snippets,
-    _normalize_whitespace,
+    normalize_whitespace,
     _tokenize_with_original,
-    main as main_entry,
     print_transcription_summary,
 )
 
@@ -31,7 +30,7 @@ class ColorStream(io.StringIO):
 
 def test_chunk_collector_writes_and_stitches_chunks():
     stream = io.StringIO()
-    collector = ChunkCollectorWithStitching(stream)
+    collector = ChunkCollector(stream)
 
     collector(TranscriptionChunk(index=0, text="Hello, ", start_time=0.0, end_time=1.5, inference_seconds=0.25))
     collector(TranscriptionChunk(index=1, text="world.", start_time=1.5, end_time=3.0, inference_seconds=0.30))
@@ -42,12 +41,12 @@ def test_chunk_collector_writes_and_stitches_chunks():
     assert "[chunk 001 | t=3.00s" in output
     assert "[chunk 002 | t=5.00s" in output
     assert "[STITCHED] Hello world How are you?" in output
-    assert collector.get_final_stitched() == "Hello world How are you?"
+    assert collector.get_final_stitched_text() == "Hello world How are you?"
 
 
 def test_chunk_collector_colorized_output_in_realtime_mode():
     stream = ColorStream()
-    collector = ChunkCollectorWithStitching(stream)
+    collector = ChunkCollector(stream)
 
     collector(TranscriptionChunk(index=0, text="Realtime chunk", start_time=0.0, end_time=2.0, inference_seconds=None))
 
@@ -67,7 +66,7 @@ def test_chunk_collector_colorized_output_in_realtime_mode():
     ],
 )
 def test_clean_chunk_text(text, is_final, expected):
-    assert ChunkCollectorWithStitching._clean_chunk_text(text, is_final_chunk=is_final) == expected
+    assert ChunkCollector._clean_chunk_text(text, is_final_chunk=is_final) == expected
 
 
 def test_print_transcription_summary_reports_differences():
@@ -122,7 +121,7 @@ def test_format_diff_snippet_insertion_placeholder():
 
 
 def test_normalize_whitespace_collapses_gaps():
-    assert _normalize_whitespace("alpha   beta\tgamma\n") == "alpha beta gamma"
+    assert normalize_whitespace("alpha   beta\tgamma\n") == "alpha beta gamma"
 
 
 def test_main_exits_when_refine_flag_enabled(monkeypatch):
@@ -150,7 +149,7 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
             self.calls.append((chunk.index, chunk.text, chunk.start_time, chunk.end_time, chunk.inference_seconds))
             self.stream.write(f"[fake {chunk.index}] {chunk.text}\n")
 
-        def get_final_stitched(self):
+        def get_final_stitched_text(self):
             return "stitched text"
 
         def get_cleaned_chunks(self):
@@ -167,11 +166,11 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
     monkeypatch.setattr(
-        "transcribe_demo.cli.ChunkCollectorWithStitching",
+        "transcribe_demo.chunk_collector.ChunkCollector",
         FakeCollector,
     )
     monkeypatch.setattr(
-        "transcribe_demo.cli.run_whisper_transcriber",
+        "transcribe_demo.whisper_backend.run_whisper_transcriber",
         lambda **kwargs: DummyResult(),
     )
 
@@ -197,7 +196,7 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
         def __call__(self, *args, **kwargs):
             self.stream.write("[fake realtime]\n")
 
-        def get_final_stitched(self):
+        def get_final_stitched_text(self):
             return "realtime stitched"
 
         def get_cleaned_chunks(self):
@@ -215,13 +214,13 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
     monkeypatch.setenv("OPENAI_API_KEY", "")
-    monkeypatch.setattr("transcribe_demo.cli.ChunkCollectorWithStitching", FakeCollector)
+    monkeypatch.setattr("transcribe_demo.chunk_collector.ChunkCollector", FakeCollector)
     monkeypatch.setattr(
-        "transcribe_demo.cli.run_realtime_transcriber",
+        "transcribe_demo.realtime_backend.run_realtime_transcriber",
         lambda **kwargs: DummyRealtimeResult(),
     )
     monkeypatch.setattr(
-        "transcribe_demo.cli.transcribe_full_audio_realtime",
+        "transcribe_demo.realtime_backend.transcribe_full_audio_realtime",
         lambda *args, **kwargs: "full realtime transcription",
     )
 
