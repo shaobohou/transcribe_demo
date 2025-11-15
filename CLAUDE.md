@@ -12,7 +12,7 @@ Development workflow and critical implementation rules. See **DESIGN.md** for ar
 # Development
 uv sync                                   # Install with GPU support (local dev)
 uv run transcribe-demo                    # Run with defaults (turbo + VAD)
-./run-checks.sh                           # Run all checks (pytest, pyright, ruff)
+./run-checks.sh                           # Run all checks (pytest w/ timeout, pyright, ruff)
 uv run python -m pytest                   # Run all tests
 uv run pyright                            # Type checking
 uv run ruff check                         # Linting
@@ -20,6 +20,7 @@ uv run ruff format                        # Format code
 
 # CPU-only (CI/sandboxes - REQUIRED!)
 uv sync --project ci --refresh
+./run-checks.sh --ci                      # Run all checks (CPU-only, no CUDA downloads)
 uv --project ci run transcribe-demo --audio_file audio.mp3 --model base.en
 uv --project ci run python -m pytest
 ```
@@ -37,7 +38,7 @@ uv --project ci run python -m pytest
 ```bash
 git checkout -b feature/your-feature   # or fix/, refactor/
 # ... make changes ...
-./run-checks.sh                        # Verify all checks pass
+./run-checks.sh                        # Verify all checks pass (use --ci in sandboxes)
 git add . && git commit -m "message"   # Pre-commit hook runs automatically
 git push -u origin your-branch-name
 ```
@@ -144,4 +145,4 @@ See **[SITEMAP.md](SITEMAP.md)** for complete documentation guide.
 
 ---
 
-*Last Updated: 2025-11-09*
+*Last Updated: 2025-11-15*
