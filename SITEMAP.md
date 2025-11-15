@@ -64,6 +64,17 @@ This is the central index for all transcribe-demo documentation. Use this to nav
 
 ---
 
+### Refactoring History
+
+**[REFACTORING_HISTORY.md](REFACTORING_HISTORY.md)** - *Chronicle of major refactoring efforts*
+- Backend protocol refactoring (2025-11-14): Protocol-based architecture, configuration dataclasses
+- CLI refactoring (2025-11): Protocol adoption, diff module extraction, code reduction
+- Migration guides and lessons learned
+- Code metrics and impact analysis
+- **Use this for**: Understanding what was refactored and why (historical reference)
+
+---
+
 ### AI Assistant Instructions
 
 **[AGENTS.md](AGENTS.md)** - *Instructions for AI coding agents*
@@ -85,6 +96,7 @@ Each document has a specific purpose to avoid overlap:
 | **DESIGN.md** | "Why is it designed this way?" | Developers, maintainers | Major architecture changes |
 | **TODO.md** | "What should we improve?" | Contributors | Finding refactoring opportunities |
 | **SESSIONS.md** | "How do sessions work?" | Users, automation scripts | Changing log format or replay utility |
+| **REFACTORING_HISTORY.md** | "What was refactored and why?" | Developers | Historical reference (rarely updated) |
 
 ---
 
@@ -149,4 +161,4 @@ Each document has a specific purpose to avoid overlap:
 
 ---
 
-*Last Updated: 2025-11-11*
+*Last Updated: 2025-11-15*

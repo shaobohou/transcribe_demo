@@ -1,6 +1,6 @@
 # Design Decisions & Architecture
 
-**Last Updated**: 2025-11-07
+**Last Updated**: 2025-11-15
 
 This document explains the key design decisions and architectural patterns in the transcribe-demo codebase. For user-facing documentation, see **README.md**. For development workflow, see **CLAUDE.md**. For implementation improvements, see **TODO.md**.
 
@@ -49,51 +49,67 @@ This document explains the key design decisions and architectural patterns in th
 ### High-Level Component Structure
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                          cli.py                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │        ChunkCollectorWithStitching                  │   │
-│  │  - Collects chunks                                  │   │
-│  │  - Punctuation cleanup                              │   │
-│  │  - Stitched output display                          │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                          │                                  │
-│              ┌───────────┴───────────┐                      │
-│              ▼                       ▼                      │
-│  ┌─────────────────────┐ ┌─────────────────────┐          │
-│  │  whisper_backend.py │ │ realtime_backend.py │          │
-│  │  ┌──────────────┐   │ │  ┌──────────────┐   │          │
-│  │  │  WebRTCVAD   │   │ │  │  WebSocket   │   │          │
-│  │  │  Chunking    │   │ │  │  Streaming   │   │          │
-│  │  └──────────────┘   │ │  └──────────────┘   │          │
-│  └─────────────────────┘ └─────────────────────┘          │
-│              │                       │                      │
-│              └───────────┬───────────┘                      │
-│                          ▼                                  │
-│              ┌───────────────────────┐                      │
-│              │   Audio Source        │                      │
-│              │   (pluggable)         │                      │
-│              └───────────┬───────────┘                      │
-│                          │                                  │
-│         ┌────────────────┴────────────────┐                │
-│         ▼                                 ▼                │
-│  ┌──────────────────┐           ┌──────────────────────┐  │
-│  │ audio_capture.py │           │ file_audio_source.py │  │
-│  │ (Microphone)     │           │ (File/URL)           │  │
-│  │ - sounddevice    │           │ - soundfile          │  │
-│  │ - Real-time      │           │ - Download from URL  │  │
-│  │                  │           │ - Simulate playback  │  │
-│  └──────────────────┘           └──────────────────────┘  │
-│                          │                                  │
-│                          ▼                                  │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │        session_logger.py                            │   │
-│  │  SessionLogger                                      │   │
-│  │  - Persist audio (WAV/FLAC)                         │   │
-│  │  - Save metadata & transcriptions                   │   │
-│  │  - Diff tracking                                    │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              cli.py                                     │
+│  ┌──────────────────────┐  ┌────────────────────────────────────────┐ │
+│  │  chunk_collector.py  │  │     transcript_diff.py                 │ │
+│  │  ChunkCollector      │  │  - compute_transcription_diff()        │ │
+│  │  - Collects chunks   │  │  - print_transcription_summary()       │ │
+│  │  - Punctuation       │  │  - Tokenization & diff generation      │ │
+│  │    cleanup           │  └────────────────────────────────────────┘ │
+│  └──────────────────────┘                                              │
+│              │                                                          │
+│              │         ┌────────────────────────────────────┐          │
+│              │         │    backend_protocol.py             │          │
+│              │         │  - TranscriptionChunk              │          │
+│              │         │  - ChunkConsumer Protocol          │          │
+│              │         │  - TranscriptionBackend Protocol   │          │
+│              │         │  - TranscriptionResult Protocol    │          │
+│              │         └────────────────────────────────────┘          │
+│              │                       │                                 │
+│              ▼                       ▼                                 │
+│  ┌────────────────────┐   ┌──────────────────────────────┐           │
+│  │ whisper_backend.py │   │   realtime_backend.py        │           │
+│  │  ┌──────────────┐  │   │    ┌──────────────┐          │           │
+│  │  │  WebRTCVAD   │  │   │    │  WebSocket   │          │           │
+│  │  │  Chunking    │  │   │    │  Streaming   │          │           │
+│  │  └──────────────┘  │   │    └──────────────┘          │           │
+│  └────────────────────┘   └──────────────────────────────┘           │
+│              │                       │                                 │
+│              │         ┌────────────────────────────────────┐          │
+│              │         │    backend_config.py               │          │
+│              │         │  - VADConfig                       │          │
+│              │         │  - WhisperConfig                   │          │
+│              │         │  - RealtimeConfig                  │          │
+│              │         │  - PartialTranscriptionConfig      │          │
+│              │         └────────────────────────────────────┘          │
+│              │                                                          │
+│              └───────────┬──────────────────────────────────┘          │
+│                          ▼                                              │
+│              ┌───────────────────────┐                                 │
+│              │   Audio Source        │                                 │
+│              │   (Protocol)          │                                 │
+│              └───────────┬───────────┘                                 │
+│                          │                                              │
+│         ┌────────────────┴────────────────┐                            │
+│         ▼                                 ▼                            │
+│  ┌──────────────────┐           ┌──────────────────────┐              │
+│  │ audio_capture.py │           │ file_audio_source.py │              │
+│  │ (Microphone)     │           │ (File/URL)           │              │
+│  │ - sounddevice    │           │ - soundfile          │              │
+│  │ - Real-time      │           │ - Download from URL  │              │
+│  │                  │           │ - Simulate playback  │              │
+│  └──────────────────┘           └──────────────────────┘              │
+│                          │                                              │
+│                          ▼                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │        session_logger.py                                        │  │
+│  │  SessionLogger                                                  │  │
+│  │  - Persist audio (WAV/FLAC)                                     │  │
+│  │  - Save metadata & transcriptions                               │  │
+│  │  - Diff tracking                                                │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
 │              session_replay.py / session_replay_cli.py      │
@@ -107,13 +123,18 @@ This document explains the key design decisions and architectural patterns in th
 
 | Module | Responsibility | Key Classes/Functions |
 |--------|----------------|----------------------|
-| `cli.py` | Orchestration, CLI args, comparison | `ChunkCollectorWithStitching`, `cli_main()` |
+| `cli.py` | Orchestration, CLI args | `ChunkCollectorWithStitching`, `cli_main()`, `_finalize_transcription_session()` |
+| `backend_protocol.py` | Type-safe backend interfaces | `TranscriptionChunk`, `ChunkConsumer`, `TranscriptionBackend`, `TranscriptionResult` |
+| `backend_config.py` | Configuration dataclasses | `VADConfig`, `WhisperConfig`, `RealtimeConfig`, `PartialTranscriptionConfig` |
 | `whisper_backend.py` | Local Whisper + VAD chunking | `WebRTCVAD`, `run_whisper_transcriber()` |
 | `realtime_backend.py` | OpenAI Realtime API streaming | `run_realtime_transcriber()` |
 | `audio_capture.py` | Microphone audio capture | `AudioCaptureManager` |
 | `file_audio_source.py` | File/URL audio simulation | `FileAudioSource` |
+| `transcript_diff.py` | Transcription comparison utilities | `compute_transcription_diff()`, `print_transcription_summary()` |
+| `chunk_collector.py` | Chunk display and stitching | `ChunkCollectorWithStitching` |
 | `session_logger.py` | Session persistence | `SessionLogger` |
 | `session_replay.py` | Session loading & retranscription | `load_session()`, `retranscribe_session()` |
+| `session_replay_cli.py` | Session replay CLI | CLI for listing, showing, retranscribing sessions |
 
 ### Audio Source Design
 

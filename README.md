@@ -355,11 +355,23 @@ uv run pytest -v
 
 ## Architecture
 
-- **cli.py**: Entry point and orchestration, chunk collection, stitching, and comparison
+**Core Modules:**
+- **cli.py**: Entry point and orchestration with generator-based streaming
+- **backend_protocol.py**: Type-safe backend interfaces and protocols
+- **backend_config.py**: Configuration dataclasses for all backends
 - **whisper_backend.py**: Local Whisper transcription with WebRTC VAD
 - **realtime_backend.py**: OpenAI Realtime API integration via WebSocket
+- **transcript_diff.py**: Transcription comparison and diff utilities
+- **chunk_collector.py**: Chunk display and punctuation stitching
+
+**Audio Sources:**
 - **audio_capture.py**: Microphone audio capture manager
 - **file_audio_source.py**: File/URL audio source for simulation
+
+**Session Management:**
+- **session_logger.py**: Session persistence with comprehensive metadata
+- **session_replay.py**: Session loading and retranscription
+- **session_replay_cli.py**: CLI for session replay utility
 
 See **[DESIGN.md](DESIGN.md#architecture-overview)** for detailed architecture and design decisions.
 
