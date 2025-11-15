@@ -80,6 +80,11 @@ class FileAudioSource:
         self._loaded_sample_rate: int = 0
         self._load_audio()
 
+    @property
+    def audio_file(self) -> str:
+        """Return the audio file path or URL."""
+        return self.audio_file_input
+
     def _is_url(self, path: str) -> bool:
         """Check if the provided path is a URL."""
         parsed = urlparse(path)
