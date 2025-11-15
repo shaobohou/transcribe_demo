@@ -593,6 +593,78 @@ def transcribe(
     return result_container[0]
 
 
+def _create_whisper_backend(language: str, session_logger: SessionLogger | None) -> WhisperBackend:
+    """
+    Create and configure a Whisper backend from FLAGS.
+
+    Args:
+        language: Language preference for transcription
+        session_logger: Session logger for persistence
+
+    Returns:
+        Configured WhisperBackend instance
+    """
+    return WhisperBackend(
+        model_name=FLAGS.model or "turbo",
+        device_preference=FLAGS.device or "auto",
+        require_gpu=FLAGS.require_gpu,
+        vad_aggressiveness=FLAGS.vad_aggressiveness,
+        vad_min_silence_duration=FLAGS.vad_min_silence_duration,
+        vad_min_speech_duration=FLAGS.vad_min_speech_duration,
+        vad_speech_pad_duration=FLAGS.vad_speech_pad_duration,
+        max_chunk_duration=FLAGS.max_chunk_duration,
+        enable_partial_transcription=FLAGS.enable_partial_transcription,
+        partial_model=FLAGS.partial_model,
+        partial_interval=FLAGS.partial_interval,
+        max_partial_buffer_seconds=FLAGS.max_partial_buffer_seconds,
+        language=language,
+        compare_transcripts=FLAGS.compare_transcripts,
+        session_logger=session_logger,
+        min_log_duration=FLAGS.min_log_duration,
+        ca_cert=Path(FLAGS.ca_cert) if FLAGS.ca_cert else None,
+        disable_ssl_verify=FLAGS.disable_ssl_verify,
+        temp_file=Path(FLAGS.temp_file) if FLAGS.temp_file else None,
+    )
+
+
+def _create_realtime_backend(
+    api_key: str, language: str, session_logger: SessionLogger | None
+) -> RealtimeBackend:
+    """
+    Create and configure a Realtime backend from FLAGS.
+
+    Args:
+        api_key: OpenAI API key for authentication
+        language: Language preference for transcription
+        session_logger: Session logger for persistence
+
+    Returns:
+        Configured RealtimeBackend instance
+
+    Raises:
+        RuntimeError: If API key is not provided
+    """
+    if not api_key:
+        raise RuntimeError(
+            "OpenAI API key required for realtime transcription. Provide --api-key or set OPENAI_API_KEY."
+        )
+
+    return RealtimeBackend(
+        api_key=api_key,
+        endpoint=FLAGS.realtime_endpoint,
+        model=FLAGS.realtime_model,
+        instructions=FLAGS.realtime_instructions,
+        vad_threshold=FLAGS.realtime_vad_threshold,
+        vad_silence_duration_ms=FLAGS.realtime_vad_silence_duration_ms,
+        debug=FLAGS.realtime_debug,
+        language=language,
+        compare_transcripts=FLAGS.compare_transcripts,
+        session_logger=session_logger,
+        min_log_duration=FLAGS.min_log_duration,
+        disable_ssl_verify=FLAGS.disable_ssl_verify,
+    )
+
+
 def main(argv: list[str]) -> None:
     # Check for unimplemented features
     if FLAGS.refine_with_context:
@@ -642,6 +714,9 @@ def main(argv: list[str]) -> None:
 
     language_pref = (FLAGS.language or "").strip()
 
+    # Get API key for realtime backend (if needed)
+    api_key = FLAGS.api_key or os.getenv("OPENAI_API_KEY")
+
     # Create session logger (always enabled)
     log_dir = Path(FLAGS.session_log_dir)
     session_logger = SessionLogger(
@@ -676,47 +751,9 @@ def main(argv: list[str]) -> None:
 
     # Create backend
     if FLAGS.backend == "whisper":
-        backend: TranscriptionBackend = WhisperBackend(
-            model_name=FLAGS.model or "turbo",
-            device_preference=FLAGS.device or "auto",
-            require_gpu=FLAGS.require_gpu,
-            vad_aggressiveness=FLAGS.vad_aggressiveness,
-            vad_min_silence_duration=FLAGS.vad_min_silence_duration,
-            vad_min_speech_duration=FLAGS.vad_min_speech_duration,
-            vad_speech_pad_duration=FLAGS.vad_speech_pad_duration,
-            max_chunk_duration=FLAGS.max_chunk_duration,
-            enable_partial_transcription=FLAGS.enable_partial_transcription,
-            partial_model=FLAGS.partial_model,
-            partial_interval=FLAGS.partial_interval,
-            max_partial_buffer_seconds=FLAGS.max_partial_buffer_seconds,
-            language=language_pref,
-            compare_transcripts=FLAGS.compare_transcripts,
-            session_logger=session_logger,
-            min_log_duration=FLAGS.min_log_duration,
-            ca_cert=Path(FLAGS.ca_cert) if FLAGS.ca_cert else None,
-            disable_ssl_verify=FLAGS.disable_ssl_verify,
-            temp_file=Path(FLAGS.temp_file) if FLAGS.temp_file else None,
-        )
+        backend: TranscriptionBackend = _create_whisper_backend(language_pref, session_logger)
     else:  # realtime
-        api_key = FLAGS.api_key or os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "OpenAI API key required for realtime transcription. Provide --api-key or set OPENAI_API_KEY."
-            )
-        backend = RealtimeBackend(
-            api_key=api_key,
-            endpoint=FLAGS.realtime_endpoint,
-            model=FLAGS.realtime_model,
-            instructions=FLAGS.realtime_instructions,
-            vad_threshold=FLAGS.realtime_vad_threshold,
-            vad_silence_duration_ms=FLAGS.realtime_vad_silence_duration_ms,
-            debug=FLAGS.realtime_debug,
-            language=language_pref,
-            compare_transcripts=FLAGS.compare_transcripts,
-            session_logger=session_logger,
-            min_log_duration=FLAGS.min_log_duration,
-            disable_ssl_verify=FLAGS.disable_ssl_verify,
-        )
+        backend = _create_realtime_backend(api_key, language_pref, session_logger)
 
     # Run transcription using the generator
     result: TranscriptionResult | None = None
@@ -738,21 +775,22 @@ def main(argv: list[str]) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        # Get full audio transcription for comparison if enabled (Realtime-specific)
+        # Get full audio transcription for comparison if enabled
+        # (only needed for backends that provide raw audio, e.g. Realtime)
         if (
-            FLAGS.backend == "realtime"
-            and result is not None
+            result is not None
             and hasattr(result, "full_audio")
             and hasattr(result, "sample_rate")
             and FLAGS.compare_transcripts
             and result.full_audio.size > 0
+            and api_key  # Need API key for full audio transcription
         ):
             try:
                 full_audio_transcription = transcribe_full_audio_realtime(
                     result.full_audio,
                     sample_rate=result.sample_rate,
                     chunk_duration=REALTIME_CHUNK_DURATION,
-                    api_key=api_key or "",
+                    api_key=api_key,
                     endpoint=FLAGS.realtime_endpoint,
                     model=FLAGS.realtime_model,
                     instructions=FLAGS.realtime_instructions,
