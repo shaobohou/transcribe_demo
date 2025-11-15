@@ -730,7 +730,7 @@ class RealtimeBackend:
         playback_speed = audio_source.playback_speed if hasattr(audio_source, "playback_speed") else 1.0
         audio_file = audio_source.audio_file if hasattr(audio_source, "audio_file") else None
 
-        return run_realtime_transcriber(
+        result = run_realtime_transcriber(
             api_key=self.api_key,
             endpoint=self.endpoint,
             model=self.model,
@@ -751,3 +751,27 @@ class RealtimeBackend:
             vad_silence_duration_ms=self.vad_silence_duration_ms,
             debug=self.debug,
         )
+
+        # Get full audio transcription for comparison if enabled
+        if self.compare_transcripts and result.full_audio.size > 0:
+            try:
+                result.full_audio_transcription = transcribe_full_audio_realtime(
+                    result.full_audio,
+                    sample_rate=result.sample_rate,
+                    chunk_duration=2.0,
+                    api_key=self.api_key,
+                    endpoint=self.endpoint,
+                    model=self.model,
+                    instructions=self.instructions,
+                    disable_ssl_verify=self.disable_ssl_verify,
+                    language=self.language,
+                )
+            except Exception as exc:
+                # Log warning but don't fail - this is just for comparison
+                import sys
+                print(
+                    f"WARNING: Unable to transcribe full audio for comparison: {exc}",
+                    file=sys.stderr,
+                )
+
+        return result
