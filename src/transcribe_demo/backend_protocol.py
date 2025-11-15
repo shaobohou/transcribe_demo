@@ -6,6 +6,8 @@ must implement, enabling type-safe polymorphism and easier addition of new backe
 
 from __future__ import annotations
 
+import queue
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -105,6 +107,68 @@ class BackendConfig:
     disable_ssl_verify: bool = False
 
 
+class AudioSource(Protocol):
+    """
+    Protocol for audio sources (microphone, file, etc.).
+
+    Audio sources provide audio data and control audio capture lifecycle.
+    """
+
+    @property
+    def sample_rate(self) -> int:
+        """Audio sample rate in Hz."""
+        ...
+
+    @property
+    def channels(self) -> int:
+        """Number of audio channels."""
+        ...
+
+    @property
+    def max_capture_duration(self) -> float:
+        """Maximum capture duration in seconds (0.0 means unlimited)."""
+        ...
+
+    @property
+    def stop_event(self) -> threading.Event:
+        """Event that signals when audio capture should stop."""
+        ...
+
+    @property
+    def capture_limit_reached(self) -> threading.Event:
+        """Event that signals when max_capture_duration is reached."""
+        ...
+
+    @property
+    def audio_queue(self) -> queue.Queue[np.ndarray | None]:
+        """Queue that provides audio chunks."""
+        ...
+
+    def start(self) -> None:
+        """Start audio capture."""
+        ...
+
+    def stop(self) -> None:
+        """Stop audio capture."""
+        ...
+
+    def wait_until_stopped(self) -> None:
+        """Block until audio capture is stopped."""
+        ...
+
+    def close(self) -> None:
+        """Clean up resources."""
+        ...
+
+    def get_full_audio(self) -> np.ndarray:
+        """Get the complete captured audio."""
+        ...
+
+    def get_capture_duration(self) -> float:
+        """Get the total duration of captured audio in seconds."""
+        ...
+
+
 class TranscriptionBackend(Protocol):
     """
     Protocol for transcription backends.
@@ -113,25 +177,24 @@ class TranscriptionBackend(Protocol):
     this interface to enable polymorphic usage.
 
     Example:
-        def run_transcription(backend: TranscriptionBackend, config: BackendConfig):
-            result = backend.transcribe(
-                config=config,
-                chunk_consumer=my_consumer,
-            )
-            print(f"Duration: {result.capture_duration}s")
+        backend = WhisperBackend(model_name="turbo", ...)
+        audio_source = FileAudioSource(...)
+        chunk_queue = queue.Queue()
+        result = backend.run(audio_source, chunk_queue)
+        print(f"Duration: {result.capture_duration}s")
     """
 
-    def transcribe(
+    def run(
         self,
-        config: BackendConfig,
-        chunk_consumer: ChunkConsumer | None = None,
+        audio_source: AudioSource,
+        chunk_queue: queue.Queue[TranscriptionChunk | None],
     ) -> TranscriptionResult:
         """
-        Run transcription with the given configuration.
+        Run transcription on the given audio source.
 
         Args:
-            config: Backend-specific configuration object
-            chunk_consumer: Optional callback for processing chunks in real-time
+            audio_source: Audio source to transcribe from
+            chunk_queue: Queue to put transcription chunks into
 
         Returns:
             TranscriptionResult with capture duration, full transcription, and metadata

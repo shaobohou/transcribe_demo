@@ -24,6 +24,6 @@ priority = "supplemental"
 explicit = true
 
 [tool.uv.sources]
-transcribe-demo = { path = "..", editable = false }
+transcribe-demo = { path = "..", editable = true }
 triton = { path = "../vendor/triton-cpu-stub", editable = false }
 torch = { index = "pytorch-cpu" }

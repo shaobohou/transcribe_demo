@@ -7,18 +7,17 @@ import ssl
 import struct
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import torch
 import webrtcvad
 import whisper
 
-from transcribe_demo import audio_capture as audio_capture_lib
-from transcribe_demo.backend_protocol import ChunkConsumer, TranscriptionChunk
-from transcribe_demo.file_audio_source import FileAudioSource
+from transcribe_demo.backend_protocol import AudioSource, TranscriptionChunk
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -265,24 +264,23 @@ def run_whisper_transcriber(
     disable_ssl_verify: bool,
     device_preference: str,
     require_gpu: bool,
-    chunk_consumer: ChunkConsumer | None = None,
+    audio_source: AudioSource,
+    chunk_queue: queue.Queue[TranscriptionChunk | None],
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,
     vad_speech_pad_duration: float = 0.2,
     max_chunk_duration: float = 60.0,
     compare_transcripts: bool = True,
-    max_capture_duration: float = 120.0,
     language: str = "en",
     session_logger: SessionLogger | None = None,
     min_log_duration: float = 0.0,
-    audio_file: Path | None = None,
-    playback_speed: float = 1.0,
     enable_partial_transcription: bool = False,
     partial_model: str = "base.en",
     partial_interval: float = 1.0,
     max_partial_buffer_seconds: float = 10.0,
 ) -> WhisperTranscriptionResult:
+
     model, device, fp16 = load_whisper_model(
         model_name=model_name,
         device_preference=device_preference,
@@ -316,23 +314,8 @@ def run_whisper_transcriber(
     # Track wall-clock start of the transcription session for absolute timestamps
     session_start_time = time.perf_counter()
 
-    # Initialize audio source (either from file or microphone)
-    if audio_file is not None:
-        audio_capture = FileAudioSource(
-            audio_file=audio_file,
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=compare_transcripts or (session_logger is not None),
-            playback_speed=playback_speed,
-        )
-    else:
-        audio_capture = audio_capture_lib.AudioCaptureManager(
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=compare_transcripts or (session_logger is not None),
-        )
+    # Use the provided audio source
+    audio_capture = audio_source
 
     buffer = np.zeros(0, dtype=np.float32)
 
@@ -344,6 +327,7 @@ def run_whisper_transcriber(
     min_speech_frames = int(sample_rate * vad_min_speech_duration)
     speech_pad_samples = int(sample_rate * vad_speech_pad_duration)
 
+    max_capture_duration = audio_source.max_capture_duration
     if max_capture_duration > 0:
         print(
             f"Using WebRTC VAD-based chunking (min: 2.0s, max: {max_chunk_duration}s, "
@@ -533,22 +517,15 @@ def run_whisper_transcriber(
                 chunk_absolute_end = max(0.0, inference_start - session_start_time)
                 chunk_absolute_start = max(0.0, chunk_absolute_end - chunk_audio_duration)
 
-                if chunk_consumer is not None:
-                    chunk = TranscriptionChunk(
-                        index=chunk_index,
-                        text=text,
-                        start_time=chunk_absolute_start,
-                        end_time=chunk_absolute_end,
-                        inference_seconds=inference_duration,
-                        is_partial=False,
-                    )
-                    chunk_consumer(chunk)
-                else:
-                    print(
-                        f"[chunk {chunk_index:03d} | t={chunk_absolute_end:.2f}s | "
-                        f"audio: {chunk_audio_duration:.2f}s | inference: {inference_duration:.2f}s] {text}",
-                        flush=True,
-                    )
+                chunk = TranscriptionChunk(
+                    index=chunk_index,
+                    text=text,
+                    start_time=chunk_absolute_start,
+                    end_time=chunk_absolute_end,
+                    inference_seconds=inference_duration,
+                    is_partial=False,
+                )
+                chunk_queue.put(chunk)
 
                 if session_logger is not None:
                     session_logger.log_chunk(
@@ -571,7 +548,7 @@ def run_whisper_transcriber(
         Segments are printed on separate lines when they complete or grow.
         """
         nonlocal buffer
-        if not enable_partial_transcription or partial_whisper_model is None or chunk_consumer is None:
+        if not enable_partial_transcription or partial_whisper_model is None:
             return
 
         try:
@@ -672,7 +649,7 @@ def run_whisper_transcriber(
                             inference_seconds=inference_duration,
                             is_partial=True,
                         )
-                        chunk_consumer(chunk)
+                        chunk_queue.put(chunk)
 
                         # Check if segment is complete (reached boundary)
                         if segment_audio_end >= current_segment_end:
@@ -824,3 +801,83 @@ def transcribe_full_audio(
         language=normalized_language,
     )
     return _extract_whisper_text(result)
+
+
+@dataclass
+class WhisperBackend:
+    """
+    Whisper transcription backend.
+
+    This class encapsulates all Whisper-specific configuration and provides
+    a clean interface for running transcription.
+    """
+
+    # Model configuration
+    model_name: str = "turbo"
+    device_preference: str = "auto"
+    require_gpu: bool = False
+
+    # VAD configuration
+    vad_aggressiveness: int = 2
+    vad_min_silence_duration: float = 0.2
+    vad_min_speech_duration: float = 0.25
+    vad_speech_pad_duration: float = 0.2
+    max_chunk_duration: float = 60.0
+
+    # Partial transcription configuration
+    enable_partial_transcription: bool = False
+    partial_model: str = "base.en"
+    partial_interval: float = 1.0
+    max_partial_buffer_seconds: float = 10.0
+
+    # Session configuration
+    language: str = "en"
+    compare_transcripts: bool = True
+    session_logger: SessionLogger | None = None
+    min_log_duration: float = 0.0
+
+    # SSL configuration
+    ca_cert: Path | None = None
+    disable_ssl_verify: bool = False
+    temp_file: Path | None = None
+
+    def run(
+        self,
+        audio_source: AudioSource,
+        chunk_queue: queue.Queue[TranscriptionChunk | None],
+    ) -> WhisperTranscriptionResult:
+        """
+        Run Whisper transcription on the given audio source.
+
+        Args:
+            audio_source: Audio source implementing AudioSource protocol
+            chunk_queue: Queue to put transcription chunks into
+
+        Returns:
+            WhisperTranscriptionResult with metadata and full audio transcription
+        """
+        return run_whisper_transcriber(
+            model_name=self.model_name,
+            sample_rate=audio_source.sample_rate,
+            channels=audio_source.channels,
+            temp_file=self.temp_file,
+            ca_cert=self.ca_cert,
+            disable_ssl_verify=self.disable_ssl_verify,
+            device_preference=self.device_preference,
+            require_gpu=self.require_gpu,
+            chunk_queue=chunk_queue,
+            vad_aggressiveness=self.vad_aggressiveness,
+            vad_min_silence_duration=self.vad_min_silence_duration,
+            vad_min_speech_duration=self.vad_min_speech_duration,
+            vad_speech_pad_duration=self.vad_speech_pad_duration,
+            max_chunk_duration=self.max_chunk_duration,
+            compare_transcripts=self.compare_transcripts,
+            language=self.language,
+            session_logger=self.session_logger,
+            min_log_duration=self.min_log_duration,
+            enable_partial_transcription=self.enable_partial_transcription,
+            partial_model=self.partial_model,
+            partial_interval=self.partial_interval,
+            max_partial_buffer_seconds=self.max_partial_buffer_seconds,
+            audio_source=audio_source,
+        )

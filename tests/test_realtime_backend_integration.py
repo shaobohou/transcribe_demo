@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import queue
 
 import numpy as np
 import pytest
 
-from test_helpers import create_fake_audio_capture_factory, load_test_fixture
+from test_helpers import load_test_fixture
 from transcribe_demo import realtime_backend
+from transcribe_demo.backend_protocol import TranscriptionChunk
 
 
 @pytest.mark.integration
@@ -16,10 +18,15 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
     chunk_texts: list[str] = []
     fake_ws_holder: dict[str, "FakeWebSocket"] = {}
 
-    # Use helper to create fake audio capture manager
-    monkeypatch.setattr(
-        "transcribe_demo.audio_capture.AudioCaptureManager",
-        create_fake_audio_capture_factory(audio, sample_rate, frame_size=320),  # 20ms for realtime
+    # Create fake audio source
+    from test_helpers import FakeAudioCaptureManager
+    audio_source = FakeAudioCaptureManager(
+        audio=audio,
+        sample_rate=sample_rate,
+        channels=1,
+        max_capture_duration=len(audio) / sample_rate,
+        collect_full_audio=True,
+        frame_size=320,  # 20ms for realtime
     )
 
     # Custom FakeWebSocket for this test with specific events
@@ -85,15 +92,13 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
 
     monkeypatch.setattr(realtime_backend.websockets, "connect", fake_connect)
 
-    def collect_chunk(chunk):
-        if chunk.text:
-            chunk_texts.append(chunk.text)
-
     monkeypatch.setattr(
         realtime_backend,
         "transcribe_full_audio_realtime",
         lambda *args, **kwargs: "full hello fox",
     )
+
+    chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
 
     result = realtime_backend.run_realtime_transcriber(
         api_key="test-key",
@@ -104,11 +109,22 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
         chunk_duration=0.2,
         instructions="transcribe precisely",
         disable_ssl_verify=False,
-        chunk_consumer=collect_chunk,
+        chunk_queue=chunk_queue,
         compare_transcripts=True,
-        max_capture_duration=len(audio) / sample_rate,
         language="en",
+        audio_source=audio_source,
     )
+
+    # Backend doesn't put sentinel - that's the caller's responsibility
+    chunk_queue.put(None)
+
+    # Collect chunks from queue
+    while True:
+        chunk = chunk_queue.get()
+        if chunk is None:
+            break
+        if chunk.text:
+            chunk_texts.append(chunk.text)
 
     assert result.chunks == ["hello fox"]
     assert result.full_audio.size > 0
@@ -125,10 +141,15 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
     """Test that full audio returned from realtime backend matches the original input audio."""
     audio, sample_rate = load_test_fixture()
 
-    # Use helper to create fake audio capture manager
-    monkeypatch.setattr(
-        "transcribe_demo.audio_capture.AudioCaptureManager",
-        create_fake_audio_capture_factory(audio, sample_rate, frame_size=320),
+    # Create fake audio source
+    from test_helpers import FakeAudioCaptureManager
+    audio_source = FakeAudioCaptureManager(
+        audio=audio,
+        sample_rate=sample_rate,
+        channels=1,
+        max_capture_duration=len(audio) / sample_rate,
+        collect_full_audio=True,
+        frame_size=320,
     )
 
     # Custom FakeWebSocket for this test
@@ -140,6 +161,15 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
 
         async def send(self, message: str) -> None:
             self.sent_messages.append(json.loads(message))
+
+        async def recv(self):
+            """Receive method compatible with websockets.recv() API."""
+            import asyncio
+
+            if not self._events:
+                # Block forever to trigger timeout
+                await asyncio.sleep(1000)
+            return json.dumps(self._events.pop(0))
 
         def __aiter__(self):
             return self
@@ -190,6 +220,8 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
         lambda *args, **kwargs: "test audio full",
     )
 
+    chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
+
     result = realtime_backend.run_realtime_transcriber(
         api_key="test-key",
         endpoint="wss://example.com",
@@ -199,11 +231,20 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
         chunk_duration=0.2,
         instructions="transcribe precisely",
         disable_ssl_verify=False,
-        chunk_consumer=lambda chunk: None,
+        chunk_queue=chunk_queue,
         compare_transcripts=True,  # Must be True to enable full audio collection
-        max_capture_duration=len(audio) / sample_rate,
         language="en",
+        audio_source=audio_source,
     )
+
+    # Backend doesn't put sentinel - that's the caller's responsibility
+    chunk_queue.put(None)
+
+    # Drain the queue
+    while True:
+        chunk = chunk_queue.get()
+        if chunk is None:
+            break
 
     # Verify that the full audio in the result matches the original input
     assert result.full_audio.size > 0, "No audio was captured"

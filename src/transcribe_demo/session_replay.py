@@ -13,6 +13,7 @@ import numpy as np
 import soundfile as sf
 import wave
 
+from transcribe_demo.backend_protocol import TranscriptionChunk
 from transcribe_demo.session_logger import SessionLogger, SessionMetadata
 
 
@@ -379,36 +380,68 @@ def retranscribe_session(
 
     try:
         # Create a simple chunk consumer
-        from transcribe_demo.cli import ChunkCollectorWithStitching
+        from transcribe_demo.chunk_collector import ChunkCollector
+        import queue as queue_module
+        import threading
 
-        collector = ChunkCollectorWithStitching(sys.stdout)
+        collector = ChunkCollector(sys.stdout)
 
         if backend == "whisper":
-            # Run Whisper backend with loaded audio
-            whisper_result = run_whisper_transcriber(
-                model_name=backend_kwargs.get("model", "turbo"),
+            # Create chunk queue for receiving transcription chunks
+            chunk_queue: queue_module.Queue[TranscriptionChunk | None] = queue_module.Queue()
+            result_container: list = []
+
+            # Create audio source
+            audio_source = FakeAudioCaptureManager(
                 sample_rate=loaded_session.sample_rate,
                 channels=loaded_session.metadata.channels,
-                temp_file=None,
-                ca_cert=backend_kwargs.get("ca_cert"),
-                disable_ssl_verify=backend_kwargs.get("disable_ssl_verify", False),
-                device_preference=backend_kwargs.get("device", "auto"),
-                require_gpu=backend_kwargs.get("require_gpu", False),
-                chunk_consumer=collector,
-                vad_aggressiveness=backend_kwargs.get("vad_aggressiveness", 2),
-                vad_min_silence_duration=backend_kwargs.get("vad_min_silence_duration", 0.2),
-                vad_min_speech_duration=backend_kwargs.get("vad_min_speech_duration", 0.25),
-                vad_speech_pad_duration=backend_kwargs.get("vad_speech_pad_duration", 0.2),
-                max_chunk_duration=backend_kwargs.get("max_chunk_duration", 60.0),
-                compare_transcripts=backend_kwargs.get("compare_transcripts", False),
                 max_capture_duration=0.0,  # No duration limit for retranscription
-                language=backend_kwargs.get("language", "en"),
-                session_logger=session_logger,
-                min_log_duration=0.0,  # Always save retranscription
+                collect_full_audio=backend_kwargs.get("compare_transcripts", False),
             )
 
+            # Run Whisper backend in background thread
+            def backend_worker():
+                result = run_whisper_transcriber(
+                    model_name=backend_kwargs.get("model", "turbo"),
+                    sample_rate=loaded_session.sample_rate,
+                    channels=loaded_session.metadata.channels,
+                    temp_file=None,
+                    ca_cert=backend_kwargs.get("ca_cert"),
+                    disable_ssl_verify=backend_kwargs.get("disable_ssl_verify", False),
+                    device_preference=backend_kwargs.get("device", "auto"),
+                    require_gpu=backend_kwargs.get("require_gpu", False),
+                    audio_source=audio_source,
+                    chunk_queue=chunk_queue,
+                    vad_aggressiveness=backend_kwargs.get("vad_aggressiveness", 2),
+                    vad_min_silence_duration=backend_kwargs.get("vad_min_silence_duration", 0.2),
+                    vad_min_speech_duration=backend_kwargs.get("vad_min_speech_duration", 0.25),
+                    vad_speech_pad_duration=backend_kwargs.get("vad_speech_pad_duration", 0.2),
+                    max_chunk_duration=backend_kwargs.get("max_chunk_duration", 60.0),
+                    compare_transcripts=backend_kwargs.get("compare_transcripts", False),
+                    language=backend_kwargs.get("language", "en"),
+                    session_logger=session_logger,
+                    min_log_duration=0.0,  # Always save retranscription
+                )
+                result_container.append(result)
+                chunk_queue.put(None)  # Sentinel
+
+            worker_thread = threading.Thread(target=backend_worker, daemon=True)
+            worker_thread.start()
+
+            # Consume chunks from queue
+            while True:
+                chunk = chunk_queue.get()
+                if chunk is None:
+                    break
+                collector(chunk)
+
+            # Wait for worker to complete
+            worker_thread.join()
+
+            whisper_result = result_container[0] if result_container else None
+
             # Get final stitched transcription
-            final = collector.get_final_stitched()
+            final = collector.get_final_stitched_text()
 
             # Update session logger with cleaned chunk text
             for chunk_index, cleaned_text in collector.get_cleaned_chunks():
@@ -435,30 +468,59 @@ def retranscribe_session(
                     "Provide api_key in backend_kwargs or set OPENAI_API_KEY."
                 )
 
-            realtime_result = run_realtime_transcriber(
-                api_key=api_key,
-                endpoint=backend_kwargs.get("realtime_endpoint", "wss://api.openai.com/v1/realtime"),
-                model=backend_kwargs.get("realtime_model", "gpt-realtime-mini"),
+            # Create chunk queue for receiving transcription chunks
+            chunk_queue: queue_module.Queue[TranscriptionChunk | None] = queue_module.Queue()
+            result_container: list = []
+
+            # Create audio source
+            audio_source = FakeAudioCaptureManager(
                 sample_rate=loaded_session.sample_rate,
                 channels=loaded_session.metadata.channels,
-                chunk_duration=2.0,  # Standard 2s chunks for realtime
-                instructions=backend_kwargs.get(
-                    "realtime_instructions",
-                    "You are a high-accuracy transcription service. "
-                    "Return a concise verbatim transcript of the most recent audio buffer. "
-                    "Do not add commentary or speaker labels.",
-                ),
-                disable_ssl_verify=backend_kwargs.get("disable_ssl_verify", False),
-                chunk_consumer=collector,
-                compare_transcripts=backend_kwargs.get("compare_transcripts", False),
                 max_capture_duration=0.0,  # No duration limit for retranscription
-                language=backend_kwargs.get("language", "en"),
-                session_logger=session_logger,
-                min_log_duration=0.0,  # Always save retranscription
+                collect_full_audio=backend_kwargs.get("compare_transcripts", False),
             )
 
+            # Run Realtime backend in background thread
+            def backend_worker():
+                result = run_realtime_transcriber(
+                    api_key=api_key,
+                    endpoint=backend_kwargs.get("realtime_endpoint", "wss://api.openai.com/v1/realtime"),
+                    model=backend_kwargs.get("realtime_model", "gpt-realtime-mini"),
+                    sample_rate=loaded_session.sample_rate,
+                    channels=loaded_session.metadata.channels,
+                    chunk_duration=2.0,  # Standard 2s chunks for realtime
+                    instructions=backend_kwargs.get(
+                        "realtime_instructions",
+                        "You are a high-accuracy transcription service. "
+                        "Return a concise verbatim transcript of the most recent audio buffer. "
+                        "Do not add commentary or speaker labels.",
+                    ),
+                    audio_source=audio_source,
+                    disable_ssl_verify=backend_kwargs.get("disable_ssl_verify", False),
+                    chunk_queue=chunk_queue,
+                    compare_transcripts=backend_kwargs.get("compare_transcripts", False),
+                    language=backend_kwargs.get("language", "en"),
+                )
+                result_container.append(result)
+                chunk_queue.put(None)  # Sentinel
+
+            worker_thread = threading.Thread(target=backend_worker, daemon=True)
+            worker_thread.start()
+
+            # Consume chunks from queue
+            while True:
+                chunk = chunk_queue.get()
+                if chunk is None:
+                    break
+                collector(chunk)
+
+            # Wait for worker to complete
+            worker_thread.join()
+
+            realtime_result = result_container[0] if result_container else None
+
             # Get final stitched transcription
-            final = collector.get_final_stitched()
+            final = collector.get_final_stitched_text()
 
             # Update session logger with cleaned chunk text
             for chunk_index, cleaned_text in collector.get_cleaned_chunks():

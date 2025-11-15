@@ -12,7 +12,6 @@ import threading
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -21,9 +20,7 @@ import websockets
 if TYPE_CHECKING:
     import websockets.asyncio.client
 
-from transcribe_demo import audio_capture as audio_capture_lib
-from transcribe_demo.backend_protocol import ChunkConsumer, TranscriptionChunk
-from transcribe_demo.file_audio_source import FileAudioSource
+from transcribe_demo.backend_protocol import AudioSource, TranscriptionChunk
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -261,36 +258,20 @@ def run_realtime_transcriber(
     channels: int,
     chunk_duration: float,
     instructions: str,
+    audio_source: AudioSource,
     disable_ssl_verify: bool = False,
-    chunk_consumer: ChunkConsumer | None = None,
+    chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
     compare_transcripts: bool = True,
-    max_capture_duration: float = 120.0,
     language: str = "en",
     session_logger: SessionLogger | None = None,
     min_log_duration: float = 0.0,
-    audio_file: Path | None = None,
-    playback_speed: float = 1.0,
     vad_threshold: float = 0.3,
     vad_silence_duration_ms: int = 200,
     debug: bool = False,
 ) -> RealtimeTranscriptionResult:
-    # Initialize audio source (either from file or microphone)
-    if audio_file is not None:
-        audio_capture = FileAudioSource(
-            audio_file=audio_file,
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=compare_transcripts or (session_logger is not None),
-            playback_speed=playback_speed,
-        )
-    else:
-        audio_capture = audio_capture_lib.AudioCaptureManager(
-            sample_rate=sample_rate,
-            channels=channels,
-            max_capture_duration=max_capture_duration,
-            collect_full_audio=compare_transcripts or (session_logger is not None),
-        )
+
+    # Use the provided audio source
+    audio_capture = audio_source
 
     session_sample_rate = 24000
     chunk_texts: list[str] = []
@@ -462,19 +443,17 @@ def run_realtime_transcriber(
                                     current_chunk_index = chunk_counter[0]
                                     chunk_counter[0] += 1
 
-                                if chunk_consumer:
-                                    chunk = TranscriptionChunk(
-                                        index=current_chunk_index,
-                                        text=final_text,
-                                        start_time=chunk_start,
-                                        end_time=chunk_end,
-                                        inference_seconds=None,  # Signals realtime mode
-                                        is_partial=False,
-                                    )
-                                    chunk_consumer(chunk)
-                                else:
-                                    label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
-                                    print(f"{label} {final_text}", flush=True)
+                                chunk = TranscriptionChunk(
+                                    index=current_chunk_index,
+                                    text=final_text,
+                                    start_time=chunk_start,
+                                    end_time=chunk_end,
+                                    inference_seconds=None,  # Signals realtime mode
+                                    is_partial=False,
+                                )
+
+                                if chunk_queue is not None:
+                                    chunk_queue.put(chunk)
 
                                 chunk_texts.append(final_text)
 
@@ -546,22 +525,17 @@ def run_realtime_transcriber(
                                         current_chunk_index = chunk_counter[0]
                                         chunk_counter[0] += 1
 
-                                    if chunk_consumer:
-                                        chunk = TranscriptionChunk(
-                                            index=current_chunk_index,
-                                            text=final_text,
-                                            start_time=chunk_start,
-                                            end_time=chunk_end,
-                                            inference_seconds=None,  # Signals realtime mode
-                                            is_partial=False,
-                                        )
-                                        chunk_consumer(chunk)
-                                    else:
-                                        label = f"[chunk {current_chunk_index:03d} | {chunk_end:.2f}s]"
-                                        if final_text:
-                                            print(f"{label} {final_text}", flush=True)
-                                        else:
-                                            print(label, flush=True)
+                                    chunk = TranscriptionChunk(
+                                        index=current_chunk_index,
+                                        text=final_text,
+                                        start_time=chunk_start,
+                                        end_time=chunk_end,
+                                        inference_seconds=None,  # Signals realtime mode
+                                        is_partial=False,
+                                    )
+
+                                    if chunk_queue is not None:
+                                        chunk_queue.put(chunk)
 
                                     if final_text:
                                         chunk_texts.append(final_text)
@@ -675,3 +649,96 @@ def run_realtime_transcriber(
             "language": language_value or "auto",
         },
     )
+
+
+@dataclass
+class RealtimeBackend:
+    """
+    Realtime API transcription backend.
+
+    This class encapsulates all Realtime API-specific configuration and provides
+    a clean interface for running transcription.
+    """
+
+    # API configuration
+    api_key: str
+    endpoint: str = "wss://api.openai.com/v1/realtime"
+    model: str = "gpt-realtime-mini"
+    instructions: str = (
+        "You are a high-accuracy transcription service. "
+        "Return a concise verbatim transcript of the most recent audio buffer. "
+        "Do not add commentary or speaker labels."
+    )
+
+    # VAD configuration
+    vad_threshold: float = 0.3
+    vad_silence_duration_ms: int = 200
+    debug: bool = False
+
+    # Session configuration
+    language: str = "en"
+    compare_transcripts: bool = True
+    session_logger: SessionLogger | None = None
+    min_log_duration: float = 0.0
+
+    # SSL configuration
+    disable_ssl_verify: bool = False
+
+    def run(
+        self,
+        audio_source: AudioSource,
+        chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
+    ) -> RealtimeTranscriptionResult:
+        """
+        Run Realtime API transcription on the given audio source.
+
+        Args:
+            audio_source: Audio source implementing AudioSource protocol
+            chunk_queue: Optional queue to put transcription chunks into
+
+        Returns:
+            RealtimeTranscriptionResult with metadata and full audio
+        """
+        result = run_realtime_transcriber(
+            api_key=self.api_key,
+            endpoint=self.endpoint,
+            model=self.model,
+            sample_rate=audio_source.sample_rate,
+            channels=audio_source.channels,
+            chunk_duration=2.0,  # Fixed for realtime API
+            instructions=self.instructions,
+            disable_ssl_verify=self.disable_ssl_verify,
+            chunk_queue=chunk_queue,
+            compare_transcripts=self.compare_transcripts,
+            language=self.language,
+            session_logger=self.session_logger,
+            min_log_duration=self.min_log_duration,
+            vad_threshold=self.vad_threshold,
+            vad_silence_duration_ms=self.vad_silence_duration_ms,
+            debug=self.debug,
+            audio_source=audio_source,
+        )
+
+        # Get full audio transcription for comparison if enabled
+        if self.compare_transcripts and result.full_audio.size > 0:
+            try:
+                result.full_audio_transcription = transcribe_full_audio_realtime(
+                    result.full_audio,
+                    sample_rate=result.sample_rate,
+                    chunk_duration=2.0,
+                    api_key=self.api_key,
+                    endpoint=self.endpoint,
+                    model=self.model,
+                    instructions=self.instructions,
+                    disable_ssl_verify=self.disable_ssl_verify,
+                    language=self.language,
+                )
+            except Exception as exc:
+                # Log warning but don't fail - this is just for comparison
+                import sys
+                print(
+                    f"WARNING: Unable to transcribe full audio for comparison: {exc}",
+                    file=sys.stderr,
+                )
+
+        return result
