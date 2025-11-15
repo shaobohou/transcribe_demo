@@ -66,26 +66,12 @@ This is the central index for all transcribe-demo documentation. Use this to nav
 
 ### Refactoring History
 
-**[BACKEND_PROTOCOL_IMPLEMENTATION.md](BACKEND_PROTOCOL_IMPLEMENTATION.md)** - *Backend protocol refactoring summary*
-- Protocol-based architecture implementation
-- Configuration dataclasses design
-- Session finalization consolidation
-- Migration guide from legacy interfaces
-- **Use this for**: Understanding the backend protocol refactoring (completed 2025-11-14)
-
-**[REFACTORING_OPPORTUNITIES.md](REFACTORING_OPPORTUNITIES.md)** - *Comprehensive refactoring analysis*
-- Detailed analysis of 16 refactoring opportunities
-- Impact and effort estimates
-- Prioritized implementation phases
-- Code quality metrics
-- **Use this for**: Historical context on identified refactoring opportunities
-
-**[REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)** - *CLI refactoring summary*
-- Protocol-based architecture adoption
-- Duck typing implementation
-- Diff/comparison module extraction
-- Code metrics and benefits
-- **Use this for**: Understanding the CLI refactoring (completed)
+**[REFACTORING_HISTORY.md](REFACTORING_HISTORY.md)** - *Chronicle of major refactoring efforts*
+- Backend protocol refactoring (2025-11-14): Protocol-based architecture, configuration dataclasses
+- CLI refactoring (2025-11): Protocol adoption, diff module extraction, code reduction
+- Migration guides and lessons learned
+- Code metrics and impact analysis
+- **Use this for**: Understanding what was refactored and why (historical reference)
 
 ---
 
@@ -110,7 +96,7 @@ Each document has a specific purpose to avoid overlap:
 | **DESIGN.md** | "Why is it designed this way?" | Developers, maintainers | Major architecture changes |
 | **TODO.md** | "What should we improve?" | Contributors | Finding refactoring opportunities |
 | **SESSIONS.md** | "How do sessions work?" | Users, automation scripts | Changing log format or replay utility |
-| **Refactoring History** | "What was refactored and why?" | Developers | Historical reference (rarely updated) |
+| **REFACTORING_HISTORY.md** | "What was refactored and why?" | Developers | Historical reference (rarely updated) |
 
 ---
 
