@@ -110,6 +110,9 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
         language="en",
     )
 
+    # Backend doesn't put sentinel - that's the caller's responsibility
+    chunk_queue.put(None)
+
     # Collect chunks from queue
     while True:
         chunk = chunk_queue.get()
@@ -223,6 +226,9 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
         max_capture_duration=len(audio) / sample_rate,
         language="en",
     )
+
+    # Backend doesn't put sentinel - that's the caller's responsibility
+    chunk_queue.put(None)
 
     # Drain the queue
     while True:
