@@ -6,14 +6,14 @@ from typing import Any
 import numpy as np
 import pytest
 
-from test_helpers import create_fake_audio_capture_factory, load_test_fixture
+from test_helpers import create_fake_audio_capture_factory, generate_synthetic_audio
 from transcribe_demo import whisper_backend
 from transcribe_demo.backend_protocol import TranscriptionChunk
 
 
 @pytest.mark.integration
 def test_run_whisper_transcriber_processes_audio(monkeypatch):
-    audio, sample_rate = load_test_fixture()
+    audio, sample_rate = generate_synthetic_audio(duration_seconds=2.0)
     chunks: list[dict[str, float | str | None]] = []
 
     class DummyModel:
@@ -95,7 +95,7 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
     """Test that full audio returned from audio capture matches the original input audio."""
     from typing import TYPE_CHECKING
 
-    audio, sample_rate = load_test_fixture()
+    audio, sample_rate = generate_synthetic_audio(duration_seconds=2.0)
     audio_capture_holder: dict[str, Any] = {}
 
     if TYPE_CHECKING:
