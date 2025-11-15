@@ -171,8 +171,9 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
     stderr = io.StringIO()
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
+    # Monkeypatch where ChunkCollector is actually imported and used (in cli.py)
     monkeypatch.setattr(
-        "transcribe_demo.chunk_collector.ChunkCollector",
+        "transcribe_demo.cli.ChunkCollector",
         FakeCollector,
     )
 
@@ -235,6 +236,7 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
             self.sample_rate = 24000
             self.capture_duration = 15.0
             self.metadata = {"model": "test-realtime"}
+            self.full_audio_transcription = None  # Required by TranscriptionResult protocol
 
     # Create synthetic audio for mocking
     audio, sample_rate = generate_synthetic_audio(duration_seconds=2.0)
@@ -244,7 +246,8 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
     monkeypatch.setenv("OPENAI_API_KEY", "")
-    monkeypatch.setattr("transcribe_demo.chunk_collector.ChunkCollector", FakeCollector)
+    # Monkeypatch where ChunkCollector is actually imported and used (in cli.py)
+    monkeypatch.setattr("transcribe_demo.cli.ChunkCollector", FakeCollector)
 
     # Mock AudioCaptureManager
     monkeypatch.setattr(
