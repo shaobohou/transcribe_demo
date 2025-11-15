@@ -11,10 +11,30 @@ from transcribe_demo import whisper_backend
 from transcribe_demo.backend_protocol import TranscriptionChunk
 
 
+def _collect_chunks_from_queue(chunk_queue: queue.Queue[TranscriptionChunk | None]) -> list[dict]:
+    """Helper to collect chunks from queue."""
+    chunks: list[dict] = []
+    while True:
+        try:
+            chunk = chunk_queue.get(timeout=0.1)
+            if chunk is None:
+                break
+            if not chunk.is_partial:
+                chunks.append({
+                    "index": chunk.index,
+                    "text": chunk.text,
+                    "start": chunk.start_time,
+                    "end": chunk.end_time,
+                    "inference": chunk.inference_seconds,
+                })
+        except queue.Empty:
+            break
+    return chunks
+
+
 @pytest.mark.integration
 def test_run_whisper_transcriber_processes_audio(monkeypatch):
     audio, sample_rate = generate_synthetic_audio(duration_seconds=2.0)
-    chunks: list[dict[str, float | str | None]] = []
 
     class DummyModel:
         def __init__(self):
@@ -68,20 +88,7 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
     )
 
     # Collect chunks from queue
-    while True:
-        chunk = chunk_queue.get()
-        if chunk is None:
-            break
-        if not chunk.is_partial:
-            chunks.append(
-                {
-                    "index": chunk.index,
-                    "text": chunk.text,
-                    "start": chunk.start_time,
-                    "end": chunk.end_time,
-                    "inference": chunk.inference_seconds,
-                }
-            )
+    chunks = _collect_chunks_from_queue(chunk_queue)
 
     assert result.full_audio_transcription is None
     assert dummy_model.calls, "Model was never invoked"
@@ -146,10 +153,7 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
     )
 
     # Drain the queue
-    while True:
-        chunk = chunk_queue.get()
-        if chunk is None:
-            break
+    _collect_chunks_from_queue(chunk_queue)
 
     # Verify that the full audio captured matches the original input
     if TYPE_CHECKING:
