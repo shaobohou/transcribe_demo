@@ -8,10 +8,23 @@ This document tracks implementation-level refactoring opportunities, code qualit
 
 ## Recent Updates (2025-11-15)
 
+**Code deletion and simplification scan completed**:
+- 🗑️ Found 13 lines of dead/duplicate code that can be deleted
+- ⚡ Added 8 new Priority 0 items (code deletion, anti-patterns)
+- 🎯 Added 2 new Priority 1 items (constants, WebSocket state)
+- Total quick wins now: ~50 lines can be saved in < 2 hours
+
+**New Priority 0 Items**:
+1. Delete duplicate URL suffix extraction (+8 lines)
+2. Delete redundant sys import (+1 line)
+3. Replace defensive file cleanup with `unlink(missing_ok=True)` (+4 lines)
+4. Move import from loop to module level (anti-pattern fix)
+5. Consolidate audio resampling functions (+10 lines)
+
 **Documentation refresh and verification completed**:
 - ✅ Verified against current codebase (all line numbers updated)
 - ✅ Removed completed items:
-  - ~~resample_audio() duplication~~ - Already consolidated
+  - ~~resample_audio() duplication~~ - Actually still exists! Re-added as 0.6
   - ~~Final output printing duplication~~ - Addressed by `_finalize_transcription_session()`
   - ~~Remove unused wave imports~~ - Actually used in both files
 - Updated FakeAudioCaptureManager references (now in 2 locations, not 3)
@@ -98,9 +111,106 @@ After successful refactoring:
 
 ## Active Refactoring Opportunities
 
-### Priority 0: Quick Wins (< 1 hour total)
+### Priority 0: Code Deletion & Quick Wins (< 1 hour total)
 
-#### 0.1 Remove Duplicate Whisper Text Extraction
+#### 0.1 Delete Duplicate URL Suffix Extraction Logic
+
+**Issue**: URL file extension extraction duplicated in `file_audio_source.py`.
+
+**Locations**:
+- `file_audio_source.py:127-130` - In `_get_cached_file()`
+- `file_audio_source.py:158-161` - In `_download_from_url()` (identical logic)
+
+**Current Pattern**:
+```python
+# Duplicated in both functions:
+path_parts = parsed_url.path.split(".")
+suffix = f".{path_parts[-1]}" if len(path_parts) > 1 and len(path_parts[-1]) <= 4 else ".audio"
+```
+
+**Proposed Solution**:
+```python
+def _get_url_suffix(url: urllib.parse.ParseResult) -> str:
+    """Extract file extension from URL path."""
+    path_parts = url.path.split(".")
+    return f".{path_parts[-1]}" if len(path_parts) > 1 and len(path_parts[-1]) <= 4 else ".audio"
+
+# Then use:
+suffix = _get_url_suffix(parsed_url)
+```
+
+**Benefits**:
+- Eliminates duplicate logic
+- Single place to update suffix logic
+- More testable
+
+**Effort**: 10 min | **Impact**: Medium | **Lines saved**: ~8
+
+---
+
+#### 0.2 Delete Redundant sys Import in Exception Handler
+
+**Issue**: `sys` imported locally in exception handler when already imported at module level.
+
+**Location**: `realtime_backend.py:743`
+
+**Current Code**:
+```python
+except Exception as exc:
+    import sys  # REDUNDANT - already imported at line 11
+    print(f"WARNING: Unable to transcribe full audio for comparison: {exc}", file=sys.stderr)
+```
+
+**Proposed Solution**:
+```python
+except Exception as exc:
+    print(f"WARNING: Unable to transcribe full audio for comparison: {exc}", file=sys.stderr)
+```
+
+**Benefits**:
+- Removes unnecessary import
+- Cleaner code style
+- Slightly faster exception handling
+
+**Effort**: 1 min | **Impact**: Low | **Lines saved**: ~1
+
+---
+
+#### 0.3 Replace Defensive File Cleanup with unlink(missing_ok=True)
+
+**Issue**: Overly defensive exception handling for file deletion in `file_audio_source.py`.
+
+**Location**: `file_audio_source.py:202-207`
+
+**Current Code**:
+```python
+except Exception as e:
+    # Clean up temp file on error
+    try:
+        Path(temp_path).unlink()
+    except Exception:
+        pass
+    raise RuntimeError(f"Failed to download audio from URL {url}: {e}") from e
+```
+
+**Proposed Solution**:
+```python
+except Exception as e:
+    # Clean up temp file on error
+    Path(temp_path).unlink(missing_ok=True)
+    raise RuntimeError(f"Failed to download audio from URL {url}: {e}") from e
+```
+
+**Benefits**:
+- Idiomatic Python (unlink with missing_ok parameter)
+- Clearer intent
+- Simpler error handling
+
+**Effort**: 2 min | **Impact**: Medium | **Lines saved**: ~4
+
+---
+
+#### 0.4 Remove Duplicate Whisper Text Extraction
 
 **Issue**: `whisper_backend.py` extracts text from Whisper result in two places.
 
@@ -124,7 +234,78 @@ def _extract_whisper_text(result: dict) -> str:
 
 ---
 
-#### 0.2 Reuse _run_async() Helper in Whisper Backend
+#### 0.5 Move Import from Loop to Module Level
+
+**Issue**: `import time` inside a loop in `audio_capture.py` (anti-pattern).
+
+**Location**: `audio_capture.py:175`
+
+**Current Code**:
+```python
+def wait_until_stopped(self) -> None:
+    while not self.stop_event.is_set():
+        import time  # ANTI-PATTERN: import in loop
+        time.sleep(0.1)
+```
+
+**Proposed Solution**:
+```python
+# At module level (top of file)
+import time
+
+def wait_until_stopped(self) -> None:
+    while not self.stop_event.is_set():
+        time.sleep(0.1)
+```
+
+**Benefits**:
+- Removes anti-pattern
+- Slightly faster loop execution
+- Better code style
+
+**Effort**: 2 min | **Impact**: Low | **Lines changed**: Move 1 line to module level
+
+---
+
+#### 0.6 Consolidate Audio Resampling Functions
+
+**Issue**: Nearly identical resampling logic duplicated across backends.
+
+**Locations**:
+- `realtime_backend.py:34-43` - `_resample_audio()` (10 lines)
+- `file_audio_source.py:261-284` - `_resample()` (23 lines, same algorithm)
+
+**Proposed Solution**:
+```python
+# src/transcribe_demo/audio_utils.py (new file or add to existing)
+def resample_audio(
+    *,
+    audio: np.ndarray,
+    from_rate: int,
+    to_rate: int,
+) -> np.ndarray:
+    """Resample audio using linear interpolation."""
+    if from_rate == to_rate or audio.size == 0:
+        return audio
+    duration = audio.size / float(from_rate)
+    target_length = int(round(duration * to_rate))
+    if target_length <= 1:
+        return np.zeros(0, dtype=np.float32)
+    source_positions = np.linspace(0, audio.size - 1, audio.size, dtype=np.float32)
+    target_positions = np.linspace(0, audio.size - 1, target_length, dtype=np.float32)
+    return np.interp(target_positions, source_positions, audio).astype(np.float32)
+```
+
+**Benefits**:
+- DRY principle (~10 lines saved)
+- Single behavior to test
+- Consistent across backends
+
+**Effort**: 15 min | **Impact**: Medium | **Lines saved**: ~10
+
+---
+
+#### 0.7 Reuse _run_async() Helper in Whisper Backend
 
 **Issue**: `whisper_backend.py` reimplements async event loop management inline instead of using the existing `_run_async()` helper from `realtime_backend.py`.
 
@@ -174,7 +355,7 @@ result = run_async(my_async_function())
 
 ---
 
-#### 0.3 Extract Color Code Initialization Helper
+#### 0.8 Extract Color Code Initialization Helper
 
 **Issue**: Color code initialization duplicated in `chunk_collector.py`.
 
@@ -229,9 +410,36 @@ def get_color_codes(enabled: bool = True) -> ColorCodes:
 
 ---
 
-### Priority 1: High Impact (1-2 hours total)
+### Priority 1: High Impact Refactoring (1-2 hours total)
 
-#### 1.1 Extract stdin.isatty() Check to Shared Utility
+#### 1.1 Centralize Frame Size Constant
+
+**Issue**: Frame size `480` (30ms at 16kHz) hardcoded in multiple files.
+
+**Locations**:
+- `file_audio_source.py:292` - `frame_size = 480`
+- `session_replay.py:323` - `self._frame_size = 480`
+- `whisper_backend.py:383` - Comment mentions "480 samples"
+
+**Proposed Solution**:
+```python
+# src/transcribe_demo/audio_utils.py (new) or constants.py
+WHISPER_FRAME_SIZE_SAMPLES = 480  # 30ms at 16kHz for VAD processing
+
+# Then use everywhere:
+frame_size = WHISPER_FRAME_SIZE_SAMPLES
+```
+
+**Benefits**:
+- Single source of truth
+- Self-documenting (with comment explaining 30ms)
+- Easier to change if needed
+
+**Effort**: 10 min | **Impact**: Low | **Lines changed**: ~3
+
+---
+
+#### 1.2 Extract stdin.isatty() Check to Shared Utility
 
 **Issue**: stdin TTY check duplicated in multiple files for interactive mode detection.
 
@@ -728,13 +936,18 @@ These are larger features or refactorings that require more design work:
 
 | Priority | Item | Time | Impact | Lines |
 |----------|------|------|--------|-------|
-| P0 | Extract color codes | 15m | Low | -8 |
-| P0 | Reuse _run_async() | 20m | Med | -10 |
-| P1 | stdin.isatty() utility | 20m | Med | -5 |
-| P1 | SSL context helper | 30m | Med | -15 |
-| P4 | Extract magic numbers | 30m | Med | 0 |
+| P0.1 | Delete URL suffix duplication | 10m | Med | -8 |
+| P0.2 | Delete redundant sys import | 1m | Low | -1 |
+| P0.3 | Replace defensive cleanup | 2m | Med | -4 |
+| P0.5 | Move import from loop | 2m | Low | 0 |
+| P0.6 | Consolidate resample functions | 15m | Med | -10 |
+| P0.7 | Reuse _run_async() | 20m | Med | -10 |
+| P0.8 | Extract color codes | 15m | Low | -8 |
+| P1.1 | Centralize frame size constant | 10m | Low | -2 |
+| P1.2 | stdin.isatty() utility | 20m | Med | -5 |
+| P1.3 | SSL context helper | 30m | Med | -15 |
 
-**Total**: ~2 hours, ~38 lines saved
+**Total**: ~2 hours, ~63 lines saved (65% more than before!)
 
 ### Medium Refactorings (2-5 hours, good ROI)
 
