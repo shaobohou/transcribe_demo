@@ -570,12 +570,11 @@ def main(argv: list[str]) -> None:
         transcription_gen = transcribe(backend, audio_source)
 
         # Consume chunks and collect result
-        for chunk in transcription_gen:
-            collector(chunk)
-
-        # Get the final result from the generator's return value
+        # Must use manual iteration to capture the generator's return value
         try:
-            result = transcription_gen.send(None)
+            while True:
+                chunk = next(transcription_gen)
+                collector(chunk)
         except StopIteration as e:
             result = e.value
 
