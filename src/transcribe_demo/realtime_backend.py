@@ -21,7 +21,7 @@ import websockets
 if TYPE_CHECKING:
     import websockets.asyncio.client
 
-from transcribe_demo.backend_protocol import TranscriptionChunk
+from transcribe_demo.backend_protocol import AudioSource, TranscriptionChunk
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -259,7 +259,7 @@ def run_realtime_transcriber(
     channels: int,
     chunk_duration: float,
     instructions: str,
-    audio_source: Any,  # AudioSource protocol - required
+    audio_source: AudioSource,
     disable_ssl_verify: bool = False,
     chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
     compare_transcripts: bool = True,
@@ -688,7 +688,7 @@ class RealtimeBackend:
 
     def run(
         self,
-        audio_source: Any,  # AudioSource protocol
+        audio_source: AudioSource,
         chunk_queue: queue.Queue[TranscriptionChunk | None] | None = None,
     ) -> RealtimeTranscriptionResult:
         """

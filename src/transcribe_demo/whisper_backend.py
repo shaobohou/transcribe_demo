@@ -7,6 +7,7 @@ import ssl
 import struct
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,7 @@ import torch
 import webrtcvad
 import whisper
 
-from transcribe_demo.backend_protocol import TranscriptionChunk
+from transcribe_demo.backend_protocol import AudioSource, TranscriptionChunk
 from transcribe_demo.session_logger import SessionLogger
 
 
@@ -263,7 +264,7 @@ def run_whisper_transcriber(
     disable_ssl_verify: bool,
     device_preference: str,
     require_gpu: bool,
-    audio_source: Any,  # AudioSource protocol - required
+    audio_source: AudioSource,
     chunk_queue: queue.Queue[TranscriptionChunk | None],
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
@@ -842,7 +843,7 @@ class WhisperBackend:
 
     def run(
         self,
-        audio_source: Any,  # AudioSource protocol
+        audio_source: AudioSource,
         chunk_queue: queue.Queue[TranscriptionChunk | None],
     ) -> WhisperTranscriptionResult:
         """

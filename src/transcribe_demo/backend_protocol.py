@@ -115,6 +115,21 @@ class AudioSource(Protocol):
     """
 
     @property
+    def sample_rate(self) -> int:
+        """Audio sample rate in Hz."""
+        ...
+
+    @property
+    def channels(self) -> int:
+        """Number of audio channels."""
+        ...
+
+    @property
+    def max_capture_duration(self) -> float:
+        """Maximum capture duration in seconds (0.0 means unlimited)."""
+        ...
+
+    @property
     def stop_event(self) -> threading.Event:
         """Event that signals when audio capture should stop."""
         ...
