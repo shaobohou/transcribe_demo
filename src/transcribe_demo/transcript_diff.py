@@ -11,7 +11,7 @@ import re
 from typing import TextIO
 
 
-def normalize_whitespace(*, text: str) -> str:
+def _normalize_whitespace(*, text: str) -> str:
     """Normalize whitespace in text by collapsing multiple spaces into one."""
     return " ".join(text.split())
 

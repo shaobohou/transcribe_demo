@@ -65,7 +65,7 @@ def _extract_whisper_text(result: dict[str, Any]) -> str:
     return str(raw_text)
 
 
-def load_whisper_model(
+def _load_whisper_model(
     *,
     model_name: str,
     device_preference: str,
@@ -187,7 +187,7 @@ def load_whisper_model(
 # - https://github.com/snakers4/silero-vad/blob/master/examples/pyaudio-streaming/
 
 
-class WebRTCVAD:
+class _WebRTCVAD:
     """WebRTC VAD wrapper for speech detection."""
 
     def __init__(self, *, sample_rate: int, frame_duration_ms: int = 30, aggressiveness: int = 2):
@@ -283,7 +283,7 @@ def run_whisper_transcriber(
     max_partial_buffer_seconds: float = 10.0,
 ) -> WhisperTranscriptionResult:
 
-    model, device, fp16 = load_whisper_model(
+    model, device, fp16 = _load_whisper_model(
         model_name=model_name,
         device_preference=device_preference,
         require_gpu=require_gpu,
@@ -301,7 +301,7 @@ def run_whisper_transcriber(
                 file=sys.stderr,
             )
         print(f"Loading partial transcription model: {partial_model}", file=sys.stderr)
-        partial_whisper_model, _, _ = load_whisper_model(
+        partial_whisper_model, _, _ = _load_whisper_model(
             model_name=partial_model,
             device_preference=device_preference,
             require_gpu=require_gpu,
@@ -322,7 +322,7 @@ def run_whisper_transcriber(
     buffer = np.zeros(0, dtype=np.float32)
 
     # VAD configuration
-    vad = WebRTCVAD(sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=vad_aggressiveness)
+    vad = _WebRTCVAD(sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=vad_aggressiveness)
     min_chunk_size = int(sample_rate * 2.0)  # Minimum 2 seconds to avoid transcribing short noise
     max_chunk_size = int(sample_rate * max_chunk_duration)
     silence_frames_threshold = int(sample_rate * vad_min_silence_duration)
@@ -751,7 +751,7 @@ def run_whisper_transcriber(
     )
 
 
-def transcribe_full_audio(
+def _transcribe_full_audio(
     *,
     audio: np.ndarray,
     sample_rate: int,
@@ -783,7 +783,7 @@ def transcribe_full_audio(
     # Whisper handles resampling internally; sample_rate retained for interface symmetry.
     _ = sample_rate
 
-    model, _, fp16 = load_whisper_model(
+    model, _, fp16 = _load_whisper_model(
         model_name=model_name,
         device_preference=device_preference,
         require_gpu=require_gpu,

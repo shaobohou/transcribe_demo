@@ -51,7 +51,7 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
     def fake_load_whisper_model(**kwargs):
         return dummy_model, "cpu", False
 
-    monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
+    monkeypatch.setattr(whisper_backend, "_load_whisper_model", fake_load_whisper_model)
 
     # Create fake audio source
     from test_helpers import FakeAudioCaptureManager
@@ -115,7 +115,7 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
     def fake_load_whisper_model(**kwargs):
         return DummyModel(), "cpu", False
 
-    monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
+    monkeypatch.setattr(whisper_backend, "_load_whisper_model", fake_load_whisper_model)
 
     # Create fake audio source directly
     from test_helpers import FakeAudioCaptureManager

@@ -94,7 +94,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
 
     monkeypatch.setattr(
         realtime_backend,
-        "transcribe_full_audio_realtime",
+        "_transcribe_full_audio_realtime",
         lambda *args, **kwargs: "full hello fox",
     )
 
@@ -216,7 +216,7 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
 
     monkeypatch.setattr(
         realtime_backend,
-        "transcribe_full_audio_realtime",
+        "_transcribe_full_audio_realtime",
         lambda *args, **kwargs: "test audio full",
     )
 

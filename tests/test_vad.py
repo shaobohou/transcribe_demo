@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from test_helpers import load_test_fixture
-from transcribe_demo.whisper_backend import WebRTCVAD
+from transcribe_demo.whisper_backend import _WebRTCVAD
 
 
 class TestWebRTCVADInitialization:
@@ -13,34 +13,34 @@ class TestWebRTCVADInitialization:
     def test_valid_sample_rates(self):
         """Test that valid sample rates are accepted."""
         for rate in [8000, 16000, 32000, 48000]:
-            vad = WebRTCVAD(sample_rate=rate, frame_duration_ms=30, aggressiveness=2)
+            vad = _WebRTCVAD(sample_rate=rate, frame_duration_ms=30, aggressiveness=2)
             assert vad.sample_rate == rate
 
     def test_invalid_sample_rate(self):
         """Test that invalid sample rates raise an error."""
         with pytest.raises(ValueError, match="Sample rate must be"):
-            WebRTCVAD(sample_rate=44100, frame_duration_ms=30, aggressiveness=2)
+            _WebRTCVAD(sample_rate=44100, frame_duration_ms=30, aggressiveness=2)
 
     def test_valid_frame_durations(self):
         """Test that valid frame durations are accepted."""
         for duration in [10, 20, 30]:
-            vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=duration, aggressiveness=2)
+            vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=duration, aggressiveness=2)
             assert vad.frame_duration_ms == duration
 
     def test_invalid_frame_duration(self):
         """Test that invalid frame durations raise an error."""
         with pytest.raises(ValueError, match="Frame duration must be"):
-            WebRTCVAD(sample_rate=16000, frame_duration_ms=25, aggressiveness=2)
+            _WebRTCVAD(sample_rate=16000, frame_duration_ms=25, aggressiveness=2)
 
     def test_valid_aggressiveness_levels(self):
         """Test that all aggressiveness levels (0-3) are accepted."""
         for level in [0, 1, 2, 3]:
-            vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=level)
+            vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=level)
             assert vad.vad is not None
 
     def test_frame_size_calculation(self):
         """Test that frame size is calculated correctly."""
-        vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+        vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
         expected_frame_size = int(16000 * 30 / 1000)  # 480 samples
         assert vad.frame_size == expected_frame_size
 
@@ -50,7 +50,7 @@ class TestWebRTCVADSpeechDetection:
 
     def test_silence_detection(self):
         """Test that silence (zeros) is detected as non-speech."""
-        vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=3)
+        vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=3)
         frame_size = vad.frame_size
 
         # Create a silent frame (all zeros)
@@ -61,7 +61,7 @@ class TestWebRTCVADSpeechDetection:
 
     def test_wrong_frame_size(self):
         """Test that wrong frame size returns False."""
-        vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+        vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
 
         # Create a frame with wrong size
         wrong_size_frame = np.zeros(100, dtype=np.float32)
@@ -71,7 +71,7 @@ class TestWebRTCVADSpeechDetection:
 
     def test_empty_frame(self):
         """Test that empty frame returns False."""
-        vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+        vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
 
         # Empty frame
         empty_frame = np.array([], dtype=np.float32)
@@ -85,7 +85,7 @@ class TestWebRTCVADIntegration:
 
     def test_continuous_silence_frames(self):
         """Test multiple consecutive silent frames."""
-        vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+        vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
         frame_size = vad.frame_size
 
         # Create 10 silent frames - all should be detected as non-speech
@@ -95,7 +95,7 @@ class TestWebRTCVADIntegration:
 
     def test_clipped_audio(self):
         """Test that clipped audio at max amplitude is likely detected as speech."""
-        vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+        vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
         frame_size = vad.frame_size
 
         # Create audio at max amplitude (likely speech given the high energy)
@@ -107,7 +107,7 @@ class TestWebRTCVADIntegration:
     def test_different_sample_rates(self):
         """Test VAD with different sample rates."""
         for sample_rate in [8000, 16000, 32000, 48000]:
-            vad = WebRTCVAD(sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=2)
+            vad = _WebRTCVAD(sample_rate=sample_rate, frame_duration_ms=30, aggressiveness=2)
             frame_size = vad.frame_size
 
             # Create silent frame for this sample rate
@@ -122,7 +122,7 @@ class TestVADEdgeCases:
 
     def test_nan_values(self):
         """Test handling of NaN values in audio doesn't crash."""
-        vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+        vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
         frame_size = vad.frame_size
 
         # Create frame with NaN values
@@ -134,7 +134,7 @@ class TestVADEdgeCases:
 
     def test_inf_values(self):
         """Test handling of inf values in audio doesn't crash."""
-        vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+        vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
         frame_size = vad.frame_size
 
         # Create frame with inf values
@@ -146,7 +146,7 @@ class TestVADEdgeCases:
 
     def test_very_large_values(self):
         """Test handling of very large values warns and clips properly."""
-        vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+        vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
         frame_size = vad.frame_size
 
         # Create frame with very large values
@@ -160,7 +160,7 @@ class TestVADEdgeCases:
 
     def test_negative_values(self):
         """Test handling of negative audio values (valid for audio)."""
-        vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+        vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
         frame_size = vad.frame_size
 
         # Create frame with negative values (valid - audio has positive and negative)
@@ -179,7 +179,7 @@ def test_webrtc_vad_detects_speech_in_sample_audio():
     if sample_rate != 16000:
         pytest.fail("fox.wav must be 16kHz for VAD test.")
 
-    vad = WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
+    vad = _WebRTCVAD(sample_rate=16000, frame_duration_ms=30, aggressiveness=2)
     frame_size = vad.frame_size
     if audio.size < frame_size:
         pytest.skip("Sample audio shorter than a single VAD frame.")

@@ -21,7 +21,7 @@ class DummyModel:
 
 def test_transcribe_full_audio_returns_empty_for_no_samples():
     assert (
-        whisper_backend.transcribe_full_audio(
+        whisper_backend._transcribe_full_audio(
             audio=np.zeros(0, dtype=np.float32),
             sample_rate=16000,
             model_name="tiny",
@@ -42,9 +42,9 @@ def test_transcribe_full_audio_invokes_model(monkeypatch):
         # Return dummy model, report cpu device and fp16 disabled.
         return dummy_model, "cpu", False
 
-    monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_model)
+    monkeypatch.setattr(whisper_backend, "_load_whisper_model", fake_load_model)
 
-    result = whisper_backend.transcribe_full_audio(
+    result = whisper_backend._transcribe_full_audio(
         audio=np.array(expected_audio, copy=True),
         sample_rate=16000,
         model_name="small",
@@ -68,7 +68,7 @@ def test_load_whisper_model_prefers_cuda(monkeypatch):
     monkeypatch.setattr(whisper_backend, "_mps_available", lambda: False)
     monkeypatch.setattr(whisper_backend.whisper, "load_model", lambda name, device: loaded_model)
 
-    model, device, fp16 = whisper_backend.load_whisper_model(
+    model, device, fp16 = whisper_backend._load_whisper_model(
         model_name="base",
         device_preference="auto",
         require_gpu=False,
@@ -85,7 +85,7 @@ def test_load_whisper_model_requires_gpu(monkeypatch):
     monkeypatch.setattr(whisper_backend, "_mps_available", lambda: False)
 
     with pytest.raises(RuntimeError, match="GPU expected"):
-        whisper_backend.load_whisper_model(
+        whisper_backend._load_whisper_model(
             model_name="tiny",
             device_preference="auto",
             require_gpu=True,
@@ -120,7 +120,7 @@ def test_load_whisper_model_sets_ca_and_ssl(tmp_path, monkeypatch):
     monkeypatch.setattr(ssl, "_create_unverified_context", fake_unverified_context)
     monkeypatch.setattr(whisper_backend.ssl, "_create_unverified_context", fake_unverified_context)
 
-    model, device, fp16 = whisper_backend.load_whisper_model(
+    model, device, fp16 = whisper_backend._load_whisper_model(
         model_name="tiny",
         device_preference="cpu",
         require_gpu=False,

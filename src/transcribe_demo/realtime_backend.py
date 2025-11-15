@@ -31,7 +31,7 @@ def float_to_pcm16(*, audio: np.ndarray) -> bytes:
     return ints.tobytes()
 
 
-def resample_audio(*, audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
+def _resample_audio(*, audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
     if from_rate == to_rate or audio.size == 0:
         return audio
     duration = audio.size / float(from_rate)
@@ -111,7 +111,7 @@ def _run_async(*, coro_factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
             loop.close()
 
 
-def transcribe_full_audio_realtime(
+def _transcribe_full_audio_realtime(
     *,
     audio: np.ndarray,
     sample_rate: int,
@@ -174,7 +174,7 @@ def transcribe_full_audio_realtime(
             while cursor < total_samples:
                 window = audio[cursor : cursor + chunk_size]
                 cursor += chunk_size
-                resampled = resample_audio(audio=window, from_rate=sample_rate, to_rate=session_sample_rate)
+                resampled = _resample_audio(audio=window, from_rate=sample_rate, to_rate=session_sample_rate)
                 if resampled.size == 0:
                     continue
                 payload = base64.b64encode(float_to_pcm16(audio=resampled)).decode("ascii")
@@ -389,7 +389,7 @@ def run_realtime_transcriber(
                                 window = buffer[:send_count]
                                 buffer = buffer[send_count:]
 
-                                resampled = resample_audio(audio=window, from_rate=sample_rate, to_rate=session_sample_rate)
+                                resampled = _resample_audio(audio=window, from_rate=sample_rate, to_rate=session_sample_rate)
                                 if len(resampled) == 0:
                                     if force_flush and buffer.size == 0:
                                         break
@@ -410,7 +410,7 @@ def run_realtime_transcriber(
 
                             # Send any remaining buffer
                             if buffer.size > 0:
-                                resampled = resample_audio(audio=buffer, from_rate=sample_rate, to_rate=session_sample_rate)
+                                resampled = _resample_audio(audio=buffer, from_rate=sample_rate, to_rate=session_sample_rate)
                                 if len(resampled) > 0:
                                     pcm_payload = base64.b64encode(float_to_pcm16(audio=resampled)).decode("ascii")
                                     await _send_json(
@@ -727,7 +727,7 @@ class RealtimeBackend:
         full_audio_text = None
         if self.compare_transcripts and result.full_audio.size > 0:
             try:
-                full_audio_text = transcribe_full_audio_realtime(
+                full_audio_text = _transcribe_full_audio_realtime(
                     audio=result.full_audio,
                     sample_rate=result.sample_rate,
                     chunk_duration=2.0,

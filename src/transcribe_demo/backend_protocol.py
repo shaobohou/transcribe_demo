@@ -208,10 +208,10 @@ class TranscriptionBackend(Protocol):
 
 # Convenience type alias for the legacy chunk consumer signature used by existing code
 # This allows gradual migration to the new TranscriptionChunk-based interface
-LegacyChunkConsumer = Callable[[int, str, float, float, float | None, bool], None] | None
+_LegacyChunkConsumer = Callable[[int, str, float, float, float | None, bool], None] | None
 
 
-def adapt_legacy_consumer(*, legacy_consumer: LegacyChunkConsumer) -> ChunkConsumer | None:
+def _adapt_legacy_consumer(*, legacy_consumer: _LegacyChunkConsumer) -> ChunkConsumer | None:
     """
     Adapt a legacy chunk consumer to the new ChunkConsumer protocol.
 

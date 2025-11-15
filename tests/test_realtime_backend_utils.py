@@ -18,7 +18,7 @@ def test_float_to_pcm16_clips_and_scales():
 
 def test_resample_audio_adjusts_length():
     original = np.linspace(-1.0, 1.0, num=4, dtype=np.float32)
-    resampled = realtime_backend.resample_audio(audio=original, from_rate=4000, to_rate=8000)
+    resampled = realtime_backend._resample_audio(audio=original, from_rate=4000, to_rate=8000)
     assert resampled.size > original.size
     assert np.isclose(resampled[0], original[0])
     assert np.isclose(resampled[-1], original[-1])
@@ -119,7 +119,7 @@ def test_transcribe_full_audio_realtime_collects_chunks(monkeypatch):
         lambda *args, **kwargs: FakeConnect(fake_ws),
     )
 
-    transcript = realtime_backend.transcribe_full_audio_realtime(
+    transcript = realtime_backend._transcribe_full_audio_realtime(
         audio=audio,
         sample_rate=8000,
         chunk_duration=0.5,

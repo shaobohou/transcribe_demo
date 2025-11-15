@@ -114,7 +114,7 @@ def test_format_diff_snippet_insertion_placeholder():
 
 
 def test_normalize_whitespace_collapses_gaps():
-    assert transcribe_demo.transcript_diff.normalize_whitespace(text="alpha   beta\tgamma\n") == "alpha beta gamma"
+    assert transcribe_demo.transcript_diff._normalize_whitespace(text="alpha   beta\tgamma\n") == "alpha beta gamma"
 
 
 def test_main_exits_when_refine_flag_enabled(monkeypatch):
@@ -264,7 +264,7 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
         fake_run_realtime,
     )
     monkeypatch.setattr(
-        "transcribe_demo.realtime_backend.transcribe_full_audio_realtime",
+        "transcribe_demo.realtime_backend._transcribe_full_audio_realtime",
         lambda *args, **kwargs: "full realtime transcription",
     )
 
