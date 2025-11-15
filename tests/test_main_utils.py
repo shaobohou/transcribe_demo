@@ -5,19 +5,13 @@ import numpy as np
 import pytest
 from absl.testing import flagsaver
 
-from transcribe_demo.backend_protocol import TranscriptionChunk
-from transcribe_demo.cli import ChunkCollector, FLAGS, main as main_entry
-from transcribe_demo.transcript_diff import (
-    _colorize_token,
-    _format_diff_snippet,
-    _generate_diff_snippets,
-    normalize_whitespace,
-    _tokenize_with_original,
-    print_transcription_summary,
-)
+import transcribe_demo.backend_protocol
+import transcribe_demo.chunk_collector
+import transcribe_demo.cli
+import transcribe_demo.transcript_diff
 
-if not FLAGS.is_parsed():
-    FLAGS(["pytest"], known_only=True)
+if not transcribe_demo.cli.FLAGS.is_parsed():
+    transcribe_demo.cli.FLAGS(["pytest"], known_only=True)
 
 
 class ColorStream(io.StringIO):
@@ -29,11 +23,11 @@ class ColorStream(io.StringIO):
 
 def test_chunk_collector_writes_and_stitches_chunks():
     stream = io.StringIO()
-    collector = ChunkCollector(stream)
+    collector = transcribe_demo.chunk_collector.ChunkCollector(stream=stream)
 
-    collector(TranscriptionChunk(index=0, text="Hello, ", start_time=0.0, end_time=1.5, inference_seconds=0.25))
-    collector(TranscriptionChunk(index=1, text="world.", start_time=1.5, end_time=3.0, inference_seconds=0.30))
-    collector(TranscriptionChunk(index=2, text="How are you?", start_time=3.0, end_time=5.0, inference_seconds=0.45))
+    collector(chunk=transcribe_demo.backend_protocol.TranscriptionChunk(index=0, text="Hello, ", start_time=0.0, end_time=1.5, inference_seconds=0.25))
+    collector(chunk=transcribe_demo.backend_protocol.TranscriptionChunk(index=1, text="world.", start_time=1.5, end_time=3.0, inference_seconds=0.30))
+    collector(chunk=transcribe_demo.backend_protocol.TranscriptionChunk(index=2, text="How are you?", start_time=3.0, end_time=5.0, inference_seconds=0.45))
 
     output = stream.getvalue()
     assert "[chunk 000 | t=1.50s" in output
@@ -45,9 +39,9 @@ def test_chunk_collector_writes_and_stitches_chunks():
 
 def test_chunk_collector_colorized_output_in_realtime_mode():
     stream = ColorStream()
-    collector = ChunkCollector(stream)
+    collector = transcribe_demo.chunk_collector.ChunkCollector(stream=stream)
 
-    collector(TranscriptionChunk(index=0, text="Realtime chunk", start_time=0.0, end_time=2.0, inference_seconds=None))
+    collector(chunk=transcribe_demo.backend_protocol.TranscriptionChunk(index=0, text="Realtime chunk", start_time=0.0, end_time=2.0, inference_seconds=None))
 
     output = stream.getvalue()
     assert "\x1b[36m" in output  # cyan label
@@ -65,12 +59,12 @@ def test_chunk_collector_colorized_output_in_realtime_mode():
     ],
 )
 def test_clean_chunk_text(text, is_final, expected):
-    assert ChunkCollector._clean_chunk_text(text, is_final_chunk=is_final) == expected
+    assert transcribe_demo.chunk_collector.ChunkCollector._clean_chunk_text(text=text, is_final_chunk=is_final) == expected
 
 
 def test_print_transcription_summary_reports_differences():
     stream = io.StringIO()
-    print_transcription_summary(stream, "hello world", "hello brave world")
+    transcribe_demo.transcript_diff.print_transcription_summary(stream=stream, final_text="hello world", complete_audio_text="hello brave world")
 
     written = stream.getvalue()
     assert "[FINAL STITCHED] hello world" in written
@@ -83,14 +77,14 @@ def test_print_transcription_summary_reports_differences():
 
 def test_print_transcription_summary_identical_texts(capsys):
     stream = io.StringIO()
-    print_transcription_summary(stream, " same ", "same")
+    transcribe_demo.transcript_diff.print_transcription_summary(stream=stream, final_text=" same ", complete_audio_text="same")
 
     written = stream.getvalue()
     assert "matches complete audio transcription" in written
 
 
 def test_tokenize_with_original_strips_punctuation():
-    tokens = _tokenize_with_original("Hello, WORLD! it's me...")
+    tokens = transcribe_demo.transcript_diff._tokenize_with_original(text="Hello, WORLD! it's me...")
     assert tokens == [
         ("Hello,", "hello"),
         ("WORLD!", "world"),
@@ -100,27 +94,27 @@ def test_tokenize_with_original_strips_punctuation():
 
 
 def test_generate_diff_snippets_describes_changes():
-    snippets = _generate_diff_snippets("hello world", "hello brave world", use_color=False)
+    snippets = transcribe_demo.transcript_diff._generate_diff_snippets(stitched_text="hello world", complete_text="hello brave world", use_color=False)
     assert snippets  # at least one snippet
     tags = {entry["tag"] for entry in snippets}
     assert tags <= {"insert", "replace"}
 
 
 def test_colorize_token_respects_color_flag():
-    colored = _colorize_token("token", True, "33")
+    colored = transcribe_demo.transcript_diff._colorize_token(token="token", use_color=True, color_code="33")
     assert colored.startswith("\x1b[2;33m") and colored.endswith("\x1b[0m")
-    plain = _colorize_token("token", False, "33")
+    plain = transcribe_demo.transcript_diff._colorize_token(token="token", use_color=False, color_code="33")
     assert plain == "[[token]]"
 
 
 def test_format_diff_snippet_insertion_placeholder():
-    tokens = _tokenize_with_original("one two three")
-    snippet = _format_diff_snippet(tokens, diff_start=1, diff_end=1, use_color=False, color_code="36")
+    tokens = transcribe_demo.transcript_diff._tokenize_with_original(text="one two three")
+    snippet = transcribe_demo.transcript_diff._format_diff_snippet(tokens=tokens, diff_start=1, diff_end=1, use_color=False, color_code="36")
     assert "[[∅]]" in snippet
 
 
 def test_normalize_whitespace_collapses_gaps():
-    assert normalize_whitespace("alpha   beta\tgamma\n") == "alpha beta gamma"
+    assert transcribe_demo.transcript_diff._normalize_whitespace(text="alpha   beta\tgamma\n") == "alpha beta gamma"
 
 
 def test_main_exits_when_refine_flag_enabled(monkeypatch):
@@ -130,9 +124,9 @@ def test_main_exits_when_refine_flag_enabled(monkeypatch):
     monkeypatch.setattr(sys, "stderr", stderr)
 
     with flagsaver.flagsaver():
-        FLAGS.refine_with_context = True
+        transcribe_demo.cli.FLAGS.refine_with_context = True
         with pytest.raises(SystemExit) as exc:
-            main_entry(["prog"])
+            transcribe_demo.cli.main(["prog"])
 
     assert exc.value.code == 1
     assert "--refine-with-context" in stderr.getvalue()
@@ -171,7 +165,7 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
     monkeypatch.setattr(sys, "stderr", stderr)
     # Monkeypatch where ChunkCollector is actually imported and used (in cli.py)
     monkeypatch.setattr(
-        "transcribe_demo.cli.ChunkCollector",
+        "transcribe_demo.chunk_collector.ChunkCollector",
         FakeCollector,
     )
 
@@ -186,8 +180,8 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
         chunk_queue = kwargs.get("chunk_queue")
         if chunk_queue:
             # Put one test chunk
-            from transcribe_demo.backend_protocol import TranscriptionChunk
-            chunk_queue.put(TranscriptionChunk(
+            import transcribe_demo.backend_protocol
+            chunk_queue.put(transcribe_demo.backend_protocol.TranscriptionChunk(
                 index=0, text="test", start_time=0.0, end_time=1.0, inference_seconds=0.1
             ))
             chunk_queue.put(None)  # Sentinel
@@ -205,7 +199,7 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
         temp_file=None,
         session_log_dir=str(temp_session_dir),
     ):
-        main_entry(["prog"])
+        transcribe_demo.cli.main(["prog"])
 
     output = stdout.getvalue()
     assert "[FINAL STITCHED] stitched text" in output
@@ -245,7 +239,7 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
     monkeypatch.setattr(sys, "stderr", stderr)
     monkeypatch.setenv("OPENAI_API_KEY", "")
     # Monkeypatch where ChunkCollector is actually imported and used (in cli.py)
-    monkeypatch.setattr("transcribe_demo.cli.ChunkCollector", FakeCollector)
+    monkeypatch.setattr("transcribe_demo.chunk_collector.ChunkCollector", FakeCollector)
 
     # Mock AudioCaptureManager
     monkeypatch.setattr(
@@ -258,8 +252,8 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
         chunk_queue = kwargs.get("chunk_queue")
         if chunk_queue:
             # Put one test chunk
-            from transcribe_demo.backend_protocol import TranscriptionChunk
-            chunk_queue.put(TranscriptionChunk(
+            import transcribe_demo.backend_protocol
+            chunk_queue.put(transcribe_demo.backend_protocol.TranscriptionChunk(
                 index=0, text="realtime", start_time=0.0, end_time=1.0, inference_seconds=None
             ))
             chunk_queue.put(None)  # Sentinel
@@ -270,7 +264,7 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
         fake_run_realtime,
     )
     monkeypatch.setattr(
-        "transcribe_demo.realtime_backend.transcribe_full_audio_realtime",
+        "transcribe_demo.realtime_backend._transcribe_full_audio_realtime",
         lambda *args, **kwargs: "full realtime transcription",
     )
 
@@ -281,6 +275,6 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
         refine_with_context=False,
         session_log_dir=str(temp_session_dir),
     ):
-        main_entry(["prog"])
+        transcribe_demo.cli.main(["prog"])
 
     assert "[FINAL STITCHED] realtime stitched" in stdout.getvalue()

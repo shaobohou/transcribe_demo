@@ -45,7 +45,12 @@ git push -u origin your-branch-name
 
 **Pre-commit hook** auto-runs: `ruff format`, `ruff check --fix`, `pyright`, `pytest` (blocks commits if any fail).
 
-**Code style:** Use `list[str]` not `List[str]`, use `str | None` not `Optional[str]` (modern Python typing).
+**Code style:**
+- Modern Python typing: `list[str]` not `List[str]`, `str | None` not `Optional[str]`
+- All modules start with `from __future__ import annotations`
+- Use keyword-only parameters (`*,`) for functions/methods (except external callbacks like `_audio_callback`)
+- Frozen dataclasses: `@dataclasses.dataclass(frozen=True, kw_only=True)`
+- Minimize public API: prefix internal helpers with `_`
 
 ### Key Files
 

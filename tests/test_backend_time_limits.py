@@ -53,7 +53,7 @@ def test_whisper_backend_respects_time_limit(monkeypatch):
     def fake_load_whisper_model(**kwargs):
         return dummy_model, "cpu", False
 
-    monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
+    monkeypatch.setattr(whisper_backend, "_load_whisper_model", fake_load_whisper_model)
 
     # Create fake audio source with time limit
     from test_helpers import FakeAudioCaptureManager
@@ -121,7 +121,7 @@ def test_whisper_backend_transcribes_incomplete_chunk_on_timeout(monkeypatch):
     def fake_load_whisper_model(**kwargs):
         return dummy_model, "cpu", False
 
-    monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
+    monkeypatch.setattr(whisper_backend, "_load_whisper_model", fake_load_whisper_model)
 
     # Create fake audio source with time limit
     from test_helpers import FakeAudioCaptureManager
@@ -193,7 +193,7 @@ def test_whisper_backend_logs_session(monkeypatch, temp_session_dir):
     def fake_load_whisper_model(**kwargs):
         return dummy_model, "cpu", False
 
-    monkeypatch.setattr(whisper_backend, "load_whisper_model", fake_load_whisper_model)
+    monkeypatch.setattr(whisper_backend, "_load_whisper_model", fake_load_whisper_model)
 
     # Create fake audio source with time limit
     from test_helpers import FakeAudioCaptureManager

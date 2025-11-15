@@ -10,23 +10,14 @@ from pathlib import Path
 from absl import app
 from absl import flags
 
-from transcribe_demo.audio_capture import AudioCaptureManager
-from transcribe_demo.backend_protocol import (
-    AudioSource,
-    TranscriptionBackend,
-    TranscriptionChunk,
-    TranscriptionResult,
-)
-from transcribe_demo.chunk_collector import ChunkCollector
-from transcribe_demo.file_audio_source import FileAudioSource
-from transcribe_demo.realtime_backend import RealtimeBackend
-from transcribe_demo.session_logger import SessionLogger
-from transcribe_demo.transcript_diff import (
-    compute_transcription_diff,
-    print_final_stitched,
-    print_transcription_summary,
-)
-from transcribe_demo.whisper_backend import WhisperBackend
+import transcribe_demo.audio_capture
+import transcribe_demo.backend_protocol
+import transcribe_demo.chunk_collector
+import transcribe_demo.file_audio_source
+import transcribe_demo.realtime_backend
+import transcribe_demo.session_logger
+import transcribe_demo.transcript_diff
+import transcribe_demo.whisper_backend
 
 FLAGS = flags.FLAGS
 
@@ -266,9 +257,10 @@ flags.register_validator(
 
 
 def _finalize_transcription_session(
-    collector: ChunkCollector,
-    result: TranscriptionResult | None,
-    session_logger: SessionLogger,
+    *,
+    collector: transcribe_demo.chunk_collector.ChunkCollector,
+    result: transcribe_demo.backend_protocol.TranscriptionResult | None,
+    session_logger: transcribe_demo.session_logger.SessionLogger,
     compare_transcripts: bool,
     min_log_duration: float,
 ) -> None:
@@ -290,7 +282,7 @@ def _finalize_transcription_session(
 
     # Update session logger with cleaned chunk text
     for chunk_index, cleaned_text in collector.get_cleaned_chunks():
-        session_logger.update_chunk_cleaned_text(chunk_index, cleaned_text)
+        session_logger.update_chunk_cleaned_text(index=chunk_index, cleaned_text=cleaned_text)
 
     # Compute diff if comparison is enabled
     similarity = None
@@ -303,7 +295,7 @@ def _finalize_transcription_session(
         comparison_text = result.full_audio_transcription
 
         if comparison_text:
-            similarity, diff_snippets = compute_transcription_diff(final, comparison_text)
+            similarity, diff_snippets = transcribe_demo.transcript_diff.compute_transcription_diff(stitched_text=final, complete_text=comparison_text)
 
     # Finalize session logging
     if result is not None:
@@ -320,9 +312,9 @@ def _finalize_transcription_session(
     # Print results
     if compare_transcripts:
         complete_audio_text = comparison_text or ""
-        print_transcription_summary(sys.stdout, final, complete_audio_text)
+        transcribe_demo.transcript_diff.print_transcription_summary(stream=sys.stdout, final_text=final, complete_audio_text=complete_audio_text)
     else:
-        print_final_stitched(sys.stdout, final)
+        transcribe_demo.transcript_diff.print_final_stitched(stream=sys.stdout, text=final)
 
     # Print captured duration
     if result is not None:
@@ -330,9 +322,10 @@ def _finalize_transcription_session(
 
 
 def transcribe(
-    backend: TranscriptionBackend,
-    audio_source: AudioSource,
-) -> Generator[TranscriptionChunk, None, TranscriptionResult]:
+    *,
+    backend: transcribe_demo.backend_protocol.TranscriptionBackend,
+    audio_source: transcribe_demo.backend_protocol.AudioSource,
+) -> Generator[transcribe_demo.backend_protocol.TranscriptionChunk, None, transcribe_demo.backend_protocol.TranscriptionResult]:
     """
     Generator that yields transcription chunks from the specified backend.
 
@@ -358,14 +351,14 @@ def transcribe(
         for chunk in transcribe(backend, audio_source):
             print(chunk.text)
     """
-    chunk_queue: queue.Queue[TranscriptionChunk | None] = queue.Queue()
-    result_container: list[TranscriptionResult] = []
+    chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None] = queue.Queue()
+    result_container: list[transcribe_demo.backend_protocol.TranscriptionResult] = []
     error_container: list[BaseException] = []
 
     def backend_worker() -> None:
         """Worker thread that runs the backend and puts chunks in the queue."""
         try:
-            result = backend.run(audio_source, chunk_queue)
+            result = backend.run(audio_source=audio_source, chunk_queue=chunk_queue)
             result_container.append(result)
         except BaseException as e:
             error_container.append(e)
@@ -398,7 +391,7 @@ def transcribe(
     return result_container[0]
 
 
-def _create_whisper_backend(language: str, session_logger: SessionLogger | None) -> WhisperBackend:
+def _create_whisper_backend(*, language: str, session_logger: transcribe_demo.session_logger.SessionLogger | None) -> transcribe_demo.whisper_backend.WhisperBackend:
     """
     Create and configure a Whisper backend from FLAGS.
 
@@ -409,7 +402,7 @@ def _create_whisper_backend(language: str, session_logger: SessionLogger | None)
     Returns:
         Configured WhisperBackend instance
     """
-    return WhisperBackend(
+    return transcribe_demo.whisper_backend.WhisperBackend(
         model_name=FLAGS.model or "turbo",
         device_preference=FLAGS.device or "auto",
         require_gpu=FLAGS.require_gpu,
@@ -433,8 +426,11 @@ def _create_whisper_backend(language: str, session_logger: SessionLogger | None)
 
 
 def _create_realtime_backend(
-    api_key: str | None, language: str, session_logger: SessionLogger | None
-) -> RealtimeBackend:
+    *,
+    api_key: str | None,
+    language: str,
+    session_logger: transcribe_demo.session_logger.SessionLogger | None,
+) -> transcribe_demo.realtime_backend.RealtimeBackend:
     """
     Create and configure a Realtime backend from FLAGS.
 
@@ -454,7 +450,7 @@ def _create_realtime_backend(
             "OpenAI API key required for realtime transcription. Provide --api-key or set OPENAI_API_KEY."
         )
 
-    return RealtimeBackend(
+    return transcribe_demo.realtime_backend.RealtimeBackend(
         api_key=api_key,
         endpoint=FLAGS.realtime_endpoint,
         model=FLAGS.realtime_model,
@@ -524,7 +520,7 @@ def main(argv: list[str]) -> None:
 
     # Create session logger (always enabled)
     log_dir = Path(FLAGS.session_log_dir)
-    session_logger = SessionLogger(
+    session_logger = transcribe_demo.session_logger.SessionLogger(
         output_dir=log_dir,
         sample_rate=FLAGS.samplerate,
         channels=FLAGS.channels,
@@ -534,11 +530,11 @@ def main(argv: list[str]) -> None:
     )
 
     # Create chunk collector
-    collector = ChunkCollector(sys.stdout)
+    collector = transcribe_demo.chunk_collector.ChunkCollector(stream=sys.stdout)
 
     # Create audio source
     if FLAGS.audio_file:
-        audio_source: AudioSource = FileAudioSource(
+        audio_source: transcribe_demo.backend_protocol.AudioSource = transcribe_demo.file_audio_source.FileAudioSource(
             audio_file=FLAGS.audio_file,
             sample_rate=FLAGS.samplerate,
             channels=FLAGS.channels,
@@ -547,7 +543,7 @@ def main(argv: list[str]) -> None:
             playback_speed=FLAGS.playback_speed,
         )
     else:
-        audio_source = AudioCaptureManager(
+        audio_source = transcribe_demo.audio_capture.AudioCaptureManager(
             sample_rate=FLAGS.samplerate,
             channels=FLAGS.channels,
             max_capture_duration=FLAGS.max_capture_duration,
@@ -557,24 +553,24 @@ def main(argv: list[str]) -> None:
     # Create backend
     match FLAGS.backend:
         case "whisper":
-            backend: TranscriptionBackend = _create_whisper_backend(language_pref, session_logger)
+            backend: transcribe_demo.backend_protocol.TranscriptionBackend = _create_whisper_backend(language=language_pref, session_logger=session_logger)
         case "realtime":
-            backend = _create_realtime_backend(api_key, language_pref, session_logger)
+            backend = _create_realtime_backend(api_key=api_key, language=language_pref, session_logger=session_logger)
         case _:
             raise ValueError(f"Unknown backend: {FLAGS.backend}")
 
     # Run transcription using the generator
-    result: TranscriptionResult | None = None
+    result: transcribe_demo.backend_protocol.TranscriptionResult | None = None
     try:
         # Create transcription generator
-        transcription_gen = transcribe(backend, audio_source)
+        transcription_gen = transcribe(backend=backend, audio_source=audio_source)
 
         # Consume chunks and collect result
         # Must use manual iteration to capture the generator's return value
         try:
             while True:
                 chunk = next(transcription_gen)
-                collector(chunk)
+                collector(chunk=chunk)
         except StopIteration as e:
             result = e.value
 

@@ -28,6 +28,7 @@ class AudioCaptureManager:
 
     def __init__(
         self,
+        *,
         sample_rate: int,
         channels: int,
         max_capture_duration: float = 0.0,
@@ -71,7 +72,12 @@ class AudioCaptureManager:
         time: Structure,
         status: Any,
     ) -> None:
-        """Audio callback invoked by sounddevice for each audio chunk."""
+        """Audio callback invoked by sounddevice for each audio chunk.
+
+        NOTE: This method MUST accept positional arguments (no *) because
+        sounddevice.InputStream calls callbacks with positional args.
+        Using keyword-only would cause: TypeError: _audio_callback() takes 1 positional argument but 5 were given
+        """
         if status:
             print(f"InputStream status: {status}", file=sys.stderr)
 

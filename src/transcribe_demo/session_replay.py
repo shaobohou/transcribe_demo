@@ -289,8 +289,8 @@ def retranscribe_session(
 
     # Save the full audio to the new session
     session_logger.save_full_audio(
-        loaded_session.audio,
-        loaded_session.metadata.capture_duration,
+        audio=loaded_session.audio,
+        capture_duration=loaded_session.metadata.capture_duration,
     )
 
     print(
@@ -384,7 +384,7 @@ def retranscribe_session(
         import queue as queue_module
         import threading
 
-        collector = ChunkCollector(sys.stdout)
+        collector = ChunkCollector(stream=sys.stdout)
 
         if backend == "whisper":
             # Create chunk queue for receiving transcription chunks
@@ -433,7 +433,7 @@ def retranscribe_session(
                 chunk = chunk_queue.get()
                 if chunk is None:
                     break
-                collector(chunk)
+                collector(chunk=chunk)
 
             # Wait for worker to complete
             worker_thread.join()
@@ -445,7 +445,7 @@ def retranscribe_session(
 
             # Update session logger with cleaned chunk text
             for chunk_index, cleaned_text in collector.get_cleaned_chunks():
-                session_logger.update_chunk_cleaned_text(chunk_index, cleaned_text)
+                session_logger.update_chunk_cleaned_text(index=chunk_index, cleaned_text=cleaned_text)
 
             # Finalize session logging
             if whisper_result:
@@ -512,7 +512,7 @@ def retranscribe_session(
                 chunk = chunk_queue.get()
                 if chunk is None:
                     break
-                collector(chunk)
+                collector(chunk=chunk)
 
             # Wait for worker to complete
             worker_thread.join()
@@ -524,7 +524,7 @@ def retranscribe_session(
 
             # Update session logger with cleaned chunk text
             for chunk_index, cleaned_text in collector.get_cleaned_chunks():
-                session_logger.update_chunk_cleaned_text(chunk_index, cleaned_text)
+                session_logger.update_chunk_cleaned_text(index=chunk_index, cleaned_text=cleaned_text)
 
             # Finalize session logging
             if realtime_result:

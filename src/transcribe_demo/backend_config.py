@@ -6,13 +6,13 @@ replacing the previous pattern of passing 20+ individual arguments.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import dataclasses
 from pathlib import Path
 
-from transcribe_demo.backend_protocol import BackendConfig
+import transcribe_demo.backend_protocol
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class VADConfig:
     """
     Voice Activity Detection configuration.
@@ -50,7 +50,7 @@ class VADConfig:
             raise ValueError(f"max_chunk_duration must be positive, got {self.max_chunk_duration}")
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class PartialTranscriptionConfig:
     """
     Configuration for partial (progressive) transcription.
@@ -79,8 +79,8 @@ class PartialTranscriptionConfig:
             raise ValueError(f"max_buffer_seconds must be 1.0-60.0, got {self.max_buffer_seconds}")
 
 
-@dataclass
-class WhisperConfig(BackendConfig):
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class WhisperConfig(transcribe_demo.backend_protocol.BackendConfig):
     """
     Configuration for Whisper backend (local transcription).
 
@@ -99,11 +99,11 @@ class WhisperConfig(BackendConfig):
     """If True, exit if GPU unavailable instead of falling back to CPU."""
 
     # VAD settings
-    vad: VADConfig = field(default_factory=VADConfig)
+    vad: VADConfig = dataclasses.field(default_factory=VADConfig)
     """Voice Activity Detection configuration."""
 
     # Partial transcription
-    partial: PartialTranscriptionConfig = field(default_factory=PartialTranscriptionConfig)
+    partial: PartialTranscriptionConfig = dataclasses.field(default_factory=PartialTranscriptionConfig)
     """Partial transcription configuration."""
 
     # SSL/Certificate settings (for model downloads)
@@ -115,7 +115,7 @@ class WhisperConfig(BackendConfig):
     """Optional path to persist audio chunks for inspection."""
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class RealtimeVADConfig:
     """
     Voice Activity Detection configuration for Realtime API.
@@ -144,8 +144,8 @@ class RealtimeVADConfig:
             raise ValueError(f"silence_duration_ms must be 100-2000, got {self.silence_duration_ms}")
 
 
-@dataclass
-class RealtimeConfig(BackendConfig):
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class RealtimeConfig(transcribe_demo.backend_protocol.BackendConfig):
     """
     Configuration for Realtime API backend (cloud transcription).
 
@@ -178,7 +178,7 @@ class RealtimeConfig(BackendConfig):
     """
 
     # Server-side VAD
-    vad: RealtimeVADConfig = field(default_factory=RealtimeVADConfig)
+    vad: RealtimeVADConfig = dataclasses.field(default_factory=RealtimeVADConfig)
     """Server-side Voice Activity Detection configuration."""
 
     # Debugging
@@ -190,9 +190,11 @@ class RealtimeConfig(BackendConfig):
         if self.api_key is None:
             import os
 
-            self.api_key = os.getenv("OPENAI_API_KEY")
-            if self.api_key is None:
+            api_key_from_env = os.getenv("OPENAI_API_KEY")
+            if api_key_from_env is None:
                 raise ValueError(
                     "api_key is required for Realtime backend. "
                     "Provide api_key or set OPENAI_API_KEY environment variable."
                 )
+            # For frozen dataclasses, use object.__setattr__() in __post_init__
+            object.__setattr__(self, "api_key", api_key_from_env)

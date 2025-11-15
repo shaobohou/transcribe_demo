@@ -274,7 +274,7 @@ def test_url_not_corrupted_by_path() -> None:
             )
 
             # Verify URL detection worked
-            assert source._is_url(test_url), "URL should be detected"
+            assert source._is_url(path=test_url), "URL should be detected"
 
             # Verify the exact URL was passed to urlopen (not corrupted)
             mock_urlopen.assert_called_once()
@@ -326,7 +326,7 @@ def test_url_caching_cache_miss() -> None:
             mock_urlopen.assert_called_once()
 
             # Verify cache file was created
-            cache_key = source._get_cache_key(test_url)
+            cache_key = source._get_cache_key(url=test_url)
             cache_file = temp_cache_dir / f"{cache_key}.mp3"
             assert cache_file.exists(), "Cache file should be created"
 
@@ -463,8 +463,8 @@ def test_url_caching_different_urls_different_cache() -> None:
             assert mock_urlopen.call_count == 2
 
             # Verify different cache files were created
-            cache_key1 = source1._get_cache_key(test_url1)
-            cache_key2 = source2._get_cache_key(test_url2)
+            cache_key1 = source1._get_cache_key(url=test_url1)
+            cache_key2 = source2._get_cache_key(url=test_url2)
             assert cache_key1 != cache_key2, "Different URLs should have different cache keys"
 
             cache_file1 = temp_cache_dir / f"{cache_key1}.mp3"

@@ -6,19 +6,19 @@ must implement, enabling type-safe polymorphism and easier addition of new backe
 
 from __future__ import annotations
 
+import dataclasses
 import queue
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
 
-from transcribe_demo.session_logger import SessionLogger
+import transcribe_demo.session_logger
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class TranscriptionChunk:
     """
     Represents a single transcribed chunk of audio.
@@ -78,7 +78,7 @@ class TranscriptionResult(Protocol):
         ...
 
 
-@dataclass
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class BackendConfig:
     """
     Base configuration common to all transcription backends.
@@ -100,7 +100,7 @@ class BackendConfig:
     playback_speed: float = 1.0
 
     # Session logging
-    session_logger: SessionLogger | None = None
+    session_logger: transcribe_demo.session_logger.SessionLogger | None = None
     min_log_duration: float = 10.0
 
     # SSL/Security
@@ -186,6 +186,7 @@ class TranscriptionBackend(Protocol):
 
     def run(
         self,
+        *,
         audio_source: AudioSource,
         chunk_queue: queue.Queue[TranscriptionChunk | None],
     ) -> TranscriptionResult:
@@ -207,10 +208,10 @@ class TranscriptionBackend(Protocol):
 
 # Convenience type alias for the legacy chunk consumer signature used by existing code
 # This allows gradual migration to the new TranscriptionChunk-based interface
-LegacyChunkConsumer = Callable[[int, str, float, float, float | None, bool], None] | None
+_LegacyChunkConsumer = Callable[[int, str, float, float, float | None, bool], None] | None
 
 
-def adapt_legacy_consumer(legacy_consumer: LegacyChunkConsumer) -> ChunkConsumer | None:
+def _adapt_legacy_consumer(*, legacy_consumer: _LegacyChunkConsumer) -> ChunkConsumer | None:
     """
     Adapt a legacy chunk consumer to the new ChunkConsumer protocol.
 
