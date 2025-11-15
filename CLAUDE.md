@@ -12,7 +12,7 @@ Development workflow and critical implementation rules. See **DESIGN.md** for ar
 # Development
 uv sync                                   # Install with GPU support (local dev)
 uv run transcribe-demo                    # Run with defaults (turbo + VAD)
-./run-checks.sh                           # Run all checks (pytest, pyright, ruff)
+./run-checks.sh                           # Run all checks (pytest w/ timeout, pyright, ruff)
 uv run python -m pytest                   # Run all tests
 uv run pyright                            # Type checking
 uv run ruff check                         # Linting
