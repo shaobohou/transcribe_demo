@@ -15,7 +15,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
-import transcribe_demo.session_logger
+from transcribe_demo import session_logger
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -100,7 +100,7 @@ class BackendConfig:
     playback_speed: float = 1.0
 
     # Session logging
-    session_logger: transcribe_demo.session_logger.SessionLogger | None = None
+    session_logger: session_logger.SessionLogger | None = None
     min_log_duration: float = 10.0
 
     # SSL/Security

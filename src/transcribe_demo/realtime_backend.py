@@ -20,8 +20,8 @@ import websockets
 if TYPE_CHECKING:
     import websockets.asyncio.client
 
-import transcribe_demo.backend_protocol
-import transcribe_demo.session_logger
+from transcribe_demo import backend_protocol
+from transcribe_demo import session_logger as session_logger_module
 
 
 def float_to_pcm16(*, audio: np.ndarray) -> bytes:
@@ -261,12 +261,12 @@ def run_realtime_transcriber(
     channels: int,
     chunk_duration: float,
     instructions: str,
-    audio_source: transcribe_demo.backend_protocol.AudioSource,
+    audio_source: backend_protocol.AudioSource,
     disable_ssl_verify: bool = False,
-    chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None] | None = None,
+    chunk_queue: queue.Queue[backend_protocol.TranscriptionChunk | None] | None = None,
     compare_transcripts: bool = True,
     language: str = "en",
-    session_logger: transcribe_demo.session_logger.SessionLogger | None = None,
+    session_logger: session_logger_module.SessionLogger | None = None,
     min_log_duration: float = 0.0,
     vad_threshold: float = 0.3,
     vad_silence_duration_ms: int = 200,
@@ -446,7 +446,7 @@ def run_realtime_transcriber(
                                     current_chunk_index = chunk_counter[0]
                                     chunk_counter[0] += 1
 
-                                chunk = transcribe_demo.backend_protocol.TranscriptionChunk(
+                                chunk = backend_protocol.TranscriptionChunk(
                                     index=current_chunk_index,
                                     text=final_text,
                                     start_time=chunk_start,
@@ -528,7 +528,7 @@ def run_realtime_transcriber(
                                         current_chunk_index = chunk_counter[0]
                                         chunk_counter[0] += 1
 
-                                    chunk = transcribe_demo.backend_protocol.TranscriptionChunk(
+                                    chunk = backend_protocol.TranscriptionChunk(
                                         index=current_chunk_index,
                                         text=final_text,
                                         start_time=chunk_start,
@@ -681,7 +681,7 @@ class RealtimeBackend:
     # Session configuration
     language: str = "en"
     compare_transcripts: bool = True
-    session_logger: transcribe_demo.session_logger.SessionLogger | None = None
+    session_logger: session_logger_module.SessionLogger | None = None
     min_log_duration: float = 0.0
 
     # SSL configuration
@@ -690,8 +690,8 @@ class RealtimeBackend:
     def run(
         self,
         *,
-        audio_source: transcribe_demo.backend_protocol.AudioSource,
-        chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None] | None = None,
+        audio_source: backend_protocol.AudioSource,
+        chunk_queue: queue.Queue[backend_protocol.TranscriptionChunk | None] | None = None,
     ) -> RealtimeTranscriptionResult:
         """
         Run Realtime API transcription on the given audio source.

@@ -17,8 +17,8 @@ import torch
 import webrtcvad
 import whisper
 
-import transcribe_demo.backend_protocol
-import transcribe_demo.session_logger
+from transcribe_demo import backend_protocol
+from transcribe_demo import session_logger as session_logger_module
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -266,8 +266,8 @@ def run_whisper_transcriber(
     disable_ssl_verify: bool,
     device_preference: str,
     require_gpu: bool,
-    audio_source: transcribe_demo.backend_protocol.AudioSource,
-    chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None],
+    audio_source: backend_protocol.AudioSource,
+    chunk_queue: queue.Queue[backend_protocol.TranscriptionChunk | None],
     vad_aggressiveness: int = 2,
     vad_min_silence_duration: float = 0.2,
     vad_min_speech_duration: float = 0.25,
@@ -275,7 +275,7 @@ def run_whisper_transcriber(
     max_chunk_duration: float = 60.0,
     compare_transcripts: bool = True,
     language: str = "en",
-    session_logger: transcribe_demo.session_logger.SessionLogger | None = None,
+    session_logger: session_logger_module.SessionLogger | None = None,
     min_log_duration: float = 0.0,
     enable_partial_transcription: bool = False,
     partial_model: str = "base.en",
@@ -519,7 +519,7 @@ def run_whisper_transcriber(
                 chunk_absolute_end = max(0.0, inference_start - session_start_time)
                 chunk_absolute_start = max(0.0, chunk_absolute_end - chunk_audio_duration)
 
-                chunk = transcribe_demo.backend_protocol.TranscriptionChunk(
+                chunk = backend_protocol.TranscriptionChunk(
                     index=chunk_index,
                     text=text,
                     start_time=chunk_absolute_start,
@@ -643,7 +643,7 @@ def run_whisper_transcriber(
                         # Display the segment transcription
                         # Use segment_index as a unique identifier
                         display_index = chunk_idx * 1000 + current_segment_index
-                        chunk = transcribe_demo.backend_protocol.TranscriptionChunk(
+                        chunk = backend_protocol.TranscriptionChunk(
                             index=display_index,
                             text=text,
                             start_time=chunk_absolute_start,
@@ -836,7 +836,7 @@ class WhisperBackend:
     # Session configuration
     language: str = "en"
     compare_transcripts: bool = True
-    session_logger: transcribe_demo.session_logger.SessionLogger | None = None
+    session_logger: session_logger_module.SessionLogger | None = None
     min_log_duration: float = 0.0
 
     # SSL configuration
@@ -847,8 +847,8 @@ class WhisperBackend:
     def run(
         self,
         *,
-        audio_source: transcribe_demo.backend_protocol.AudioSource,
-        chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None],
+        audio_source: backend_protocol.AudioSource,
+        chunk_queue: queue.Queue[backend_protocol.TranscriptionChunk | None],
     ) -> WhisperTranscriptionResult:
         """
         Run Whisper transcription on the given audio source.
