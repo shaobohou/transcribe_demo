@@ -59,7 +59,9 @@ def _finalize_transcription_session(
         comparison_text = result.full_audio_transcription
 
         if comparison_text:
-            similarity, diff_snippets = transcript_diff.compute_transcription_diff(stitched_text=final, complete_text=comparison_text)
+            similarity, diff_snippets = transcript_diff.compute_transcription_diff(
+                stitched_text=final, complete_text=comparison_text
+            )
 
     # Finalize session logging
     if result is not None:
@@ -76,7 +78,9 @@ def _finalize_transcription_session(
     # Print results
     if compare_transcripts:
         complete_audio_text = comparison_text or ""
-        transcript_diff.print_transcription_summary(stream=sys.stdout, final_text=final, complete_audio_text=complete_audio_text)
+        transcript_diff.print_transcription_summary(
+            stream=sys.stdout, final_text=final, complete_audio_text=complete_audio_text
+        )
     else:
         transcript_diff.print_final_stitched(stream=sys.stdout, text=final)
 

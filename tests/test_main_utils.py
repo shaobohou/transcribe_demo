@@ -17,9 +17,21 @@ def test_chunk_collector_writes_and_stitches_chunks():
     stream = io.StringIO()
     collector = chunk_collector.ChunkCollector(stream=stream)
 
-    collector(chunk=backend_protocol.TranscriptionChunk(index=0, text="Hello, ", start_time=0.0, end_time=1.5, inference_seconds=0.25))
-    collector(chunk=backend_protocol.TranscriptionChunk(index=1, text="world.", start_time=1.5, end_time=3.0, inference_seconds=0.30))
-    collector(chunk=backend_protocol.TranscriptionChunk(index=2, text="How are you?", start_time=3.0, end_time=5.0, inference_seconds=0.45))
+    collector(
+        chunk=backend_protocol.TranscriptionChunk(
+            index=0, text="Hello, ", start_time=0.0, end_time=1.5, inference_seconds=0.25
+        )
+    )
+    collector(
+        chunk=backend_protocol.TranscriptionChunk(
+            index=1, text="world.", start_time=1.5, end_time=3.0, inference_seconds=0.30
+        )
+    )
+    collector(
+        chunk=backend_protocol.TranscriptionChunk(
+            index=2, text="How are you?", start_time=3.0, end_time=5.0, inference_seconds=0.45
+        )
+    )
 
     output = stream.getvalue()
     assert "[chunk 000 | t=1.50s" in output
@@ -33,7 +45,11 @@ def test_chunk_collector_colorized_output_in_realtime_mode():
     stream = ColorStream()
     collector = chunk_collector.ChunkCollector(stream=stream)
 
-    collector(chunk=backend_protocol.TranscriptionChunk(index=0, text="Realtime chunk", start_time=0.0, end_time=2.0, inference_seconds=None))
+    collector(
+        chunk=backend_protocol.TranscriptionChunk(
+            index=0, text="Realtime chunk", start_time=0.0, end_time=2.0, inference_seconds=None
+        )
+    )
 
     output = stream.getvalue()
     assert "\x1b[36m" in output  # cyan label
@@ -56,7 +72,9 @@ def test_clean_chunk_text(text, is_final, expected):
 
 def test_print_transcription_summary_reports_differences():
     stream = io.StringIO()
-    transcript_diff.print_transcription_summary(stream=stream, final_text="hello world", complete_audio_text="hello brave world")
+    transcript_diff.print_transcription_summary(
+        stream=stream, final_text="hello world", complete_audio_text="hello brave world"
+    )
 
     written = stream.getvalue()
     assert "[FINAL STITCHED] hello world" in written
@@ -69,7 +87,9 @@ def test_print_transcription_summary_reports_differences():
 
 def test_print_transcription_summary_identical_texts(capsys):
     stream = io.StringIO()
-    transcript_diff.print_transcription_summary(stream=stream, final_text=" same ", complete_audio_text="same")
+    transcript_diff.print_transcription_summary(
+        stream=stream, final_text=" same ", complete_audio_text="same"
+    )
 
     written = stream.getvalue()
     assert "matches complete audio transcription" in written
@@ -86,7 +106,9 @@ def test_tokenize_with_original_strips_punctuation():
 
 
 def test_generate_diff_snippets_describes_changes():
-    snippets = transcript_diff._generate_diff_snippets(stitched_text="hello world", complete_text="hello brave world", use_color=False)
+    snippets = transcript_diff._generate_diff_snippets(
+        stitched_text="hello world", complete_text="hello brave world", use_color=False
+    )
     assert snippets  # at least one snippet
     tags = {entry["tag"] for entry in snippets}
     assert tags <= {"insert", "replace"}
@@ -101,7 +123,9 @@ def test_colorize_token_respects_color_flag():
 
 def test_format_diff_snippet_insertion_placeholder():
     tokens = transcript_diff._tokenize_with_original(text="one two three")
-    snippet = transcript_diff._format_diff_snippet(tokens=tokens, diff_start=1, diff_end=1, use_color=False, color_code="36")
+    snippet = transcript_diff._format_diff_snippet(
+        tokens=tokens, diff_start=1, diff_end=1, use_color=False, color_code="36"
+    )
     assert "[[∅]]" in snippet
 
 

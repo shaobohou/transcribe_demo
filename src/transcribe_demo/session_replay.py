@@ -701,7 +701,8 @@ def print_session_details(loaded: LoadedSession) -> None:
     print("=" * 60)
     for chunk in loaded.chunks[:5]:  # Show first 5 chunks
         print(
-            f"  Chunk {chunk['index']:03d} [{chunk['start_time']:.2f}s - {chunk['end_time']:.2f}s]: {chunk['text'][:60]}..."
+            f"  Chunk {chunk['index']:03d} [{chunk['start_time']:.2f}s - {chunk['end_time']:.2f}s]: "
+            f"{chunk['text'][:60]}..."
         )
     if len(loaded.chunks) > 5:
         print(f"  ... and {len(loaded.chunks) - 5} more chunks")

@@ -130,7 +130,8 @@ class ChunkCollector:
             # Whisper mode: show actual audio duration and inference time
             chunk_audio_duration = chunk.end_time - chunk.start_time
             timing_suffix = (
-                f" | t={chunk.end_time:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {chunk.inference_seconds:.2f}s"
+                f" | t={chunk.end_time:.2f}s | audio: {chunk_audio_duration:.2f}s"
+                f" | inference: {chunk.inference_seconds:.2f}s"
             )
             label = f"[chunk {chunk.index:03d}{timing_suffix}]"
         else:
