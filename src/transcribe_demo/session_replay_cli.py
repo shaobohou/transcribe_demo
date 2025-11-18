@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import dataclasses
 import sys
+from typing import Literal
 
-from absl import app, flags
+from simple_parsing import ArgumentParser
 
 from transcribe_demo.session_replay import (
     list_sessions,
@@ -15,228 +17,235 @@ from transcribe_demo.session_replay import (
     retranscribe_session,
 )
 
-FLAGS = flags.FLAGS
 
-# Subcommands
-flags.DEFINE_enum(
-    "command",
-    None,
-    ["list", "show", "retranscribe", "remove-incomplete"],
-    "Command to execute: list (list sessions), show (show session details), retranscribe (retranscribe a session), remove-incomplete (remove incomplete sessions)",
-)
-flags.mark_flag_as_required("command")
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class CommonConfig:
+    """Common configuration for all subcommands."""
 
-# Common flags
-flags.DEFINE_string(
-    "session_log_dir",
-    "./session_logs",
-    "Directory containing session logs",
-)
-
-# List command flags
-flags.DEFINE_enum(
-    "backend",
-    None,
-    ["whisper", "realtime"],
-    "Filter sessions by backend (for list command)",
-)
-flags.DEFINE_string(
-    "start_date",
-    None,
-    "Filter sessions on or after this date (YYYY-MM-DD format, for list command)",
-)
-flags.DEFINE_string(
-    "end_date",
-    None,
-    "Filter sessions on or before this date (YYYY-MM-DD format, for list command)",
-)
-flags.DEFINE_float(
-    "min_duration",
-    None,
-    "Filter sessions with duration >= this value in seconds (for list command)",
-)
-flags.DEFINE_boolean(
-    "verbose",
-    False,
-    "Show detailed information (for list command)",
-)
-flags.DEFINE_boolean(
-    "include_incomplete",
-    False,
-    "Include incomplete sessions (sessions without .complete marker, for list command)",
-)
-flags.DEFINE_boolean(
-    "dry_run",
-    False,
-    "Dry run mode - show what would be removed without actually removing (for remove-incomplete command)",
-)
-
-# Show/retranscribe command flags
-flags.DEFINE_string(
-    "session_path",
-    None,
-    "Path to session directory (for show/retranscribe commands)",
-)
-flags.DEFINE_boolean(
-    "allow_incomplete",
-    False,
-    "Allow loading incomplete sessions (for show/retranscribe commands)",
-)
-
-# Retranscribe command flags
-flags.DEFINE_enum(
-    "retranscribe_backend",
-    "whisper",
-    ["whisper", "realtime"],
-    "Backend to use for retranscription",
-)
-flags.DEFINE_string(
-    "output_dir",
-    "./session_logs",
-    "Output directory for retranscription results",
-)
-flags.DEFINE_string(
-    "model",
-    "turbo",
-    "Whisper model to use for retranscription",
-)
-flags.DEFINE_enum(
-    "device",
-    "auto",
-    ["auto", "cpu", "cuda", "mps"],
-    "Device to use for Whisper retranscription",
-)
-flags.DEFINE_string(
-    "language",
-    "en",
-    "Language for retranscription",
-)
-flags.DEFINE_integer(
-    "vad_aggressiveness",
-    2,
-    "VAD aggressiveness level (0-3) for Whisper retranscription",
-)
-flags.DEFINE_float(
-    "vad_min_silence_duration",
-    0.2,
-    "Minimum silence duration (seconds) for VAD",
-)
-flags.DEFINE_string(
-    "api_key",
-    None,
-    "OpenAI API key for realtime backend (defaults to OPENAI_API_KEY env var)",
-)
-flags.DEFINE_string(
-    "realtime_model",
-    "gpt-realtime-mini",
-    "Realtime model to use",
-)
-flags.DEFINE_enum(
-    "audio_format",
-    "flac",
-    ["wav", "flac"],
-    "Audio format for saved files",
-)
+    session_log_dir: str = "./session_logs"
+    """Directory containing session logs."""
 
 
-def main(argv: list[str]) -> None:
-    """Main CLI entry point."""
-    if FLAGS.command == "list":
-        # List sessions
-        sessions = list_sessions(
-            log_dir=FLAGS.session_log_dir,
-            backend=FLAGS.backend,
-            start_date=FLAGS.start_date,
-            end_date=FLAGS.end_date,
-            min_duration=FLAGS.min_duration,
-            include_incomplete=FLAGS.include_incomplete,
-        )
-        print_session_list(sessions, verbose=FLAGS.verbose)
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class ListConfig(CommonConfig):
+    """Configuration for list command."""
 
-    elif FLAGS.command == "show":
-        # Show session details
-        if not FLAGS.session_path:
-            print("ERROR: --session_path is required for 'show' command", file=sys.stderr)
-            sys.exit(1)
+    backend: Literal["whisper", "realtime"] | None = None
+    """Filter sessions by backend."""
 
-        try:
-            loaded = load_session(FLAGS.session_path, allow_incomplete=FLAGS.allow_incomplete)
-            print_session_details(loaded)
-        except (FileNotFoundError, ValueError) as e:
-            print(f"ERROR: {e}", file=sys.stderr)
-            sys.exit(1)
+    start_date: str | None = None
+    """Filter sessions on or after this date (YYYY-MM-DD format)."""
 
-    elif FLAGS.command == "retranscribe":
-        # Retranscribe a session
-        if not FLAGS.session_path:
-            print("ERROR: --session_path is required for 'retranscribe' command", file=sys.stderr)
-            sys.exit(1)
+    end_date: str | None = None
+    """Filter sessions on or before this date (YYYY-MM-DD format)."""
 
-        try:
-            # Load session
-            loaded = load_session(FLAGS.session_path, allow_incomplete=FLAGS.allow_incomplete)
+    min_duration: float | None = None
+    """Filter sessions with duration >= this value in seconds."""
 
-            # Build backend kwargs
-            backend_kwargs = {
-                "audio_format": FLAGS.audio_format,
-                "language": FLAGS.language,
-            }
+    verbose: bool = False
+    """Show detailed information."""
 
-            if FLAGS.retranscribe_backend == "whisper":
-                backend_kwargs.update(
-                    {
-                        "model": FLAGS.model,
-                        "device": FLAGS.device,
-                        "vad_aggressiveness": FLAGS.vad_aggressiveness,
-                        "vad_min_silence_duration": FLAGS.vad_min_silence_duration,
-                    }
-                )
-            elif FLAGS.retranscribe_backend == "realtime":
-                backend_kwargs.update(
-                    {
-                        "api_key": FLAGS.api_key,
-                        "realtime_model": FLAGS.realtime_model,
-                    }
-                )
+    include_incomplete: bool = False
+    """Include incomplete sessions (sessions without .complete marker)."""
 
-            # Retranscribe
-            result_path = retranscribe_session(
-                loaded_session=loaded,
-                output_dir=FLAGS.output_dir,
-                backend=FLAGS.retranscribe_backend,
-                backend_kwargs=backend_kwargs,
-            )
-            print(f"\nRetranscription saved to: {result_path}", file=sys.stdout)
 
-        except (FileNotFoundError, ValueError) as e:
-            print(f"ERROR: {e}", file=sys.stderr)
-            sys.exit(1)
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class ShowConfig(CommonConfig):
+    """Configuration for show command."""
 
-    elif FLAGS.command == "remove-incomplete":
-        # Remove incomplete sessions
-        removed_paths = remove_incomplete_sessions(
-            log_dir=FLAGS.session_log_dir,
-            backend=FLAGS.backend,
-            start_date=FLAGS.start_date,
-            end_date=FLAGS.end_date,
-            min_duration=FLAGS.min_duration,
-            dry_run=FLAGS.dry_run,
-        )
+    session_path: str | None = None
+    """Path to session directory."""
 
-        if removed_paths and not FLAGS.dry_run:
-            print(f"\nSuccessfully removed {len(removed_paths)} session(s).", file=sys.stdout)
-        elif removed_paths and FLAGS.dry_run:
-            print(f"\n[DRY RUN] Would remove {len(removed_paths)} session(s).", file=sys.stdout)
+    allow_incomplete: bool = False
+    """Allow loading incomplete sessions."""
 
-    else:
-        print(f"ERROR: Unknown command '{FLAGS.command}'", file=sys.stderr)
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class RetranscribeConfig(CommonConfig):
+    """Configuration for retranscribe command."""
+
+    session_path: str | None = None
+    """Path to session directory."""
+
+    allow_incomplete: bool = False
+    """Allow loading incomplete sessions."""
+
+    retranscribe_backend: Literal["whisper", "realtime"] = "whisper"
+    """Backend to use for retranscription."""
+
+    output_dir: str = "./session_logs"
+    """Output directory for retranscription results."""
+
+    # Whisper-specific
+    model: str = "turbo"
+    """Whisper model to use for retranscription."""
+
+    device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+    """Device to use for Whisper retranscription."""
+
+    language: str = "en"
+    """Language for retranscription."""
+
+    vad_aggressiveness: int = 2
+    """VAD aggressiveness level (0-3) for Whisper retranscription."""
+
+    vad_min_silence_duration: float = 0.2
+    """Minimum silence duration (seconds) for VAD."""
+
+    # Realtime-specific
+    api_key: str | None = None
+    """OpenAI API key for realtime backend (defaults to OPENAI_API_KEY env var)."""
+
+    realtime_model: str = "gpt-realtime-mini"
+    """Realtime model to use."""
+
+    audio_format: Literal["wav", "flac"] = "flac"
+    """Audio format for saved files."""
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class RemoveIncompleteConfig(CommonConfig):
+    """Configuration for remove-incomplete command."""
+
+    backend: Literal["whisper", "realtime"] | None = None
+    """Filter sessions by backend."""
+
+    start_date: str | None = None
+    """Filter sessions on or after this date (YYYY-MM-DD format)."""
+
+    end_date: str | None = None
+    """Filter sessions on or before this date (YYYY-MM-DD format)."""
+
+    min_duration: float | None = None
+    """Filter sessions with duration >= this value in seconds."""
+
+    dry_run: bool = False
+    """Dry run mode - show what would be removed without actually removing."""
+
+
+def list_command(config: ListConfig) -> None:
+    """Execute list command."""
+    sessions = list_sessions(
+        log_dir=config.session_log_dir,
+        backend=config.backend,
+        start_date=config.start_date,
+        end_date=config.end_date,
+        min_duration=config.min_duration,
+        include_incomplete=config.include_incomplete,
+    )
+    print_session_list(sessions, verbose=config.verbose)
+
+
+def show_command(config: ShowConfig) -> None:
+    """Execute show command."""
+    if not config.session_path:
+        print("ERROR: --session_path is required for 'show' command", file=sys.stderr)
         sys.exit(1)
+
+    try:
+        loaded = load_session(config.session_path, allow_incomplete=config.allow_incomplete)
+        print_session_details(loaded)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def retranscribe_command(config: RetranscribeConfig) -> None:
+    """Execute retranscribe command."""
+    if not config.session_path:
+        print("ERROR: --session_path is required for 'retranscribe' command", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        # Load session
+        loaded = load_session(config.session_path, allow_incomplete=config.allow_incomplete)
+
+        # Build backend kwargs
+        backend_kwargs: dict[str, str | int | float | None] = {
+            "audio_format": config.audio_format,
+            "language": config.language,
+        }
+
+        if config.retranscribe_backend == "whisper":
+            backend_kwargs["model"] = config.model
+            backend_kwargs["device"] = config.device
+            backend_kwargs["vad_aggressiveness"] = config.vad_aggressiveness
+            backend_kwargs["vad_min_silence_duration"] = config.vad_min_silence_duration
+        elif config.retranscribe_backend == "realtime":
+            backend_kwargs["api_key"] = config.api_key
+            backend_kwargs["realtime_model"] = config.realtime_model
+
+        # Retranscribe
+        result_path = retranscribe_session(
+            loaded_session=loaded,
+            output_dir=config.output_dir,
+            backend=config.retranscribe_backend,
+            backend_kwargs=backend_kwargs,
+        )
+        print(f"\nRetranscription saved to: {result_path}", file=sys.stdout)
+
+    except (FileNotFoundError, ValueError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def remove_incomplete_command(config: RemoveIncompleteConfig) -> None:
+    """Execute remove-incomplete command."""
+    removed_paths = remove_incomplete_sessions(
+        log_dir=config.session_log_dir,
+        backend=config.backend,
+        start_date=config.start_date,
+        end_date=config.end_date,
+        min_duration=config.min_duration,
+        dry_run=config.dry_run,
+    )
+
+    if removed_paths and not config.dry_run:
+        print(f"\nSuccessfully removed {len(removed_paths)} session(s).", file=sys.stdout)
+    elif removed_paths and config.dry_run:
+        print(f"\n[DRY RUN] Would remove {len(removed_paths)} session(s).", file=sys.stdout)
 
 
 def cli_main() -> None:
     """Entry point for the CLI (called by pyproject.toml console_scripts)."""
-    app.run(main)
+    parser = ArgumentParser(
+        prog="transcribe-session",
+        description="Session replay and management utility for transcribe-demo",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # List subcommand
+    list_parser = subparsers.add_parser("list", help="List sessions")
+    list_parser.add_arguments(ListConfig, dest="config")
+
+    # Show subcommand
+    show_parser = subparsers.add_parser("show", help="Show session details")
+    show_parser.add_arguments(ShowConfig, dest="config")
+
+    # Retranscribe subcommand
+    retranscribe_parser = subparsers.add_parser("retranscribe", help="Retranscribe a session")
+    retranscribe_parser.add_arguments(RetranscribeConfig, dest="config")
+
+    # Remove-incomplete subcommand
+    remove_parser = subparsers.add_parser("remove-incomplete", help="Remove incomplete sessions")
+    remove_parser.add_arguments(RemoveIncompleteConfig, dest="config")
+
+    args = parser.parse_args()
+
+    # Execute appropriate command
+    if args.command == "list":
+        list_command(args.config)
+    elif args.command == "show":
+        show_command(args.config)
+    elif args.command == "retranscribe":
+        retranscribe_command(args.config)
+    elif args.command == "remove-incomplete":
+        remove_incomplete_command(args.config)
+    else:
+        print(f"ERROR: Unknown command '{args.command}'", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    app.run(main)
+    cli_main()

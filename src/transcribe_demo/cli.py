@@ -1,24 +1,21 @@
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 from pathlib import Path
 
-from absl import app
+from simple_parsing import ArgumentParser
 
 import transcribe_demo.audio_capture
+import transcribe_demo.backend_config
 import transcribe_demo.backend_factory
 import transcribe_demo.backend_protocol
 import transcribe_demo.chunk_collector
 import transcribe_demo.file_audio_source
-import transcribe_demo.flags
-import transcribe_demo.realtime_backend
 import transcribe_demo.session_logger
 import transcribe_demo.transcribe
 import transcribe_demo.transcript_diff
-import transcribe_demo.whisper_backend
-
-FLAGS = transcribe_demo.flags.FLAGS
 
 
 def _finalize_transcription_session(
@@ -86,9 +83,15 @@ def _finalize_transcription_session(
         print(f"Total captured audio duration: {result.capture_duration:.2f} seconds", file=sys.stderr)
 
 
-def main(argv: list[str]) -> None:
+def main(*, config: transcribe_demo.backend_config.CLIConfig) -> None:
+    """
+    Main entry point for transcription CLI.
+
+    Args:
+        config: Complete CLI configuration from argument parsing
+    """
     # Check for unimplemented features
-    if FLAGS.refine_with_context:
+    if config.refine_with_context:
         print(
             "ERROR: --refine-with-context is not yet implemented.\n"
             "This feature will use a 3-chunk sliding window to refine transcriptions with more context.\n"
@@ -98,23 +101,24 @@ def main(argv: list[str]) -> None:
         sys.exit(1)
 
     # Warn about memory usage with unlimited duration and comparison enabled
-    if FLAGS.compare_transcripts and FLAGS.max_capture_duration == 0:
+    if config.session.compare_transcripts and config.session.max_capture_duration == 0:
         print(
             "WARNING: Running with unlimited duration and comparison enabled will "
             "continuously accumulate audio in memory.\n"
-            "Consider setting --max_capture_duration or use --nocompare_transcripts to reduce memory usage.\n",
+            "Consider setting --session.max_capture_duration or use --session.compare_transcripts=false "
+            "to reduce memory usage.\n",
             file=sys.stderr,
         )
 
     # Confirm long capture durations with comparison enabled
-    if FLAGS.compare_transcripts and FLAGS.max_capture_duration > 300:  # > 5 minutes
-        duration_minutes = FLAGS.max_capture_duration / 60.0
+    if config.session.compare_transcripts and config.session.max_capture_duration > 300:  # > 5 minutes
+        duration_minutes = config.session.max_capture_duration / 60.0
         print(
             f"You have set a capture duration of {duration_minutes:.1f} minutes with comparison enabled.\n"
             f"This will keep audio in memory for the entire session.",
             file=sys.stderr,
         )
-        if FLAGS.backend == "realtime":
+        if config.backend == "realtime":
             print(
                 "Note: For Realtime API, this will also double your API usage cost.\n",
                 file=sys.stderr,
@@ -133,51 +137,56 @@ def main(argv: list[str]) -> None:
                 file=sys.stderr,
             )
 
-    language_pref = (FLAGS.language or "").strip()
-
-    # Get API key for realtime backend (if needed)
-    api_key = FLAGS.api_key or os.getenv("OPENAI_API_KEY")
-
     # Create session logger (always enabled)
-    log_dir = Path(FLAGS.session_log_dir)
+    log_dir = Path(config.session.session_log_dir)
     session_logger = transcribe_demo.session_logger.SessionLogger(
         output_dir=log_dir,
-        sample_rate=FLAGS.samplerate,
-        channels=FLAGS.channels,
-        backend=FLAGS.backend,
+        sample_rate=config.audio.sample_rate,
+        channels=config.audio.channels,
+        backend=config.backend,
         save_chunk_audio=True,  # Always save everything
-        audio_format=FLAGS.audio_format,
+        audio_format=config.session.audio_format,
     )
 
     # Create chunk collector
     collector = transcribe_demo.chunk_collector.ChunkCollector(stream=sys.stdout)
 
     # Create audio source
-    if FLAGS.audio_file:
+    if config.audio.audio_file:
         audio_source: transcribe_demo.backend_protocol.AudioSource = transcribe_demo.file_audio_source.FileAudioSource(
-            audio_file=FLAGS.audio_file,
-            sample_rate=FLAGS.samplerate,
-            channels=FLAGS.channels,
-            max_capture_duration=FLAGS.max_capture_duration,
-            collect_full_audio=FLAGS.compare_transcripts or (session_logger is not None),
-            playback_speed=FLAGS.playback_speed,
+            audio_file=config.audio.audio_file,
+            sample_rate=config.audio.sample_rate,
+            channels=config.audio.channels,
+            max_capture_duration=config.session.max_capture_duration,
+            collect_full_audio=config.session.compare_transcripts or (session_logger is not None),
+            playback_speed=config.audio.playback_speed,
         )
     else:
         audio_source = transcribe_demo.audio_capture.AudioCaptureManager(
-            sample_rate=FLAGS.samplerate,
-            channels=FLAGS.channels,
-            max_capture_duration=FLAGS.max_capture_duration,
-            collect_full_audio=FLAGS.compare_transcripts or (session_logger is not None),
+            sample_rate=config.audio.sample_rate,
+            channels=config.audio.channels,
+            max_capture_duration=config.session.max_capture_duration,
+            collect_full_audio=config.session.compare_transcripts or (session_logger is not None),
         )
 
+    # Get backend configuration
+    backend_config = config.get_backend_config()
+
     # Create backend
-    match FLAGS.backend:
-        case "whisper":
-            backend: transcribe_demo.backend_protocol.TranscriptionBackend = transcribe_demo.backend_factory.create_whisper_backend(language=language_pref, session_logger=session_logger)
-        case "realtime":
-            backend = transcribe_demo.backend_factory.create_realtime_backend(api_key=api_key, language=language_pref, session_logger=session_logger)
-        case _:
-            raise ValueError(f"Unknown backend: {FLAGS.backend}")
+    if config.backend == "whisper":
+        backend: transcribe_demo.backend_protocol.TranscriptionBackend = (
+            transcribe_demo.backend_factory.create_whisper_backend(
+                config=backend_config,  # type: ignore[arg-type]
+                session_logger=session_logger,
+            )
+        )
+    elif config.backend == "realtime":
+        backend = transcribe_demo.backend_factory.create_realtime_backend(
+            config=backend_config,  # type: ignore[arg-type]
+            session_logger=session_logger,
+        )
+    else:
+        raise ValueError(f"Unknown backend: {config.backend}")
 
     # Run transcription using the generator
     result: transcribe_demo.backend_protocol.TranscriptionResult | None = None
@@ -202,15 +211,33 @@ def main(argv: list[str]) -> None:
             collector=collector,
             result=result,
             session_logger=session_logger,
-            compare_transcripts=FLAGS.compare_transcripts,
-            min_log_duration=FLAGS.min_log_duration,
+            compare_transcripts=config.session.compare_transcripts,
+            min_log_duration=config.session.min_log_duration,
         )
 
 
 def cli_main() -> None:
     """Entry point for the CLI (called by pyproject.toml console_scripts)."""
-    app.run(main)
+    parser = ArgumentParser(
+        prog="transcribe-demo",
+        description="Real-time audio transcription with Whisper and OpenAI Realtime API",
+    )
+    parser.add_arguments(transcribe_demo.backend_config.CLIConfig, dest="config")
+    args = parser.parse_args()
+    config: transcribe_demo.backend_config.CLIConfig = args.config
+
+    # Populate Realtime API key from environment if not provided via CLI
+    if config.realtime.api_key is None:
+        api_key_from_env = os.getenv("OPENAI_API_KEY")
+        if api_key_from_env is not None:
+            # Update the realtime config with the API key from environment
+            config = dataclasses.replace(
+                config,
+                realtime=dataclasses.replace(config.realtime, api_key=api_key_from_env),
+            )
+
+    main(config=config)
 
 
 if __name__ == "__main__":
-    app.run(main)
+    cli_main()

@@ -21,7 +21,7 @@ uv run ruff format                        # Format code
 # CPU-only (CI/sandboxes - REQUIRED!)
 uv sync --project ci --refresh
 ./run-checks.sh --ci                      # Run all checks (CPU-only, no CUDA downloads)
-uv --project ci run transcribe-demo --audio_file audio.mp3 --model base.en
+uv --project ci run transcribe-demo --audio_file audio.mp3 --whisper.model base.en
 uv --project ci run python -m pytest
 ```
 
@@ -54,12 +54,30 @@ git push -u origin your-branch-name
 
 ### Key Files
 
-- **cli.py** - CLI args (`parse_args()`), stitching (`ChunkCollectorWithStitching`)
-- **whisper_backend.py** - VAD (`WebRTCVAD`), transcription loop (`run_whisper_transcriber()`)
-- **realtime_backend.py** - WebSocket streaming (`run_realtime_transcriber()`)
-- **audio_capture.py** - Microphone (`AudioCaptureManager`)
-- **file_audio_source.py** - File/URL simulation (`FileAudioSource`)
+- **cli.py** - Main transcription CLI (simple-parsing)
+- **session_replay_cli.py** - Session management CLI with subcommands (simple-parsing)
+- **backend_config.py** - Configuration dataclasses (CLIConfig, WhisperConfig, RealtimeConfig)
+- **backend_factory.py** - Factory functions accepting config objects
+- **whisper_backend.py** - VAD and transcription loop
+- **realtime_backend.py** - WebSocket streaming
+- **audio_capture.py** - Microphone capture
+- **file_audio_source.py** - File/URL audio simulation
 - **tests/conftest.py** - CI mocking strategy
+
+## Configuration System
+
+Dataclasses with `simple-parsing` for CLI generation. Factory functions accept config objects (no FLAGS). Tests create configs directly.
+
+```python
+CLIConfig
+├── audio: AudioConfig
+├── session: SessionConfig
+├── whisper: WhisperConfig
+│   ├── vad: VADConfig
+│   └── partial: PartialTranscriptionConfig
+└── realtime: RealtimeConfig
+    └── vad: RealtimeVADConfig
+```
 
 ## Critical Implementation Rules
 
@@ -101,9 +119,13 @@ git push -u origin your-branch-name
 4. **Whisper testing:** VAD makes transcript tests flaky. Use Realtime for transcript comparison.
 5. **Realtime chunking:** Fixed 2.0s chunks, NOT configurable (no VAD).
 6. **SSL/Certificate issues:** For development/testing with corporate proxies or self-signed certs:
-   - Use `--ca_cert /path/to/cert.pem` for custom certificate bundles
-   - Use `--disable_ssl_verify` as last resort (insecure, not for production)
+   - Use `--ca_cert /path/to/cert.pem` for custom certificate bundles (Whisper only)
+   - Use `--disable_ssl_verify true` as last resort (insecure, not for production)
    - Affects both model downloads and Realtime API WebSocket connections
+7. **CLI argument format:** Simple-parsing uses nested dotted notation:
+   - Whisper settings: `--whisper.model base.en`, `--device cpu`
+   - Session settings: `--max_capture_duration 60`, `--session.compare_transcripts false`
+   - Audio settings: `--audio_file file.mp3`, `--playback_speed 2.0`
 
 ## Testing
 
@@ -150,4 +172,4 @@ See **[SITEMAP.md](SITEMAP.md)** for complete documentation guide.
 
 ---
 
-*Last Updated: 2025-11-15*
+*Last Updated: 2025-11-17*
