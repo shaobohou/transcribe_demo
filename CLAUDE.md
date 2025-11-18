@@ -51,6 +51,11 @@ git push -u origin your-branch-name
 - Use keyword-only parameters (`*,`) for functions/methods (except external callbacks like `_audio_callback`)
 - Frozen dataclasses: `@dataclasses.dataclass(frozen=True, kw_only=True)`
 - Minimize public API: prefix internal helpers with `_`
+- **Line length:** Maximum 120 characters (enforced by ruff)
+- **Import style:** Use `from transcribe_demo import X` NOT `import transcribe_demo.X`
+  - Example: `from transcribe_demo import backend_protocol` ✓
+  - Not: `import transcribe_demo.backend_protocol` ✗
+  - Use aliases when parameter names conflict with modules: `from transcribe_demo import session_logger as session_logger_module`
 
 ### Key Files
 

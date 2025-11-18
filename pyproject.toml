@@ -46,3 +46,17 @@ markers = [
 
 [tool.ruff]
 line-length = 120
+
+[tool.ruff.lint]
+# Enable specific rule categories
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (includes F401 unused imports)
+    "W",   # pycodestyle warnings
+]
+
+# E501 is handled by formatter, but we want to enforce it in linting too
+extend-select = ["E501"]  # Line too long
+
+[tool.ruff.format]
+line-ending = "auto"
