@@ -12,6 +12,8 @@ import dataclasses
 from pathlib import Path
 from typing import Literal
 
+from simple_parsing import field
+
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class VADConfig:
@@ -22,19 +24,19 @@ class VADConfig:
     See DESIGN.md for detailed explanation of each parameter.
     """
 
-    aggressiveness: int = 2
+    aggressiveness: int = field(default=2, alias="vad.aggressiveness")
     """VAD aggressiveness level (0-3). Higher = more aggressive filtering."""
 
-    min_silence_duration: float = 0.2
+    min_silence_duration: float = field(default=0.2, alias="vad.min_silence_duration")
     """Minimum duration of silence (seconds) to trigger chunk split."""
 
-    min_speech_duration: float = 0.25
+    min_speech_duration: float = field(default=0.25, alias="vad.min_speech_duration")
     """Minimum duration of speech (seconds) required before transcribing."""
 
-    speech_pad_duration: float = 0.2
+    speech_pad_duration: float = field(default=0.2, alias="vad.speech_pad_duration")
     """Padding duration (seconds) added before speech to avoid cutting words."""
 
-    max_chunk_duration: float = 60.0
+    max_chunk_duration: float = field(default=60.0, alias="vad.max_chunk_duration")
     """Maximum chunk duration (seconds). Prevents buffer overflow."""
 
     def __post_init__(self) -> None:
@@ -60,16 +62,16 @@ class PartialTranscriptionConfig:
     before the chunk is finalized.
     """
 
-    enabled: bool = False
+    enabled: bool = field(default=False, alias="partial.enabled")
     """Whether to enable partial transcription."""
 
     model: str = "base.en"
     """Model to use for partial transcription (should be fast, e.g., base.en, tiny.en)."""
 
-    interval: float = 1.0
+    interval: float = field(default=1.0, alias="partial.interval")
     """Interval (seconds) between partial transcription updates."""
 
-    max_buffer_seconds: float = 10.0
+    max_buffer_seconds: float = field(default=10.0, alias="partial.max_buffer_seconds")
     """Segment duration (seconds) for partial transcription."""
 
     def __post_init__(self) -> None:
@@ -138,13 +140,13 @@ class RealtimeVADConfig:
     than WebRTC VAD used in Whisper backend.
     """
 
-    threshold: float = 0.2
+    threshold: float = field(default=0.2, alias="vad.threshold")
     """
     Server VAD threshold for turn detection (0.0-1.0).
     Lower = more sensitive. Default 0.2 works well for continuous speech.
     """
 
-    silence_duration_ms: int = 100
+    silence_duration_ms: int = field(default=100, alias="vad.silence_duration_ms")
     """
     Silence duration (milliseconds) required to detect turn boundary.
     Lower values = more frequent chunks. Default 100ms works for fast-paced content.
