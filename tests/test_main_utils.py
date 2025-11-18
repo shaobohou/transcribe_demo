@@ -87,9 +87,7 @@ def test_print_transcription_summary_reports_differences():
 
 def test_print_transcription_summary_identical_texts(capsys):
     stream = io.StringIO()
-    transcript_diff.print_transcription_summary(
-        stream=stream, final_text=" same ", complete_audio_text="same"
-    )
+    transcript_diff.print_transcription_summary(stream=stream, final_text=" same ", complete_audio_text="same")
 
     written = stream.getvalue()
     assert "matches complete audio transcription" in written
@@ -195,9 +193,11 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
         chunk_queue = kwargs.get("chunk_queue")
         if chunk_queue:
             # Put one test chunk
-            chunk_queue.put(backend_protocol.TranscriptionChunk(
-                index=0, text="test", start_time=0.0, end_time=1.0, inference_seconds=0.1
-            ))
+            chunk_queue.put(
+                backend_protocol.TranscriptionChunk(
+                    index=0, text="test", start_time=0.0, end_time=1.0, inference_seconds=0.1
+                )
+            )
             chunk_queue.put(None)  # Sentinel
         return DummyResult()
 
@@ -267,9 +267,11 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
         chunk_queue = kwargs.get("chunk_queue")
         if chunk_queue:
             # Put one test chunk
-            chunk_queue.put(backend_protocol.TranscriptionChunk(
-                index=0, text="realtime", start_time=0.0, end_time=1.0, inference_seconds=None
-            ))
+            chunk_queue.put(
+                backend_protocol.TranscriptionChunk(
+                    index=0, text="realtime", start_time=0.0, end_time=1.0, inference_seconds=None
+                )
+            )
             chunk_queue.put(None)  # Sentinel
         return DummyRealtimeResult()
 

@@ -20,6 +20,7 @@ def test_run_realtime_transcriber_processes_audio(monkeypatch):
 
     # Create fake audio source
     from test_helpers import FakeAudioCaptureManager
+
     audio_source = FakeAudioCaptureManager(
         audio=audio,
         sample_rate=sample_rate,
@@ -143,6 +144,7 @@ def test_realtime_backend_full_audio_matches_input(monkeypatch):
 
     # Create fake audio source
     from test_helpers import FakeAudioCaptureManager
+
     audio_source = FakeAudioCaptureManager(
         audio=audio,
         sample_rate=sample_rate,

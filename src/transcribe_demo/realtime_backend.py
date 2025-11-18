@@ -272,7 +272,6 @@ def run_realtime_transcriber(
     vad_silence_duration_ms: int = 200,
     debug: bool = False,
 ) -> RealtimeTranscriptionResult:
-
     # Use the provided audio source
     audio_capture = audio_source
 
@@ -747,6 +746,7 @@ class RealtimeBackend:
             except Exception as exc:
                 # Log warning but don't fail - this is just for comparison
                 import sys
+
                 print(
                     f"WARNING: Unable to transcribe full audio for comparison: {exc}",
                     file=sys.stderr,

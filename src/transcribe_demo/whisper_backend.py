@@ -282,7 +282,6 @@ def run_whisper_transcriber(
     partial_interval: float = 1.0,
     max_partial_buffer_seconds: float = 10.0,
 ) -> WhisperTranscriptionResult:
-
     model, device, fp16 = _load_whisper_model(
         model_name=model_name,
         device_preference=device_preference,

@@ -616,9 +616,7 @@ def test_retranscribe_session_preserves_audio(temp_session_dir: Path, create_tes
         if "chunk_consumer" in kwargs:
             consumer = kwargs["chunk_consumer"]
             consumer(
-                TranscriptionChunk(
-                    index=0, text="Test chunk.", start_time=0.0, end_time=3.0, inference_seconds=0.1
-                )
+                TranscriptionChunk(index=0, text="Test chunk.", start_time=0.0, end_time=3.0, inference_seconds=0.1)
             )
         return FakeWhisperResult(capture_duration=3.0, full_audio_transcription=None, metadata={"model": "turbo"})
 

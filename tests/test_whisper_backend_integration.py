@@ -20,13 +20,15 @@ def _collect_chunks_from_queue(chunk_queue: queue.Queue[TranscriptionChunk | Non
             if chunk is None:
                 break
             if not chunk.is_partial:
-                chunks.append({
-                    "index": chunk.index,
-                    "text": chunk.text,
-                    "start": chunk.start_time,
-                    "end": chunk.end_time,
-                    "inference": chunk.inference_seconds,
-                })
+                chunks.append(
+                    {
+                        "index": chunk.index,
+                        "text": chunk.text,
+                        "start": chunk.start_time,
+                        "end": chunk.end_time,
+                        "inference": chunk.inference_seconds,
+                    }
+                )
         except queue.Empty:
             break
     return chunks
@@ -55,6 +57,7 @@ def test_run_whisper_transcriber_processes_audio(monkeypatch):
 
     # Create fake audio source
     from test_helpers import FakeAudioCaptureManager
+
     duration_seconds = len(audio) / sample_rate
     audio_source = FakeAudioCaptureManager(
         audio=audio,
@@ -119,6 +122,7 @@ def test_whisper_backend_full_audio_matches_input(monkeypatch):
 
     # Create fake audio source directly
     from test_helpers import FakeAudioCaptureManager
+
     duration_seconds = len(audio) / sample_rate
     audio_source = FakeAudioCaptureManager(
         audio=audio,
