@@ -118,7 +118,9 @@ def print_transcription_summary(
         file=stream,
     )
     diff_label = "\x1b[2;36m[DIFF]\x1b[0m" if use_color else "[DIFF]"
-    diff_snippets = _generate_diff_snippets(stitched_text=final_clean, complete_text=complete_audio_clean, use_color=use_color)
+    diff_snippets = _generate_diff_snippets(
+        stitched_text=final_clean, complete_text=complete_audio_clean, use_color=use_color
+    )
     for snippet in diff_snippets:
         print(
             f"{diff_label} {snippet['tag']}:\n    stitched: {snippet['stitched']}\n    complete: {snippet['complete']}",
@@ -248,8 +250,12 @@ def _generate_diff_snippets(
         snippets.append(
             {
                 "tag": tag,
-                "stitched": _format_diff_snippet(tokens=stitched_tokens, diff_start=i1, diff_end=i2, use_color=use_color, color_code="33"),
-                "complete": _format_diff_snippet(tokens=complete_tokens, diff_start=j1, diff_end=j2, use_color=use_color, color_code="36"),
+                "stitched": _format_diff_snippet(
+                    tokens=stitched_tokens, diff_start=i1, diff_end=i2, use_color=use_color, color_code="33"
+                ),
+                "complete": _format_diff_snippet(
+                    tokens=complete_tokens, diff_start=j1, diff_end=j2, use_color=use_color, color_code="36"
+                ),
             }
         )
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TextIO
 
-import transcribe_demo.backend_protocol
+from transcribe_demo import backend_protocol
 
 
 class ChunkCollector:
@@ -19,7 +19,7 @@ class ChunkCollector:
     def __init__(self, *, stream: TextIO) -> None:
         self._stream = stream
         self._last_time = float("-inf")
-        self._chunks: list[transcribe_demo.backend_protocol.TranscriptionChunk] = []
+        self._chunks: list[backend_protocol.TranscriptionChunk] = []
         self._last_partial_chunk_index: int | None = None
 
     @staticmethod
@@ -38,7 +38,7 @@ class ChunkCollector:
                 text = text[:-1].rstrip()
         return text
 
-    def _display_partial_chunk(self, *, chunk: transcribe_demo.backend_protocol.TranscriptionChunk) -> None:
+    def _display_partial_chunk(self, *, chunk: backend_protocol.TranscriptionChunk) -> None:
         """Display a partial transcription, overwriting same segment on TTY."""
         import sys
 
@@ -81,7 +81,7 @@ class ChunkCollector:
         self._last_partial_chunk_index = chunk.index
         self._stream.flush()
 
-    def __call__(self, chunk: transcribe_demo.backend_protocol.TranscriptionChunk) -> None:
+    def __call__(self, chunk: backend_protocol.TranscriptionChunk) -> None:
         """Process a transcription chunk (implements ChunkConsumer protocol)."""
         if not chunk.text:
             return
@@ -130,7 +130,8 @@ class ChunkCollector:
             # Whisper mode: show actual audio duration and inference time
             chunk_audio_duration = chunk.end_time - chunk.start_time
             timing_suffix = (
-                f" | t={chunk.end_time:.2f}s | audio: {chunk_audio_duration:.2f}s | inference: {chunk.inference_seconds:.2f}s"
+                f" | t={chunk.end_time:.2f}s | audio: {chunk_audio_duration:.2f}s"
+                f" | inference: {chunk.inference_seconds:.2f}s"
             )
             label = f"[chunk {chunk.index:03d}{timing_suffix}]"
         else:
@@ -193,7 +194,7 @@ class ChunkCollector:
 
         return " ".join(cleaned_chunks)
 
-    def get_chunks(self) -> list[transcribe_demo.backend_protocol.TranscriptionChunk]:
+    def get_chunks(self) -> list[backend_protocol.TranscriptionChunk]:
         """Get all collected chunks."""
         return self._chunks.copy()
 

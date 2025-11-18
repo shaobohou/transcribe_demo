@@ -4,12 +4,7 @@ import sys
 import numpy as np
 import pytest
 
-import transcribe_demo.backend_config
-import transcribe_demo.backend_protocol
-import transcribe_demo.chunk_collector
-import transcribe_demo.cli
-import transcribe_demo.transcript_diff
-
+from transcribe_demo import backend_config, backend_protocol, chunk_collector, cli, transcript_diff
 
 class ColorStream(io.StringIO):
     """StringIO stream that reports itself as a TTY for colorized output."""
@@ -20,11 +15,23 @@ class ColorStream(io.StringIO):
 
 def test_chunk_collector_writes_and_stitches_chunks():
     stream = io.StringIO()
-    collector = transcribe_demo.chunk_collector.ChunkCollector(stream=stream)
+    collector = chunk_collector.ChunkCollector(stream=stream)
 
-    collector(chunk=transcribe_demo.backend_protocol.TranscriptionChunk(index=0, text="Hello, ", start_time=0.0, end_time=1.5, inference_seconds=0.25))
-    collector(chunk=transcribe_demo.backend_protocol.TranscriptionChunk(index=1, text="world.", start_time=1.5, end_time=3.0, inference_seconds=0.30))
-    collector(chunk=transcribe_demo.backend_protocol.TranscriptionChunk(index=2, text="How are you?", start_time=3.0, end_time=5.0, inference_seconds=0.45))
+    collector(
+        chunk=backend_protocol.TranscriptionChunk(
+            index=0, text="Hello, ", start_time=0.0, end_time=1.5, inference_seconds=0.25
+        )
+    )
+    collector(
+        chunk=backend_protocol.TranscriptionChunk(
+            index=1, text="world.", start_time=1.5, end_time=3.0, inference_seconds=0.30
+        )
+    )
+    collector(
+        chunk=backend_protocol.TranscriptionChunk(
+            index=2, text="How are you?", start_time=3.0, end_time=5.0, inference_seconds=0.45
+        )
+    )
 
     output = stream.getvalue()
     assert "[chunk 000 | t=1.50s" in output
@@ -36,9 +43,13 @@ def test_chunk_collector_writes_and_stitches_chunks():
 
 def test_chunk_collector_colorized_output_in_realtime_mode():
     stream = ColorStream()
-    collector = transcribe_demo.chunk_collector.ChunkCollector(stream=stream)
+    collector = chunk_collector.ChunkCollector(stream=stream)
 
-    collector(chunk=transcribe_demo.backend_protocol.TranscriptionChunk(index=0, text="Realtime chunk", start_time=0.0, end_time=2.0, inference_seconds=None))
+    collector(
+        chunk=backend_protocol.TranscriptionChunk(
+            index=0, text="Realtime chunk", start_time=0.0, end_time=2.0, inference_seconds=None
+        )
+    )
 
     output = stream.getvalue()
     assert "\x1b[36m" in output  # cyan label
@@ -56,12 +67,14 @@ def test_chunk_collector_colorized_output_in_realtime_mode():
     ],
 )
 def test_clean_chunk_text(text, is_final, expected):
-    assert transcribe_demo.chunk_collector.ChunkCollector._clean_chunk_text(text=text, is_final_chunk=is_final) == expected
+    assert chunk_collector.ChunkCollector._clean_chunk_text(text=text, is_final_chunk=is_final) == expected
 
 
 def test_print_transcription_summary_reports_differences():
     stream = io.StringIO()
-    transcribe_demo.transcript_diff.print_transcription_summary(stream=stream, final_text="hello world", complete_audio_text="hello brave world")
+    transcript_diff.print_transcription_summary(
+        stream=stream, final_text="hello world", complete_audio_text="hello brave world"
+    )
 
     written = stream.getvalue()
     assert "[FINAL STITCHED] hello world" in written
@@ -74,14 +87,14 @@ def test_print_transcription_summary_reports_differences():
 
 def test_print_transcription_summary_identical_texts(capsys):
     stream = io.StringIO()
-    transcribe_demo.transcript_diff.print_transcription_summary(stream=stream, final_text=" same ", complete_audio_text="same")
+    transcript_diff.print_transcription_summary(stream=stream, final_text=" same ", complete_audio_text="same")
 
     written = stream.getvalue()
     assert "matches complete audio transcription" in written
 
 
 def test_tokenize_with_original_strips_punctuation():
-    tokens = transcribe_demo.transcript_diff._tokenize_with_original(text="Hello, WORLD! it's me...")
+    tokens = transcript_diff._tokenize_with_original(text="Hello, WORLD! it's me...")
     assert tokens == [
         ("Hello,", "hello"),
         ("WORLD!", "world"),
@@ -91,27 +104,31 @@ def test_tokenize_with_original_strips_punctuation():
 
 
 def test_generate_diff_snippets_describes_changes():
-    snippets = transcribe_demo.transcript_diff._generate_diff_snippets(stitched_text="hello world", complete_text="hello brave world", use_color=False)
+    snippets = transcript_diff._generate_diff_snippets(
+        stitched_text="hello world", complete_text="hello brave world", use_color=False
+    )
     assert snippets  # at least one snippet
     tags = {entry["tag"] for entry in snippets}
     assert tags <= {"insert", "replace"}
 
 
 def test_colorize_token_respects_color_flag():
-    colored = transcribe_demo.transcript_diff._colorize_token(token="token", use_color=True, color_code="33")
+    colored = transcript_diff._colorize_token(token="token", use_color=True, color_code="33")
     assert colored.startswith("\x1b[2;33m") and colored.endswith("\x1b[0m")
-    plain = transcribe_demo.transcript_diff._colorize_token(token="token", use_color=False, color_code="33")
+    plain = transcript_diff._colorize_token(token="token", use_color=False, color_code="33")
     assert plain == "[[token]]"
 
 
 def test_format_diff_snippet_insertion_placeholder():
-    tokens = transcribe_demo.transcript_diff._tokenize_with_original(text="one two three")
-    snippet = transcribe_demo.transcript_diff._format_diff_snippet(tokens=tokens, diff_start=1, diff_end=1, use_color=False, color_code="36")
+    tokens = transcript_diff._tokenize_with_original(text="one two three")
+    snippet = transcript_diff._format_diff_snippet(
+        tokens=tokens, diff_start=1, diff_end=1, use_color=False, color_code="36"
+    )
     assert "[[∅]]" in snippet
 
 
 def test_normalize_whitespace_collapses_gaps():
-    assert transcribe_demo.transcript_diff._normalize_whitespace(text="alpha   beta\tgamma\n") == "alpha beta gamma"
+    assert transcript_diff._normalize_whitespace(text="alpha   beta\tgamma\n") == "alpha beta gamma"
 
 
 def test_main_exits_when_refine_flag_enabled(monkeypatch):
@@ -120,9 +137,9 @@ def test_main_exits_when_refine_flag_enabled(monkeypatch):
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
 
-    config = transcribe_demo.backend_config.CLIConfig(refine_with_context=True)
+    config = backend_config.CLIConfig(refine_with_context=True)
     with pytest.raises(SystemExit) as exc:
-        transcribe_demo.cli.main(config=config)
+        cli.main(config=config)
 
     assert exc.value.code == 1
     assert "--refine-with-context" in stderr.getvalue()
@@ -176,10 +193,11 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
         chunk_queue = kwargs.get("chunk_queue")
         if chunk_queue:
             # Put one test chunk
-            import transcribe_demo.backend_protocol
-            chunk_queue.put(transcribe_demo.backend_protocol.TranscriptionChunk(
-                index=0, text="test", start_time=0.0, end_time=1.0, inference_seconds=0.1
-            ))
+            chunk_queue.put(
+                backend_protocol.TranscriptionChunk(
+                    index=0, text="test", start_time=0.0, end_time=1.0, inference_seconds=0.1
+                )
+            )
             chunk_queue.put(None)  # Sentinel
         return DummyResult()
 
@@ -188,15 +206,15 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
         fake_run_whisper,
     )
 
-    config = transcribe_demo.backend_config.CLIConfig(
+    config = backend_config.CLIConfig(
         backend="whisper",
-        session=transcribe_demo.backend_config.SessionConfig(
+        session=backend_config.SessionConfig(
             compare_transcripts=True,
             session_log_dir=str(temp_session_dir),
         ),
         refine_with_context=False,
     )
-    transcribe_demo.cli.main(config=config)
+    cli.main(config=config)
 
     output = stdout.getvalue()
     assert "[FINAL STITCHED] stitched text" in output
@@ -249,10 +267,11 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
         chunk_queue = kwargs.get("chunk_queue")
         if chunk_queue:
             # Put one test chunk
-            import transcribe_demo.backend_protocol
-            chunk_queue.put(transcribe_demo.backend_protocol.TranscriptionChunk(
-                index=0, text="realtime", start_time=0.0, end_time=1.0, inference_seconds=None
-            ))
+            chunk_queue.put(
+                backend_protocol.TranscriptionChunk(
+                    index=0, text="realtime", start_time=0.0, end_time=1.0, inference_seconds=None
+                )
+            )
             chunk_queue.put(None)  # Sentinel
         return DummyRealtimeResult()
 
@@ -265,16 +284,16 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
         lambda *args, **kwargs: "full realtime transcription",
     )
 
-    config = transcribe_demo.backend_config.CLIConfig(
+    config = backend_config.CLIConfig(
         backend="realtime",
-        realtime=transcribe_demo.backend_config.RealtimeConfig(api_key="dummy"),
-        session=transcribe_demo.backend_config.SessionConfig(
+        realtime=backend_config.RealtimeConfig(api_key="dummy"),
+        session=backend_config.SessionConfig(
             compare_transcripts=False,
             session_log_dir=str(temp_session_dir),
         ),
         refine_with_context=False,
     )
-    transcribe_demo.cli.main(config=config)
+    cli.main(config=config)
 
     assert "[FINAL STITCHED] realtime stitched" in stdout.getvalue()
 
@@ -291,10 +310,10 @@ def test_cli_main_reads_api_key_from_environment(monkeypatch):
         captured_config.append(config)
         raise SystemExit(1)  # Exit immediately to avoid actual execution
 
-    monkeypatch.setattr(transcribe_demo.cli, "main", mock_main)
+    monkeypatch.setattr(cli, "main", mock_main)
 
     with pytest.raises(SystemExit):
-        transcribe_demo.cli.cli_main()
+        cli.cli_main()
 
     # Verify API key was populated from environment
     assert len(captured_config) == 1
@@ -313,10 +332,10 @@ def test_cli_main_prefers_explicit_api_key_over_env(monkeypatch):
         captured_config.append(config)
         raise SystemExit(1)
 
-    monkeypatch.setattr(transcribe_demo.cli, "main", mock_main)
+    monkeypatch.setattr(cli, "main", mock_main)
 
     with pytest.raises(SystemExit):
-        transcribe_demo.cli.cli_main()
+        cli.cli_main()
 
     # Verify explicit API key takes precedence
     assert len(captured_config) == 1

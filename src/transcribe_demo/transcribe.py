@@ -4,14 +4,14 @@ import queue
 import threading
 from collections.abc import Generator
 
-import transcribe_demo.backend_protocol
+from transcribe_demo import backend_protocol
 
 
 def transcribe(
     *,
-    backend: transcribe_demo.backend_protocol.TranscriptionBackend,
-    audio_source: transcribe_demo.backend_protocol.AudioSource,
-) -> Generator[transcribe_demo.backend_protocol.TranscriptionChunk, None, transcribe_demo.backend_protocol.TranscriptionResult]:
+    backend: backend_protocol.TranscriptionBackend,
+    audio_source: backend_protocol.AudioSource,
+) -> Generator[backend_protocol.TranscriptionChunk, None, backend_protocol.TranscriptionResult]:
     """
     Generator that yields transcription chunks from the specified backend.
 
@@ -37,8 +37,8 @@ def transcribe(
         for chunk in transcribe(backend, audio_source):
             print(chunk.text)
     """
-    chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None] = queue.Queue()
-    result_container: list[transcribe_demo.backend_protocol.TranscriptionResult] = []
+    chunk_queue: queue.Queue[backend_protocol.TranscriptionChunk | None] = queue.Queue()
+    result_container: list[backend_protocol.TranscriptionResult] = []
     error_container: list[BaseException] = []
 
     def backend_worker() -> None:

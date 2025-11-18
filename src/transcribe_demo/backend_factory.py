@@ -6,17 +6,14 @@ instead of directly accessing global FLAGS, improving modularity and testability
 
 from __future__ import annotations
 
-import transcribe_demo.backend_config
-import transcribe_demo.realtime_backend
-import transcribe_demo.session_logger
-import transcribe_demo.whisper_backend
+from transcribe_demo import backend_config, realtime_backend, session_logger, whisper_backend
 
 
 def create_whisper_backend(
     *,
-    config: transcribe_demo.backend_config.WhisperConfig,
-    session_logger: transcribe_demo.session_logger.SessionLogger | None,
-) -> transcribe_demo.whisper_backend.WhisperBackend:
+    config: backend_config.WhisperConfig,
+    session_logger: session_logger.SessionLogger | None,
+) -> whisper_backend.WhisperBackend:
     """
     Create and configure a Whisper backend from a configuration object.
 
@@ -27,7 +24,7 @@ def create_whisper_backend(
     Returns:
         Configured WhisperBackend instance
     """
-    return transcribe_demo.whisper_backend.WhisperBackend(
+    return whisper_backend.WhisperBackend(
         model_name=config.model,
         device_preference=config.device,
         require_gpu=config.require_gpu,
@@ -52,9 +49,9 @@ def create_whisper_backend(
 
 def create_realtime_backend(
     *,
-    config: transcribe_demo.backend_config.RealtimeConfig,
-    session_logger: transcribe_demo.session_logger.SessionLogger | None,
-) -> transcribe_demo.realtime_backend.RealtimeBackend:
+    config: backend_config.RealtimeConfig,
+    session_logger: session_logger.SessionLogger | None,
+) -> realtime_backend.RealtimeBackend:
     """
     Create and configure a Realtime backend from a configuration object.
 
@@ -74,7 +71,7 @@ def create_realtime_backend(
             "Provide --realtime.api_key or set OPENAI_API_KEY environment variable."
         )
 
-    return transcribe_demo.realtime_backend.RealtimeBackend(
+    return realtime_backend.RealtimeBackend(
         api_key=config.api_key,
         endpoint=config.endpoint,
         model=config.model,

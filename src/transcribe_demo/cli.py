@@ -7,22 +7,24 @@ from pathlib import Path
 
 from simple_parsing import ArgumentParser
 
-import transcribe_demo.audio_capture
-import transcribe_demo.backend_config
-import transcribe_demo.backend_factory
-import transcribe_demo.backend_protocol
-import transcribe_demo.chunk_collector
-import transcribe_demo.file_audio_source
-import transcribe_demo.session_logger
-import transcribe_demo.transcribe
-import transcribe_demo.transcript_diff
+from transcribe_demo import (
+    audio_capture,
+    backend_config,
+    backend_factory,
+    backend_protocol,
+    chunk_collector,
+    file_audio_source,
+    session_logger,
+    transcribe,
+    transcript_diff,
+)
 
 
 def _finalize_transcription_session(
     *,
-    collector: transcribe_demo.chunk_collector.ChunkCollector,
-    result: transcribe_demo.backend_protocol.TranscriptionResult | None,
-    session_logger: transcribe_demo.session_logger.SessionLogger,
+    collector: chunk_collector.ChunkCollector,
+    result: backend_protocol.TranscriptionResult | None,
+    session_logger: session_logger.SessionLogger,
     compare_transcripts: bool,
     min_log_duration: float,
 ) -> None:
@@ -57,7 +59,9 @@ def _finalize_transcription_session(
         comparison_text = result.full_audio_transcription
 
         if comparison_text:
-            similarity, diff_snippets = transcribe_demo.transcript_diff.compute_transcription_diff(stitched_text=final, complete_text=comparison_text)
+            similarity, diff_snippets = transcript_diff.compute_transcription_diff(
+                stitched_text=final, complete_text=comparison_text
+            )
 
     # Finalize session logging
     if result is not None:
@@ -74,16 +78,18 @@ def _finalize_transcription_session(
     # Print results
     if compare_transcripts:
         complete_audio_text = comparison_text or ""
-        transcribe_demo.transcript_diff.print_transcription_summary(stream=sys.stdout, final_text=final, complete_audio_text=complete_audio_text)
+        transcript_diff.print_transcription_summary(
+            stream=sys.stdout, final_text=final, complete_audio_text=complete_audio_text
+        )
     else:
-        transcribe_demo.transcript_diff.print_final_stitched(stream=sys.stdout, text=final)
+        transcript_diff.print_final_stitched(stream=sys.stdout, text=final)
 
     # Print captured duration
     if result is not None:
         print(f"Total captured audio duration: {result.capture_duration:.2f} seconds", file=sys.stderr)
 
 
-def main(*, config: transcribe_demo.backend_config.CLIConfig) -> None:
+def main(*, config: backend_config.CLIConfig) -> None:
     """
     Main entry point for transcription CLI.
 
@@ -139,7 +145,7 @@ def main(*, config: transcribe_demo.backend_config.CLIConfig) -> None:
 
     # Create session logger (always enabled)
     log_dir = Path(config.session.session_log_dir)
-    session_logger = transcribe_demo.session_logger.SessionLogger(
+    session_logger_obj = session_logger.SessionLogger(
         output_dir=log_dir,
         sample_rate=config.audio.sample_rate,
         channels=config.audio.channels,
@@ -149,50 +155,48 @@ def main(*, config: transcribe_demo.backend_config.CLIConfig) -> None:
     )
 
     # Create chunk collector
-    collector = transcribe_demo.chunk_collector.ChunkCollector(stream=sys.stdout)
+    collector = chunk_collector.ChunkCollector(stream=sys.stdout)
 
     # Create audio source
     if config.audio.audio_file:
-        audio_source: transcribe_demo.backend_protocol.AudioSource = transcribe_demo.file_audio_source.FileAudioSource(
+        audio_source: backend_protocol.AudioSource = file_audio_source.FileAudioSource(
             audio_file=config.audio.audio_file,
             sample_rate=config.audio.sample_rate,
             channels=config.audio.channels,
             max_capture_duration=config.session.max_capture_duration,
-            collect_full_audio=config.session.compare_transcripts or (session_logger is not None),
+            collect_full_audio=config.session.compare_transcripts or (session_logger_obj is not None),
             playback_speed=config.audio.playback_speed,
         )
     else:
-        audio_source = transcribe_demo.audio_capture.AudioCaptureManager(
+        audio_source = audio_capture.AudioCaptureManager(
             sample_rate=config.audio.sample_rate,
             channels=config.audio.channels,
             max_capture_duration=config.session.max_capture_duration,
-            collect_full_audio=config.session.compare_transcripts or (session_logger is not None),
+            collect_full_audio=config.session.compare_transcripts or (session_logger_obj is not None),
         )
 
     # Get backend configuration
-    backend_config = config.get_backend_config()
+    backend_cfg = config.get_backend_config()
 
     # Create backend
     if config.backend == "whisper":
-        backend: transcribe_demo.backend_protocol.TranscriptionBackend = (
-            transcribe_demo.backend_factory.create_whisper_backend(
-                config=backend_config,  # type: ignore[arg-type]
-                session_logger=session_logger,
-            )
+        backend: backend_protocol.TranscriptionBackend = backend_factory.create_whisper_backend(
+            config=backend_cfg,  # type: ignore[arg-type]
+            session_logger=session_logger_obj,
         )
     elif config.backend == "realtime":
-        backend = transcribe_demo.backend_factory.create_realtime_backend(
-            config=backend_config,  # type: ignore[arg-type]
-            session_logger=session_logger,
+        backend = backend_factory.create_realtime_backend(
+            config=backend_cfg,  # type: ignore[arg-type]
+            session_logger=session_logger_obj,
         )
     else:
         raise ValueError(f"Unknown backend: {config.backend}")
 
     # Run transcription using the generator
-    result: transcribe_demo.backend_protocol.TranscriptionResult | None = None
+    result: backend_protocol.TranscriptionResult | None = None
     try:
         # Create transcription generator
-        transcription_gen = transcribe_demo.transcribe.transcribe(backend=backend, audio_source=audio_source)
+        transcription_gen = transcribe.transcribe(backend=backend, audio_source=audio_source)
 
         # Consume chunks and collect result
         # Must use manual iteration to capture the generator's return value
@@ -210,7 +214,7 @@ def main(*, config: transcribe_demo.backend_config.CLIConfig) -> None:
         _finalize_transcription_session(
             collector=collector,
             result=result,
-            session_logger=session_logger,
+            session_logger=session_logger_obj,
             compare_transcripts=config.session.compare_transcripts,
             min_log_duration=config.session.min_log_duration,
         )
@@ -222,9 +226,9 @@ def cli_main() -> None:
         prog="transcribe-demo",
         description="Real-time audio transcription with Whisper and OpenAI Realtime API",
     )
-    parser.add_arguments(transcribe_demo.backend_config.CLIConfig, dest="config")
+    parser.add_arguments(backend_config.CLIConfig, dest="config")
     args = parser.parse_args()
-    config: transcribe_demo.backend_config.CLIConfig = args.config
+    config: backend_config.CLIConfig = args.config
 
     # Populate Realtime API key from environment if not provided via CLI
     if config.realtime.api_key is None:

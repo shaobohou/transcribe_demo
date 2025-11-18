@@ -20,8 +20,8 @@ import websockets
 if TYPE_CHECKING:
     import websockets.asyncio.client
 
-import transcribe_demo.backend_protocol
-import transcribe_demo.session_logger
+from transcribe_demo import backend_protocol
+from transcribe_demo import session_logger as session_logger_module
 
 
 def float_to_pcm16(*, audio: np.ndarray) -> bytes:
@@ -261,18 +261,17 @@ def run_realtime_transcriber(
     channels: int,
     chunk_duration: float,
     instructions: str,
-    audio_source: transcribe_demo.backend_protocol.AudioSource,
+    audio_source: backend_protocol.AudioSource,
     disable_ssl_verify: bool = False,
-    chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None] | None = None,
+    chunk_queue: queue.Queue[backend_protocol.TranscriptionChunk | None] | None = None,
     compare_transcripts: bool = True,
     language: str = "en",
-    session_logger: transcribe_demo.session_logger.SessionLogger | None = None,
+    session_logger: session_logger_module.SessionLogger | None = None,
     min_log_duration: float = 0.0,
     vad_threshold: float = 0.3,
     vad_silence_duration_ms: int = 200,
     debug: bool = False,
 ) -> RealtimeTranscriptionResult:
-
     # Use the provided audio source
     audio_capture = audio_source
 
@@ -389,7 +388,9 @@ def run_realtime_transcriber(
                                 window = buffer[:send_count]
                                 buffer = buffer[send_count:]
 
-                                resampled = _resample_audio(audio=window, from_rate=sample_rate, to_rate=session_sample_rate)
+                                resampled = _resample_audio(
+                                    audio=window, from_rate=sample_rate, to_rate=session_sample_rate
+                                )
                                 if len(resampled) == 0:
                                     if force_flush and buffer.size == 0:
                                         break
@@ -410,7 +411,9 @@ def run_realtime_transcriber(
 
                             # Send any remaining buffer
                             if buffer.size > 0:
-                                resampled = _resample_audio(audio=buffer, from_rate=sample_rate, to_rate=session_sample_rate)
+                                resampled = _resample_audio(
+                                    audio=buffer, from_rate=sample_rate, to_rate=session_sample_rate
+                                )
                                 if len(resampled) > 0:
                                     pcm_payload = base64.b64encode(float_to_pcm16(audio=resampled)).decode("ascii")
                                     await _send_json(
@@ -446,7 +449,7 @@ def run_realtime_transcriber(
                                     current_chunk_index = chunk_counter[0]
                                     chunk_counter[0] += 1
 
-                                chunk = transcribe_demo.backend_protocol.TranscriptionChunk(
+                                chunk = backend_protocol.TranscriptionChunk(
                                     index=current_chunk_index,
                                     text=final_text,
                                     start_time=chunk_start,
@@ -478,7 +481,8 @@ def run_realtime_transcriber(
                                     timeout = post_commit_timeout if committed_received else None
                                     message = await asyncio.wait_for(ws.recv(), timeout=timeout)
                                 except asyncio.TimeoutError:
-                                    # After commit, if we timeout waiting for more messages, flush any remaining partials
+                                    # After commit, if we timeout waiting for more messages, flush remaining
+                                    # partials
                                     if committed_received and partials:
                                         flush_remaining_partials()
                                     break
@@ -499,7 +503,8 @@ def run_realtime_transcriber(
                                         if debug:
                                             current_partial = partials[item_id]
                                             print(
-                                                f"[DEBUG] Delta event for {item_id}: partial length={len(current_partial)}, delta='{delta}'",
+                                                f"[DEBUG] Delta event for {item_id}: "
+                                                f"partial length={len(current_partial)}, delta='{delta}'",
                                                 file=sys.stderr,
                                                 flush=True,
                                             )
@@ -528,7 +533,7 @@ def run_realtime_transcriber(
                                         current_chunk_index = chunk_counter[0]
                                         chunk_counter[0] += 1
 
-                                    chunk = transcribe_demo.backend_protocol.TranscriptionChunk(
+                                    chunk = backend_protocol.TranscriptionChunk(
                                         index=current_chunk_index,
                                         text=final_text,
                                         start_time=chunk_start,
@@ -681,7 +686,7 @@ class RealtimeBackend:
     # Session configuration
     language: str = "en"
     compare_transcripts: bool = True
-    session_logger: transcribe_demo.session_logger.SessionLogger | None = None
+    session_logger: session_logger_module.SessionLogger | None = None
     min_log_duration: float = 0.0
 
     # SSL configuration
@@ -690,8 +695,8 @@ class RealtimeBackend:
     def run(
         self,
         *,
-        audio_source: transcribe_demo.backend_protocol.AudioSource,
-        chunk_queue: queue.Queue[transcribe_demo.backend_protocol.TranscriptionChunk | None] | None = None,
+        audio_source: backend_protocol.AudioSource,
+        chunk_queue: queue.Queue[backend_protocol.TranscriptionChunk | None] | None = None,
     ) -> RealtimeTranscriptionResult:
         """
         Run Realtime API transcription on the given audio source.
@@ -741,6 +746,7 @@ class RealtimeBackend:
             except Exception as exc:
                 # Log warning but don't fail - this is just for comparison
                 import sys
+
                 print(
                     f"WARNING: Unable to transcribe full audio for comparison: {exc}",
                     file=sys.stderr,
