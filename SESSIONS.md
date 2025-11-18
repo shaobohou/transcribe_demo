@@ -530,7 +530,7 @@ Test how different VAD settings affect chunking:
 
 ```bash
 # Original session with VAD aggressiveness 2
-uv run transcribe-demo --backend=whisper --vad_aggressiveness=2
+uv run transcribe-demo --backend whisper --aggressiveness 2
 
 # Retranscribe with more aggressive VAD
 uv run transcribe-session --command=retranscribe \
@@ -776,13 +776,13 @@ Session logging is always enabled and controlled by these flags:
 uv run transcribe-demo --session_log_dir /path/to/logs
 
 # Minimum duration to save (discard short test runs)
-uv run transcribe-demo --min_log_duration 10.0
+uv run transcribe-demo --session.min_log_duration 10.0
 
 # Save all sessions including very short ones
-uv run transcribe-demo --min_log_duration 0
+uv run transcribe-demo --session.min_log_duration 0
 
 # Disable comparison (no similarity/diffs, saves memory and API costs)
-uv run transcribe-demo --nocompare_transcripts
+uv run transcribe-demo --session.compare_transcripts false
 ```
 
 **Note:** Sessions shorter than `--min_log_duration` are automatically deleted to avoid cluttering logs.

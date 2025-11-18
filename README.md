@@ -66,7 +66,7 @@ The default model is `turbo` (1.51GB), which requires a GPU for real-time perfor
 
 ```bash
 # Recommended for CI/testing and production without GPU
-uv --project ci run transcribe-demo --model base.en
+uv --project ci run transcribe-demo --whisper.model base.en
 ```
 
 **Recommended models:**
@@ -84,8 +84,8 @@ uv --project ci run transcribe-demo --model base.en
 
 ```bash
 # Examples
-uv run transcribe-demo --model turbo      # Default: best accuracy, GPU
-uv run transcribe-demo --model base.en    # CPU-friendly, English-only
+uv run transcribe-demo --whisper.model turbo      # Default: best accuracy, GPU
+uv run transcribe-demo --whisper.model base.en    # CPU-friendly, English-only
 ```
 
 #### VAD Configuration
@@ -95,23 +95,23 @@ Fine-tune voice activity detection for your environment:
 **For responsive transcription with faster results:**
 ```bash
 # Get 2-3x faster first results with minimal accuracy loss
-uv run transcribe-demo --max_chunk_duration 20 --vad_min_silence_duration 0.6
+uv run transcribe-demo --max_chunk_duration 20 --min_silence_duration 0.6
 ```
 
 **Standard VAD tuning options:**
 ```bash
 # More aggressive pause detection (higher = more aggressive, 0-3)
-uv run transcribe-demo --vad_aggressiveness 3
+uv run transcribe-demo --aggressiveness 3
 
 # Minimum silence duration to split chunks (default: 0.2s)
 # Increase for slower chunking, decrease for faster response
-uv run transcribe-demo --vad_min_silence_duration 0.5
+uv run transcribe-demo --min_silence_duration 0.5
 
 # Minimum speech duration before transcribing (default: 0.25s)
-uv run transcribe-demo --vad_min_speech_duration 0.5
+uv run transcribe-demo --min_speech_duration 0.5
 
 # Padding before speech to avoid cutting words (default: 0.2s)
-uv run transcribe-demo --vad_speech_pad_duration 0.3
+uv run transcribe-demo --speech_pad_duration 0.3
 
 # Maximum chunk duration (default: 60s)
 # Increase if seeing duration warnings during long speech
@@ -119,10 +119,10 @@ uv run transcribe-demo --max_chunk_duration 90
 ```
 
 **Tuning guide:**
-- Increase `vad_aggressiveness` if missing speech
-- Decrease `vad_aggressiveness` if capturing background noise
-- Increase `vad_min_silence_duration` for slower, more deliberate chunking
-- Decrease `max_chunk_duration` for more responsive transcription
+- Increase `--aggressiveness` if missing speech
+- Decrease `--aggressiveness` if capturing background noise
+- Increase `--min_silence_duration` for slower, more deliberate chunking
+- Decrease `--max_chunk_duration` for more responsive transcription
 
 ### Realtime API Backend
 
@@ -141,8 +141,8 @@ Customize the realtime backend:
 
 ```bash
 uv run transcribe-demo --backend realtime \
-  --realtime_model gpt-realtime-mini \
-  --realtime_instructions "Your custom transcription instructions"
+  --realtime.model gpt-realtime-mini \
+  --instructions "Your custom transcription instructions"
 ```
 
 ### GPU Support
@@ -169,7 +169,7 @@ uv run transcribe-demo --ca_cert /path/to/corp-ca.pem
 
 # Disable SSL certificate verification (insecure, use as last resort)
 # Bypasses certificate issues for model downloads and Realtime API connections
-uv run transcribe-demo --disable_ssl_verify
+uv run transcribe-demo --disable_ssl_verify true
 ```
 
 ### Transcript Comparison & Capture Duration
@@ -184,10 +184,10 @@ uv run transcribe-demo --max_capture_duration 300
 uv run transcribe-demo --max_capture_duration 0
 
 # Disable transcript comparison (saves memory and API costs)
-uv run transcribe-demo --nocompare_transcripts
+uv run transcribe-demo --session.compare_transcripts false
 
 # Shorter session without comparison
-uv run transcribe-demo --max_capture_duration 60 --nocompare_transcripts
+uv run transcribe-demo --max_capture_duration 60 --session.compare_transcripts false
 ```
 
 **Note**: Comparison is enabled by default. For Realtime API, this doubles API usage. See **[DESIGN.md](DESIGN.md#diff-tracking-design)** for rationale.
@@ -279,10 +279,10 @@ See **[SESSIONS.md](SESSIONS.md)** for the complete session log format reference
 uv run transcribe-demo --session_log_dir /path/to/logs
 
 # Only save sessions longer than N seconds (default: 10.0s)
-uv run transcribe-demo --min_log_duration 30
+uv run transcribe-demo --session.min_log_duration 30
 
 # Save very short sessions including test runs
-uv run transcribe-demo --min_log_duration 0
+uv run transcribe-demo --session.min_log_duration 0
 ```
 
 **Note**: Sessions shorter than `--min_log_duration` are automatically discarded to avoid cluttering logs. See **[DESIGN.md](DESIGN.md#min-duration-filtering)** for rationale.

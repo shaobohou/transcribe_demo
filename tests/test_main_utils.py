@@ -3,15 +3,12 @@ import sys
 
 import numpy as np
 import pytest
-from absl.testing import flagsaver
 
+import transcribe_demo.backend_config
 import transcribe_demo.backend_protocol
 import transcribe_demo.chunk_collector
 import transcribe_demo.cli
 import transcribe_demo.transcript_diff
-
-if not transcribe_demo.cli.FLAGS.is_parsed():
-    transcribe_demo.cli.FLAGS(["pytest"], known_only=True)
 
 
 class ColorStream(io.StringIO):
@@ -123,10 +120,9 @@ def test_main_exits_when_refine_flag_enabled(monkeypatch):
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
 
-    with flagsaver.flagsaver():
-        transcribe_demo.cli.FLAGS.refine_with_context = True
-        with pytest.raises(SystemExit) as exc:
-            transcribe_demo.cli.main(["prog"])
+    config = transcribe_demo.backend_config.CLIConfig(refine_with_context=True)
+    with pytest.raises(SystemExit) as exc:
+        transcribe_demo.cli.main(config=config)
 
     assert exc.value.code == 1
     assert "--refine-with-context" in stderr.getvalue()
@@ -192,14 +188,15 @@ def test_main_whisper_flow_prints_summary(monkeypatch, temp_session_dir):
         fake_run_whisper,
     )
 
-    with flagsaver.flagsaver(
+    config = transcribe_demo.backend_config.CLIConfig(
         backend="whisper",
-        compare_transcripts=True,
+        session=transcribe_demo.backend_config.SessionConfig(
+            compare_transcripts=True,
+            session_log_dir=str(temp_session_dir),
+        ),
         refine_with_context=False,
-        temp_file=None,
-        session_log_dir=str(temp_session_dir),
-    ):
-        transcribe_demo.cli.main(["prog"])
+    )
+    transcribe_demo.cli.main(config=config)
 
     output = stdout.getvalue()
     assert "[FINAL STITCHED] stitched text" in output
@@ -268,13 +265,59 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
         lambda *args, **kwargs: "full realtime transcription",
     )
 
-    with flagsaver.flagsaver(
+    config = transcribe_demo.backend_config.CLIConfig(
         backend="realtime",
-        api_key="dummy",
-        compare_transcripts=False,
+        realtime=transcribe_demo.backend_config.RealtimeConfig(api_key="dummy"),
+        session=transcribe_demo.backend_config.SessionConfig(
+            compare_transcripts=False,
+            session_log_dir=str(temp_session_dir),
+        ),
         refine_with_context=False,
-        session_log_dir=str(temp_session_dir),
-    ):
-        transcribe_demo.cli.main(["prog"])
+    )
+    transcribe_demo.cli.main(config=config)
 
     assert "[FINAL STITCHED] realtime stitched" in stdout.getvalue()
+
+
+def test_cli_main_reads_api_key_from_environment(monkeypatch):
+    """Test that cli_main() reads API key from OPENAI_API_KEY environment variable."""
+    monkeypatch.setenv("OPENAI_API_KEY", "env-test-key")
+    monkeypatch.setattr(sys, "argv", ["transcribe-demo", "--backend", "realtime"])
+
+    # Mock main to capture the config
+    captured_config = []
+
+    def mock_main(*, config):
+        captured_config.append(config)
+        raise SystemExit(1)  # Exit immediately to avoid actual execution
+
+    monkeypatch.setattr(transcribe_demo.cli, "main", mock_main)
+
+    with pytest.raises(SystemExit):
+        transcribe_demo.cli.cli_main()
+
+    # Verify API key was populated from environment
+    assert len(captured_config) == 1
+    assert captured_config[0].realtime.api_key == "env-test-key"
+
+
+def test_cli_main_prefers_explicit_api_key_over_env(monkeypatch):
+    """Test that explicit --api_key takes precedence over environment."""
+    monkeypatch.setenv("OPENAI_API_KEY", "env-test-key")
+    monkeypatch.setattr(sys, "argv", ["transcribe-demo", "--backend", "realtime", "--api_key", "explicit-key"])
+
+    # Mock main to capture the config
+    captured_config = []
+
+    def mock_main(*, config):
+        captured_config.append(config)
+        raise SystemExit(1)
+
+    monkeypatch.setattr(transcribe_demo.cli, "main", mock_main)
+
+    with pytest.raises(SystemExit):
+        transcribe_demo.cli.cli_main()
+
+    # Verify explicit API key takes precedence
+    assert len(captured_config) == 1
+    assert captured_config[0].realtime.api_key == "explicit-key"

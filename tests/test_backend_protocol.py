@@ -315,8 +315,8 @@ class TestWhisperConfig:
         assert config.model == "turbo"
         assert config.device == "auto"
         assert config.require_gpu is False
-        assert config.sample_rate == 16000
-        assert config.channels == 1
+        assert config.language == "en"
+        assert config.compare_transcripts is True
         assert config.vad.aggressiveness == 2
         assert config.partial.enabled is False
 
@@ -326,7 +326,7 @@ class TestWhisperConfig:
             model="small",
             device="cuda",
             require_gpu=True,
-            sample_rate=48000,
+            language="es",
             vad=VADConfig(aggressiveness=3),
             partial=PartialTranscriptionConfig(enabled=True, model="tiny.en"),
         )
@@ -334,7 +334,7 @@ class TestWhisperConfig:
         assert config.model == "small"
         assert config.device == "cuda"
         assert config.require_gpu is True
-        assert config.sample_rate == 48000
+        assert config.language == "es"
         assert config.vad.aggressiveness == 3
         assert config.partial.enabled is True
 
@@ -386,19 +386,20 @@ class TestRealtimeConfig:
         assert config.vad.threshold == 0.2
 
     def test_realtime_config_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test Realtime config reads API key from environment."""
+        """Test Realtime config does NOT read API key from environment (cli.py does)."""
         monkeypatch.setenv("OPENAI_API_KEY", "env-key-456")
 
+        # Config should NOT automatically read from environment
         config = RealtimeConfig()
-
-        assert config.api_key == "env-key-456"
+        assert config.api_key is None
 
     def test_realtime_config_missing_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test Realtime config fails without API key."""
+        """Test Realtime config allows missing API key (validation happens in factory)."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-        with pytest.raises(ValueError, match="api_key is required for Realtime backend"):
-            RealtimeConfig()
+        # Config creation should succeed - validation happens in factory
+        config = RealtimeConfig()
+        assert config.api_key is None
 
     def test_custom_realtime_config(self) -> None:
         """Test custom Realtime configuration."""
