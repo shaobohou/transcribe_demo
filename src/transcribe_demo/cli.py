@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 from pathlib import Path
-from typing import cast
 
 from absl import app, flags
+from ml_collections import config_flags
 
 from transcribe_demo import (
     audio_capture,
@@ -23,189 +24,30 @@ from transcribe_demo import (
 # Flag Definitions
 # =============================================================================
 
-# Backend selection
 FLAGS = flags.FLAGS
-flags.DEFINE_enum("backend", "whisper", ["whisper", "realtime"], "Transcription backend to use.")
-flags.DEFINE_string(
-    "language",
-    "en",
-    "Preferred language code for transcription (e.g., en, es). "
-    "Use 'auto' to let the model detect. WARNING: 'auto' can cause hallucinations on silence.",
+
+# Define the configuration using DEFINE_config_dataclass
+# This automatically creates nested flags like --config.backend, --config.vad.aggressiveness, etc.
+# For testing compatibility, we pre-register common override flags by including them in sys_argv
+_COMMON_OVERRIDES = [
+    "--config.backend=dummy",
+    "--config.realtime.api_key=dummy",
+    "--config.whisper.partial.enabled=false",
+    "--config.whisper.vad.aggressiveness=2",
+]
+_sys_argv_for_registration = list(sys.argv) if sys.argv else ["prog"]
+# Add common overrides if not already present
+for override in _COMMON_OVERRIDES:
+    flag_name = override.split("=")[0]
+    if not any(arg.startswith(flag_name) for arg in _sys_argv_for_registration):
+        _sys_argv_for_registration.append(override)
+
+config_flags.DEFINE_config_dataclass(
+    "config",
+    backend_config.CLIConfig(),
+    "Configuration object for transcribe-demo CLI.",
+    sys_argv=_sys_argv_for_registration,
 )
-flags.DEFINE_bool("refine_with_context", False, "[NOT YET IMPLEMENTED] Use 3-chunk sliding window.")
-flags.DEFINE_string("ca_cert", None, "Custom certificate bundle to trust.")
-flags.DEFINE_bool(
-    "disable_ssl_verify",
-    False,
-    "Disable SSL certificate verification. WARNING: Insecure, not for production.",
-)
-
-# Audio configuration
-flags.DEFINE_integer("audio.sample_rate", 16000, "Input sample rate expected by the model.")
-flags.DEFINE_integer("audio.channels", 1, "Number of microphone input channels.")
-flags.DEFINE_string(
-    "audio.audio_file",
-    None,
-    "Path or URL to audio file for simulating live transcription. If provided, reads from file instead of mic.",
-)
-flags.DEFINE_float("audio.playback_speed", 1.0, "Playback speed multiplier when using audio_file.")
-
-# Session configuration
-flags.DEFINE_string("session.session_log_dir", "./session_logs", "Directory to save session logs.")
-flags.DEFINE_enum("session.audio_format", "flac", ["wav", "flac"], "Audio format for saved session files.")
-flags.DEFINE_float("session.min_log_duration", 10.0, "Minimum session duration (seconds) required to save logs.")
-flags.DEFINE_bool("session.compare_transcripts", True, "Compare chunked vs full-audio transcription at session end.")
-flags.DEFINE_float(
-    "session.max_capture_duration", 120.0, "Maximum duration (seconds) to run transcription. 0 = unlimited."
-)
-
-# Whisper configuration
-flags.DEFINE_string("whisper.model", "turbo", "Whisper model name (e.g., 'turbo', 'base.en', 'small').")
-flags.DEFINE_string("whisper.device", "auto", "Device to run on: 'auto', 'cpu', 'cuda', or 'mps'.")
-flags.DEFINE_bool("whisper.require_gpu", False, "Exit if GPU unavailable instead of falling back to CPU.")
-flags.DEFINE_string("whisper.language", "en", "Language code for transcription.")
-flags.DEFINE_bool("whisper.compare_transcripts", True, "Whether to compare chunked vs full audio transcription.")
-flags.DEFINE_float("whisper.min_log_duration", 10.0, "Minimum session duration for logging.")
-flags.DEFINE_string("whisper.ca_cert", None, "Custom certificate bundle for downloading models.")
-flags.DEFINE_bool("whisper.disable_ssl_verify", False, "Disable SSL verification (insecure).")
-flags.DEFINE_string("whisper.temp_file", None, "Optional path to persist audio chunks for inspection.")
-
-# VAD configuration (Whisper)
-flags.DEFINE_integer("vad.aggressiveness", 2, "VAD aggressiveness level (0-3). Higher = more aggressive filtering.")
-flags.DEFINE_float("vad.min_silence_duration", 0.2, "Minimum duration of silence (seconds) to trigger chunk split.")
-flags.DEFINE_float(
-    "vad.min_speech_duration", 0.25, "Minimum duration of speech (seconds) required before transcribing."
-)
-flags.DEFINE_float(
-    "vad.speech_pad_duration", 0.2, "Padding duration (seconds) added before speech to avoid cutting words."
-)
-flags.DEFINE_float("vad.max_chunk_duration", 60.0, "Maximum chunk duration (seconds). Prevents buffer overflow.")
-
-# Partial transcription configuration
-flags.DEFINE_bool("partial.enabled", False, "Whether to enable partial transcription.")
-flags.DEFINE_string("partial.model", "base.en", "Model to use for partial transcription (should be fast).")
-flags.DEFINE_float("partial.interval", 1.0, "Interval (seconds) between partial transcription updates.")
-flags.DEFINE_float("partial.max_buffer_seconds", 10.0, "Segment duration (seconds) for partial transcription.")
-
-# Realtime API configuration
-flags.DEFINE_string("realtime.api_key", None, "OpenAI API key. If None, reads from OPENAI_API_KEY env var.")
-flags.DEFINE_string("realtime.model", "gpt-realtime-mini", "Realtime model to use.")
-flags.DEFINE_string("realtime.endpoint", "wss://api.openai.com/v1/realtime", "Realtime websocket endpoint.")
-flags.DEFINE_string(
-    "realtime.instructions",
-    (
-        "You are a high-accuracy transcription service. "
-        "Return a concise verbatim transcript of the most recent audio buffer. "
-        "Do not add commentary or speaker labels."
-    ),
-    "Instruction prompt sent to the realtime model.",
-)
-flags.DEFINE_float("realtime.chunk_duration", 2.0, "Fixed chunk duration for Realtime API (seconds).")
-flags.DEFINE_string("realtime.language", "en", "Language code for transcription.")
-flags.DEFINE_bool("realtime.compare_transcripts", True, "Whether to compare chunked vs full audio transcription.")
-flags.DEFINE_float("realtime.min_log_duration", 10.0, "Minimum session duration for logging.")
-flags.DEFINE_bool("realtime.disable_ssl_verify", False, "Disable SSL verification (insecure).")
-flags.DEFINE_bool("realtime.debug", False, "Enable debug logging for realtime transcription events.")
-
-# Realtime VAD configuration
-flags.DEFINE_float(
-    "realtime.vad.threshold", 0.2, "Server VAD threshold for turn detection (0.0-1.0). Lower = more sensitive."
-)
-flags.DEFINE_integer(
-    "realtime.vad.silence_duration_ms", 100, "Silence duration (ms) required to detect turn boundary."
-)
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-
-def _flags_to_config() -> backend_config.CLIConfig:
-    """Convert parsed flags to CLIConfig dataclass."""
-    # Build nested configs
-    vad_config = backend_config.VADConfig(
-        aggressiveness=cast(int, FLAGS["vad.aggressiveness"].value),
-        min_silence_duration=cast(float, FLAGS["vad.min_silence_duration"].value),
-        min_speech_duration=cast(float, FLAGS["vad.min_speech_duration"].value),
-        speech_pad_duration=cast(float, FLAGS["vad.speech_pad_duration"].value),
-        max_chunk_duration=cast(float, FLAGS["vad.max_chunk_duration"].value),
-    )
-
-    partial_config = backend_config.PartialTranscriptionConfig(
-        enabled=cast(bool, FLAGS["partial.enabled"].value),
-        model=cast(str, FLAGS["partial.model"].value),
-        interval=cast(float, FLAGS["partial.interval"].value),
-        max_buffer_seconds=cast(float, FLAGS["partial.max_buffer_seconds"].value),
-    )
-
-    whisper_ca_cert_val = FLAGS["whisper.ca_cert"].value
-    whisper_temp_file_val = FLAGS["whisper.temp_file"].value
-
-    whisper_config = backend_config.WhisperConfig(
-        model=cast(str, FLAGS["whisper.model"].value),
-        device=cast(str, FLAGS["whisper.device"].value),
-        require_gpu=cast(bool, FLAGS["whisper.require_gpu"].value),
-        vad=vad_config,
-        partial=partial_config,
-        language=cast(str, FLAGS["whisper.language"].value),
-        compare_transcripts=cast(bool, FLAGS["whisper.compare_transcripts"].value),
-        min_log_duration=cast(float, FLAGS["whisper.min_log_duration"].value),
-        ca_cert=Path(whisper_ca_cert_val) if whisper_ca_cert_val else None,
-        disable_ssl_verify=cast(bool, FLAGS["whisper.disable_ssl_verify"].value),
-        temp_file=Path(whisper_temp_file_val) if whisper_temp_file_val else None,
-    )
-
-    realtime_vad_config = backend_config.RealtimeVADConfig(
-        threshold=cast(float, FLAGS["realtime.vad.threshold"].value),
-        silence_duration_ms=cast(int, FLAGS["realtime.vad.silence_duration_ms"].value),
-    )
-
-    # Handle API key from environment if not provided
-    api_key = FLAGS["realtime.api_key"].value
-    if api_key is None:
-        api_key = os.getenv("OPENAI_API_KEY")
-
-    realtime_config = backend_config.RealtimeConfig(
-        api_key=api_key,
-        model=cast(str, FLAGS["realtime.model"].value),
-        endpoint=cast(str, FLAGS["realtime.endpoint"].value),
-        instructions=cast(str, FLAGS["realtime.instructions"].value),
-        chunk_duration=cast(float, FLAGS["realtime.chunk_duration"].value),
-        vad=realtime_vad_config,
-        language=cast(str, FLAGS["realtime.language"].value),
-        compare_transcripts=cast(bool, FLAGS["realtime.compare_transcripts"].value),
-        min_log_duration=cast(float, FLAGS["realtime.min_log_duration"].value),
-        disable_ssl_verify=cast(bool, FLAGS["realtime.disable_ssl_verify"].value),
-        debug=cast(bool, FLAGS["realtime.debug"].value),
-    )
-
-    audio_config = backend_config.AudioConfig(
-        sample_rate=cast(int, FLAGS["audio.sample_rate"].value),
-        channels=cast(int, FLAGS["audio.channels"].value),
-        audio_file=FLAGS["audio.audio_file"].value,
-        playback_speed=cast(float, FLAGS["audio.playback_speed"].value),
-    )
-
-    session_config = backend_config.SessionConfig(
-        session_log_dir=cast(str, FLAGS["session.session_log_dir"].value),
-        audio_format=cast(str, FLAGS["session.audio_format"].value),  # type: ignore[arg-type]
-        min_log_duration=cast(float, FLAGS["session.min_log_duration"].value),
-        compare_transcripts=cast(bool, FLAGS["session.compare_transcripts"].value),
-        max_capture_duration=cast(float, FLAGS["session.max_capture_duration"].value),
-    )
-
-    return backend_config.CLIConfig(
-        backend=cast(str, FLAGS.backend),  # type: ignore[arg-type]
-        language=cast(str, FLAGS.language),
-        audio=audio_config,
-        session=session_config,
-        whisper=whisper_config,
-        realtime=realtime_config,
-        refine_with_context=cast(bool, FLAGS.refine_with_context),
-        ca_cert=FLAGS.ca_cert,
-        disable_ssl_verify=cast(bool, FLAGS.disable_ssl_verify),
-    )
 
 
 def _finalize_transcription_session(
@@ -412,7 +254,21 @@ def cli_main(argv):
     """Entry point for the CLI (called by absl.app.run)."""
     # Parse flags
     FLAGS(argv)  # This parses the command-line flags
-    config = _flags_to_config()
+
+    # Get config from FLAGS
+    config = FLAGS.config
+
+    # Handle environment variable fallback for API key
+    # If api_key is empty, try to read from OPENAI_API_KEY env var
+    if not config.realtime.api_key:
+        env_api_key = os.getenv("OPENAI_API_KEY")
+        if env_api_key:
+            # Create updated realtime config with env API key
+            config = dataclasses.replace(
+                config,
+                realtime=dataclasses.replace(config.realtime, api_key=env_api_key),
+            )
+
     main(config=config)
 
 

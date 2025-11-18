@@ -6,6 +6,8 @@ instead of directly accessing global FLAGS, improving modularity and testability
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from transcribe_demo import backend_config, realtime_backend, session_logger, whisper_backend
 
 
@@ -41,9 +43,9 @@ def create_whisper_backend(
         compare_transcripts=config.compare_transcripts,
         session_logger=session_logger,
         min_log_duration=config.min_log_duration,
-        ca_cert=config.ca_cert,
+        ca_cert=Path(config.ca_cert) if config.ca_cert and config.ca_cert.strip() else None,
         disable_ssl_verify=config.disable_ssl_verify,
-        temp_file=config.temp_file,
+        temp_file=Path(config.temp_file) if config.temp_file and config.temp_file.strip() else None,
     )
 
 
