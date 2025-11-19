@@ -3,13 +3,12 @@
 This module provides structured configuration for Whisper and Realtime backends,
 replacing the previous pattern of passing 20+ individual arguments.
 
-All configuration dataclasses use simple-parsing for automatic CLI generation.
+All configuration dataclasses are used with simple-parsing for CLI generation.
 """
 
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
 from typing import Literal
 
 
@@ -93,65 +92,46 @@ class WhisperConfig:
     model: str = "turbo"
     """Whisper model name (e.g., 'turbo', 'base.en', 'small')."""
 
-    device: str = "auto"
+    device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
     """Device to run on: 'auto', 'cpu', 'cuda', or 'mps'."""
 
     require_gpu: bool = False
     """If True, exit if GPU unavailable instead of falling back to CPU."""
 
     # VAD settings
-    vad: "VADConfig" = dataclasses.field(default_factory=VADConfig)
+    vad: VADConfig = dataclasses.field(default_factory=VADConfig)
     """Voice Activity Detection configuration."""
 
     # Partial transcription
-    partial: "PartialTranscriptionConfig" = dataclasses.field(default_factory=PartialTranscriptionConfig)
+    partial: PartialTranscriptionConfig = dataclasses.field(default_factory=PartialTranscriptionConfig)
     """Partial transcription configuration."""
 
-    # Language and comparison
-    language: str = "en"
-    """Language code for transcription."""
-
-    compare_transcripts: bool = True
-    """Whether to compare chunked vs full audio transcription."""
-
-    min_log_duration: float = 10.0
-    """Minimum session duration for logging."""
-
-    # SSL/Certificate settings (for model downloads)
-    ca_cert: Path | None = None
-    """Custom certificate bundle to trust when downloading models."""
-
-    disable_ssl_verify: bool = False
-    """Disable SSL verification (insecure)."""
-
     # Debugging
-    temp_file: Path | None = None
-    """Optional path to persist audio chunks for inspection."""
+    debug: bool = False
+    """Enable debug logging for Whisper transcription."""
+
+    debug_output_dir: str | None = None
+    """Optional directory to save audio chunks for inspection."""
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
-class RealtimeVADConfig:
-    """
-    Voice Activity Detection configuration for Realtime API.
-
-    Note: Realtime API uses server-side VAD with different parameters
-    than WebRTC VAD used in Whisper backend.
+class TurnDetectionConfig:
+    """Server-side turn detection configuration for Realtime API.
+    Note: This is fundamentally different from the local WebRTC VAD used in Whisper backend.
     """
 
     threshold: float = 0.2
-    """
-    Server VAD threshold for turn detection (0.0-1.0).
-    Lower = more sensitive. Default 0.2 works well for continuous speech.
+    """Server turn detection threshold (0.0-1.0). Lower = more sensitive.
+    Default 0.2 works well for continuous speech.
     """
 
     silence_duration_ms: int = 100
-    """
-    Silence duration (milliseconds) required to detect turn boundary.
+    """Silence duration (milliseconds) required to detect turn boundary.
     Lower values = more frequent chunks. Default 100ms works for fast-paced content.
     """
 
     def __post_init__(self) -> None:
-        """Validate Realtime VAD configuration."""
+        """Validate turn detection configuration."""
         if not 0.0 <= self.threshold <= 1.0:
             raise ValueError(f"threshold must be 0.0-1.0, got {self.threshold}")
         if not 100 <= self.silence_duration_ms <= 2000:
@@ -160,11 +140,8 @@ class RealtimeVADConfig:
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class RealtimeConfig:
-    """
-    Configuration for Realtime API backend (cloud transcription).
-
-    Contains all settings for API credentials, endpoints, server-side VAD,
-    and session management.
+    """Configuration for Realtime API backend (cloud transcription).
+    Contains all settings for API credentials, endpoints, server-side turn detection, and session management.
     """
 
     # API settings
@@ -182,36 +159,24 @@ class RealtimeConfig:
         "Return a concise verbatim transcript of the most recent audio buffer. "
         "Do not add commentary or speaker labels."
     )
-    """Instruction prompt sent to the realtime model."""
+    """System instruction prompt sent to the realtime model to guide transcription behavior."""
 
     # Chunking (fixed for Realtime API)
     chunk_duration: float = 2.0
-    """
-    Fixed chunk duration for Realtime API (seconds).
+    """Fixed chunk duration for Realtime API (seconds).
     Note: This is NOT configurable like Whisper's VAD-based chunking.
     """
 
-    # Server-side VAD
-    vad: "RealtimeVADConfig" = dataclasses.field(default_factory=RealtimeVADConfig)
-    """Server-side Voice Activity Detection configuration."""
-
-    # Language and comparison
-    language: str = "en"
-    """Language code for transcription."""
-
-    compare_transcripts: bool = True
-    """Whether to compare chunked vs full audio transcription."""
-
-    min_log_duration: float = 10.0
-    """Minimum session duration for logging."""
-
-    # SSL/Security
-    disable_ssl_verify: bool = False
-    """Disable SSL verification (insecure)."""
+    # Server-side turn detection
+    turn_detection: TurnDetectionConfig = dataclasses.field(default_factory=TurnDetectionConfig)
+    """Server-side turn detection configuration."""
 
     # Debugging
     debug: bool = False
     """Enable debug logging for realtime transcription events."""
+
+    debug_output_dir: str | None = None
+    """Optional directory to save WebSocket messages and debug data."""
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -226,8 +191,8 @@ class AudioConfig:
 
     audio_file: str | None = None
     """Path or URL to audio file for simulating live transcription (MP3, WAV, FLAC, etc.).
-    Supports local files and HTTP/HTTPS URLs. If provided, audio will be read from
-    file/URL instead of microphone."""
+    Supports local files and HTTP/HTTPS URLs. If provided, audio will be read from file/URL instead of microphone.
+    """
 
     playback_speed: float = 1.0
     """Playback speed multiplier when using audio_file (1.0 = real-time, 2.0 = 2x speed)."""
@@ -247,38 +212,30 @@ class SessionConfig:
     """Session logging and comparison configuration."""
 
     session_log_dir: str = "./session_logs"
-    """Directory to save session logs. All sessions are logged with full audio,
-    chunk audio, and metadata."""
+    """Directory to save session logs. All sessions are logged with full audio, chunk audio, and metadata."""
 
     audio_format: Literal["wav", "flac"] = "flac"
-    """Audio format for saved session files. 'flac' provides lossless compression
-    (~50-60% smaller), 'wav' is uncompressed."""
+    """Audio format for saved session files ('flac' = lossless compression, 'wav' = uncompressed)."""
 
     min_log_duration: float = 10.0
-    """Minimum session duration (seconds) required to save logs. Sessions shorter
-    than this are discarded."""
+    """Minimum session duration (seconds) required to save logs. Sessions shorter than this are discarded."""
 
     compare_transcripts: bool = True
     """Compare chunked transcription with full-audio transcription at session end.
-    Note: For Realtime API, this doubles API usage cost."""
-
-    max_capture_duration: float = 120.0
-    """Maximum duration (seconds) to run the transcription session. Program will
-    gracefully stop after this duration. Set to 0 for unlimited duration."""
+    For Realtime API, this doubles API usage cost.
+    """
 
     def __post_init__(self) -> None:
         """Validate session configuration."""
+        if self.audio_format not in ("wav", "flac"):
+            raise ValueError(f"audio_format must be 'wav' or 'flac', got {self.audio_format}")
         if self.min_log_duration < 0:
             raise ValueError(f"min_log_duration must be non-negative, got {self.min_log_duration}")
-        if self.max_capture_duration < 0:
-            raise ValueError(f"max_capture_duration must be non-negative, got {self.max_capture_duration}")
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class CLIConfig:
-    """
-    Complete CLI configuration for transcribe-demo.
-
+    """Complete CLI configuration for transcribe-demo.
     This is the top-level configuration that combines all settings and is used
     with simple-parsing to auto-generate command-line arguments.
     """
@@ -287,20 +244,26 @@ class CLIConfig:
     """Transcription backend to use."""
 
     language: str = "en"
-    """Preferred language code for transcription (e.g., en, es). Use 'auto' to let
-    the model detect. WARNING: 'auto' can cause hallucinations on silence."""
+    """Preferred language code for transcription (e.g., en, es).
+    Use 'auto' to let the model detect. WARNING: 'auto' can cause hallucinations on silence.
+    """
+
+    max_capture_duration: float = 120.0
+    """Maximum duration (seconds) to run the transcription session.
+    Program will gracefully stop after this duration. Set to 0 for unlimited duration.
+    """
 
     # Nested configurations
-    audio: "AudioConfig" = dataclasses.field(default_factory=AudioConfig)
+    audio: AudioConfig = dataclasses.field(default_factory=AudioConfig)
     """Audio capture and playback settings."""
 
-    session: "SessionConfig" = dataclasses.field(default_factory=SessionConfig)
+    session: SessionConfig = dataclasses.field(default_factory=SessionConfig)
     """Session logging and comparison settings."""
 
-    whisper: "WhisperConfig" = dataclasses.field(default_factory=WhisperConfig)
+    whisper: WhisperConfig = dataclasses.field(default_factory=WhisperConfig)
     """Whisper backend configuration (used when backend='whisper')."""
 
-    realtime: "RealtimeConfig" = dataclasses.field(default_factory=RealtimeConfig)
+    realtime: RealtimeConfig = dataclasses.field(default_factory=RealtimeConfig)
     """Realtime API configuration (used when backend='realtime')."""
 
     # Feature flags
@@ -312,8 +275,14 @@ class CLIConfig:
     """Custom certificate bundle to trust when downloading models or connecting to APIs."""
 
     disable_ssl_verify: bool = False
-    """Disable SSL certificate verification for all network operations. WARNING: This is
-    insecure and not recommended for production use."""
+    """Disable SSL certificate verification for all network operations.
+    WARNING: This is insecure and not recommended for production use.
+    """
+
+    def __post_init__(self) -> None:
+        """Validate CLI configuration."""
+        if self.max_capture_duration < 0:
+            raise ValueError(f"max_capture_duration must be non-negative, got {self.max_capture_duration}")
 
     def get_backend_config(self) -> WhisperConfig | RealtimeConfig:
         """
@@ -323,21 +292,6 @@ class CLIConfig:
             WhisperConfig if backend='whisper', RealtimeConfig if backend='realtime'
         """
         if self.backend == "whisper":
-            # Update WhisperConfig with global SSL settings
-            return dataclasses.replace(
-                self.whisper,
-                language=self.language,
-                compare_transcripts=self.session.compare_transcripts,
-                min_log_duration=self.session.min_log_duration,
-                ca_cert=Path(self.ca_cert) if self.ca_cert else None,
-                disable_ssl_verify=self.disable_ssl_verify,
-            )
+            return self.whisper
         else:  # realtime
-            # Update RealtimeConfig with global settings
-            return dataclasses.replace(
-                self.realtime,
-                language=self.language,
-                compare_transcripts=self.session.compare_transcripts,
-                min_log_duration=self.session.min_log_duration,
-                disable_ssl_verify=self.disable_ssl_verify,
-            )
+            return self.realtime

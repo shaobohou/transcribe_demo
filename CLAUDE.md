@@ -21,7 +21,7 @@ uv run ruff format                        # Format code
 # CPU-only (CI/sandboxes - REQUIRED!)
 uv sync --project ci --refresh
 ./run-checks.sh --ci                      # Run all checks (CPU-only, no CUDA downloads)
-uv --project ci run transcribe-demo --audio_file audio.mp3 --whisper.model base.en
+uv --project ci run transcribe-demo --audio.audio_file audio.mp3 --whisper.model base.en
 uv --project ci run python -m pytest
 ```
 
@@ -81,7 +81,7 @@ CLIConfig
 │   ├── vad: VADConfig
 │   └── partial: PartialTranscriptionConfig
 └── realtime: RealtimeConfig
-    └── vad: RealtimeVADConfig
+    └── turn_detection: TurnDetectionConfig
 ```
 
 ## Critical Implementation Rules
@@ -128,9 +128,10 @@ CLIConfig
    - Use `--disable_ssl_verify true` as last resort (insecure, not for production)
    - Affects both model downloads and Realtime API WebSocket connections
 7. **CLI argument format:** Simple-parsing uses nested dotted notation:
-   - Whisper settings: `--whisper.model base.en`, `--device cpu`
-   - Session settings: `--max_capture_duration 60`, `--session.compare_transcripts false`
-   - Audio settings: `--audio_file file.mp3`, `--playback_speed 2.0`
+   - Whisper settings: `--whisper.model base.en`, `--whisper.device cpu`
+   - Runtime settings: `--max_capture_duration 60`, `--session.compare_transcripts false`
+   - Audio settings: `--audio.audio_file file.mp3`, `--audio.playback_speed 2.0`
+   - Realtime settings: `--realtime.turn_detection.threshold 0.5`
 
 ## Testing
 
@@ -177,4 +178,4 @@ See **[SITEMAP.md](SITEMAP.md)** for complete documentation guide.
 
 ---
 
-*Last Updated: 2025-11-17*
+*Last Updated: 2025-11-19*

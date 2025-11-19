@@ -5,7 +5,8 @@ import os
 import sys
 from pathlib import Path
 
-from simple_parsing import ArgumentParser
+from simple_parsing import ArgumentGenerationMode, ArgumentParser, DashVariant
+from simple_parsing.wrappers.field_wrapper import NestedMode
 
 from transcribe_demo import (
     audio_capture,
@@ -107,18 +108,18 @@ def main(*, config: backend_config.CLIConfig) -> None:
         sys.exit(1)
 
     # Warn about memory usage with unlimited duration and comparison enabled
-    if config.session.compare_transcripts and config.session.max_capture_duration == 0:
+    if config.session.compare_transcripts and config.max_capture_duration == 0:
         print(
             "WARNING: Running with unlimited duration and comparison enabled will "
             "continuously accumulate audio in memory.\n"
-            "Consider setting --session.max_capture_duration or use --session.compare_transcripts=false "
+            "Consider setting --max_capture_duration or use --session.compare_transcripts=false "
             "to reduce memory usage.\n",
             file=sys.stderr,
         )
 
     # Confirm long capture durations with comparison enabled
-    if config.session.compare_transcripts and config.session.max_capture_duration > 300:  # > 5 minutes
-        duration_minutes = config.session.max_capture_duration / 60.0
+    if config.session.compare_transcripts and config.max_capture_duration > 300:  # > 5 minutes
+        duration_minutes = config.max_capture_duration / 60.0
         print(
             f"You have set a capture duration of {duration_minutes:.1f} minutes with comparison enabled.\n"
             f"This will keep audio in memory for the entire session.",
@@ -163,7 +164,7 @@ def main(*, config: backend_config.CLIConfig) -> None:
             audio_file=config.audio.audio_file,
             sample_rate=config.audio.sample_rate,
             channels=config.audio.channels,
-            max_capture_duration=config.session.max_capture_duration,
+            max_capture_duration=config.max_capture_duration,
             collect_full_audio=config.session.compare_transcripts or (session_logger_obj is not None),
             playback_speed=config.audio.playback_speed,
         )
@@ -171,7 +172,7 @@ def main(*, config: backend_config.CLIConfig) -> None:
         audio_source = audio_capture.AudioCaptureManager(
             sample_rate=config.audio.sample_rate,
             channels=config.audio.channels,
-            max_capture_duration=config.session.max_capture_duration,
+            max_capture_duration=config.max_capture_duration,
             collect_full_audio=config.session.compare_transcripts or (session_logger_obj is not None),
         )
 
@@ -182,11 +183,20 @@ def main(*, config: backend_config.CLIConfig) -> None:
     if config.backend == "whisper":
         backend: backend_protocol.TranscriptionBackend = backend_factory.create_whisper_backend(
             config=backend_cfg,  # type: ignore[arg-type]
+            language=config.language,
+            compare_transcripts=config.session.compare_transcripts,
+            min_log_duration=config.session.min_log_duration,
+            ca_cert=config.ca_cert,
+            disable_ssl_verify=config.disable_ssl_verify,
             session_logger=session_logger_obj,
         )
     elif config.backend == "realtime":
         backend = backend_factory.create_realtime_backend(
             config=backend_cfg,  # type: ignore[arg-type]
+            language=config.language,
+            compare_transcripts=config.session.compare_transcripts,
+            min_log_duration=config.session.min_log_duration,
+            disable_ssl_verify=config.disable_ssl_verify,
             session_logger=session_logger_obj,
         )
     else:
@@ -220,28 +230,33 @@ def main(*, config: backend_config.CLIConfig) -> None:
         )
 
 
-def cli_main() -> None:
-    """Entry point for the CLI (called by pyproject.toml console_scripts)."""
+def run():
+    """Main entry point for the CLI."""
+    # Parse arguments using simple-parsing
     parser = ArgumentParser(
         prog="transcribe-demo",
-        description="Real-time audio transcription with Whisper and OpenAI Realtime API",
+        description="Real-time speech transcription with Whisper and OpenAI Realtime API",
+        add_option_string_dash_variants=DashVariant.AUTO,  # Preserve underscores, no dash variants
+        argument_generation_mode=ArgumentGenerationMode.NESTED,  # Always use full dotted paths
+        nested_mode=NestedMode.WITHOUT_ROOT,  # Remove "config." prefix from flags
     )
     parser.add_arguments(backend_config.CLIConfig, dest="config")
     args = parser.parse_args()
     config: backend_config.CLIConfig = args.config
 
-    # Populate Realtime API key from environment if not provided via CLI
+    # Handle environment variable fallback for API key
+    # If api_key is None, try to read from OPENAI_API_KEY env var
     if config.realtime.api_key is None:
-        api_key_from_env = os.getenv("OPENAI_API_KEY")
-        if api_key_from_env is not None:
-            # Update the realtime config with the API key from environment
+        env_api_key = os.getenv("OPENAI_API_KEY")
+        if env_api_key:
+            # Create updated realtime config with env API key
             config = dataclasses.replace(
                 config,
-                realtime=dataclasses.replace(config.realtime, api_key=api_key_from_env),
+                realtime=dataclasses.replace(config.realtime, api_key=env_api_key),
             )
 
     main(config=config)
 
 
 if __name__ == "__main__":
-    cli_main()
+    run()

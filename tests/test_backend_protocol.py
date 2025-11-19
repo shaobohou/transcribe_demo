@@ -8,7 +8,7 @@ import pytest
 from transcribe_demo.backend_config import (
     PartialTranscriptionConfig,
     RealtimeConfig,
-    RealtimeVADConfig,
+    TurnDetectionConfig,
     VADConfig,
     WhisperConfig,
 )
@@ -315,8 +315,6 @@ class TestWhisperConfig:
         assert config.model == "turbo"
         assert config.device == "auto"
         assert config.require_gpu is False
-        assert config.language == "en"
-        assert config.compare_transcripts is True
         assert config.vad.aggressiveness == 2
         assert config.partial.enabled is False
 
@@ -326,7 +324,6 @@ class TestWhisperConfig:
             model="small",
             device="cuda",
             require_gpu=True,
-            language="es",
             vad=VADConfig(aggressiveness=3),
             partial=PartialTranscriptionConfig(enabled=True, model="tiny.en"),
         )
@@ -334,43 +331,42 @@ class TestWhisperConfig:
         assert config.model == "small"
         assert config.device == "cuda"
         assert config.require_gpu is True
-        assert config.language == "es"
         assert config.vad.aggressiveness == 3
         assert config.partial.enabled is True
 
 
-class TestRealtimeVADConfig:
-    """Test RealtimeVADConfig validation."""
+class TestTurnDetectionConfig:
+    """Test TurnDetectionConfig validation."""
 
-    def test_default_realtime_vad_config(self) -> None:
-        """Test default Realtime VAD configuration."""
-        config = RealtimeVADConfig()
+    def test_default_turn_detection_config(self) -> None:
+        """Test default turn detection configuration."""
+        config = TurnDetectionConfig()
 
         assert config.threshold == 0.2
         assert config.silence_duration_ms == 100
 
-    def test_custom_realtime_vad_config(self) -> None:
-        """Test custom Realtime VAD configuration."""
-        config = RealtimeVADConfig(threshold=0.5, silence_duration_ms=500)
+    def test_custom_turn_detection_config(self) -> None:
+        """Test custom turn detection configuration."""
+        config = TurnDetectionConfig(threshold=0.5, silence_duration_ms=500)
 
         assert config.threshold == 0.5
         assert config.silence_duration_ms == 500
 
-    def test_realtime_vad_invalid_threshold(self) -> None:
-        """Test Realtime VAD config rejects invalid threshold."""
+    def test_turn_detection_invalid_threshold(self) -> None:
+        """Test turn detection config rejects invalid threshold."""
         with pytest.raises(ValueError, match="threshold must be 0.0-1.0"):
-            RealtimeVADConfig(threshold=1.5)
+            TurnDetectionConfig(threshold=1.5)
 
         with pytest.raises(ValueError, match="threshold must be 0.0-1.0"):
-            RealtimeVADConfig(threshold=-0.1)
+            TurnDetectionConfig(threshold=-0.1)
 
-    def test_realtime_vad_invalid_silence_duration(self) -> None:
-        """Test Realtime VAD config rejects invalid silence duration."""
+    def test_turn_detection_invalid_silence_duration(self) -> None:
+        """Test turn detection config rejects invalid silence duration."""
         with pytest.raises(ValueError, match="silence_duration_ms must be 100-2000"):
-            RealtimeVADConfig(silence_duration_ms=50)
+            TurnDetectionConfig(silence_duration_ms=50)
 
         with pytest.raises(ValueError, match="silence_duration_ms must be 100-2000"):
-            RealtimeVADConfig(silence_duration_ms=3000)
+            TurnDetectionConfig(silence_duration_ms=3000)
 
 
 class TestRealtimeConfig:
@@ -383,7 +379,7 @@ class TestRealtimeConfig:
         assert config.api_key == "test-key-123"
         assert config.model == "gpt-realtime-mini"
         assert config.chunk_duration == 2.0
-        assert config.vad.threshold == 0.2
+        assert config.turn_detection.threshold == 0.2
 
     def test_realtime_config_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test Realtime config does NOT read API key from environment (cli.py does)."""
@@ -391,7 +387,7 @@ class TestRealtimeConfig:
 
         # Config should NOT automatically read from environment
         config = RealtimeConfig()
-        assert config.api_key is None
+        assert config.api_key is None  # None by default
 
     def test_realtime_config_missing_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test Realtime config allows missing API key (validation happens in factory)."""
@@ -399,7 +395,7 @@ class TestRealtimeConfig:
 
         # Config creation should succeed - validation happens in factory
         config = RealtimeConfig()
-        assert config.api_key is None
+        assert config.api_key is None  # None by default
 
     def test_custom_realtime_config(self) -> None:
         """Test custom Realtime configuration."""
@@ -408,10 +404,10 @@ class TestRealtimeConfig:
             model="gpt-realtime-preview",
             endpoint="wss://custom.endpoint.com",
             debug=True,
-            vad=RealtimeVADConfig(threshold=0.5, silence_duration_ms=200),
+            turn_detection=TurnDetectionConfig(threshold=0.5, silence_duration_ms=200),
         )
 
         assert config.model == "gpt-realtime-preview"
         assert config.endpoint == "wss://custom.endpoint.com"
         assert config.debug is True
-        assert config.vad.threshold == 0.5
+        assert config.turn_detection.threshold == 0.5

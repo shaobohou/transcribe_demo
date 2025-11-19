@@ -6,8 +6,10 @@ import dataclasses
 import sys
 from typing import Literal
 
-from simple_parsing import ArgumentParser
+from simple_parsing import ArgumentGenerationMode, ArgumentParser, DashVariant
+from simple_parsing.wrappers.field_wrapper import NestedMode
 
+from transcribe_demo import backend_config
 from transcribe_demo.session_replay import (
     list_sessions,
     load_session,
@@ -31,7 +33,7 @@ class ListConfig(CommonConfig):
     """Configuration for list command."""
 
     backend: Literal["whisper", "realtime"] | None = None
-    """Filter sessions by backend."""
+    """Filter sessions by backend ('whisper' or 'realtime'). If None, shows all backends."""
 
     start_date: str | None = None
     """Filter sessions on or after this date (YYYY-MM-DD format)."""
@@ -76,31 +78,21 @@ class RetranscribeConfig(CommonConfig):
     output_dir: str = "./session_logs"
     """Output directory for retranscription results."""
 
-    # Whisper-specific
-    model: str = "turbo"
-    """Whisper model to use for retranscription."""
-
-    device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
-    """Device to use for Whisper retranscription."""
-
     language: str = "en"
     """Language for retranscription."""
 
-    vad_aggressiveness: int = 2
-    """VAD aggressiveness level (0-3) for Whisper retranscription."""
-
-    vad_min_silence_duration: float = 0.2
-    """Minimum silence duration (seconds) for VAD."""
-
-    # Realtime-specific
-    api_key: str | None = None
-    """OpenAI API key for realtime backend (defaults to OPENAI_API_KEY env var)."""
-
-    realtime_model: str = "gpt-realtime-mini"
-    """Realtime model to use."""
-
     audio_format: Literal["wav", "flac"] = "flac"
     """Audio format for saved files."""
+
+    compare_transcripts: bool = False
+    """Compare chunked transcription with full-audio transcription. For Realtime API, this doubles API usage cost."""
+
+    # Reuse backend configs from main CLI
+    whisper: backend_config.WhisperConfig = dataclasses.field(default_factory=backend_config.WhisperConfig)
+    """Whisper backend configuration (used when retranscribe_backend='whisper')."""
+
+    realtime: backend_config.RealtimeConfig = dataclasses.field(default_factory=backend_config.RealtimeConfig)
+    """Realtime API configuration (used when retranscribe_backend='realtime')."""
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -108,7 +100,7 @@ class RemoveIncompleteConfig(CommonConfig):
     """Configuration for remove-incomplete command."""
 
     backend: Literal["whisper", "realtime"] | None = None
-    """Filter sessions by backend."""
+    """Filter sessions by backend ('whisper' or 'realtime'). If None, removes from all backends."""
 
     start_date: str | None = None
     """Filter sessions on or after this date (YYYY-MM-DD format)."""
@@ -160,20 +152,50 @@ def retranscribe_command(config: RetranscribeConfig) -> None:
         # Load session
         loaded = load_session(config.session_path, allow_incomplete=config.allow_incomplete)
 
-        # Build backend kwargs
-        backend_kwargs: dict[str, str | int | float | None] = {
+        # Build backend kwargs from nested configs
+        backend_kwargs: dict[str, str | int | float | bool | None] = {
             "audio_format": config.audio_format,
             "language": config.language,
+            "compare_transcripts": config.compare_transcripts,
         }
 
         if config.retranscribe_backend == "whisper":
-            backend_kwargs["model"] = config.model
-            backend_kwargs["device"] = config.device
-            backend_kwargs["vad_aggressiveness"] = config.vad_aggressiveness
-            backend_kwargs["vad_min_silence_duration"] = config.vad_min_silence_duration
+            # Whisper model and device settings
+            backend_kwargs["model"] = config.whisper.model
+            backend_kwargs["device"] = config.whisper.device
+            backend_kwargs["require_gpu"] = config.whisper.require_gpu
+
+            # VAD settings
+            backend_kwargs["vad_aggressiveness"] = config.whisper.vad.aggressiveness
+            backend_kwargs["vad_min_silence_duration"] = config.whisper.vad.min_silence_duration
+            backend_kwargs["vad_min_speech_duration"] = config.whisper.vad.min_speech_duration
+            backend_kwargs["vad_speech_pad_duration"] = config.whisper.vad.speech_pad_duration
+            backend_kwargs["max_chunk_duration"] = config.whisper.vad.max_chunk_duration
+
+            # Partial transcription settings
+            backend_kwargs["partial_enabled"] = config.whisper.partial.enabled
+            backend_kwargs["partial_model"] = config.whisper.partial.model
+            backend_kwargs["partial_interval"] = config.whisper.partial.interval
+            backend_kwargs["partial_max_buffer_seconds"] = config.whisper.partial.max_buffer_seconds
+
+            # Debug settings
+            backend_kwargs["debug"] = config.whisper.debug
+            backend_kwargs["debug_output_dir"] = config.whisper.debug_output_dir
+
         elif config.retranscribe_backend == "realtime":
-            backend_kwargs["api_key"] = config.api_key
-            backend_kwargs["realtime_model"] = config.realtime_model
+            # Realtime API settings (use cleaner names, will fix in retranscribe_session)
+            backend_kwargs["api_key"] = config.realtime.api_key
+            backend_kwargs["model"] = config.realtime.model
+            backend_kwargs["endpoint"] = config.realtime.endpoint
+            backend_kwargs["instructions"] = config.realtime.instructions
+
+            # Turn detection settings
+            backend_kwargs["turn_detection_threshold"] = config.realtime.turn_detection.threshold
+            backend_kwargs["turn_detection_silence_duration_ms"] = config.realtime.turn_detection.silence_duration_ms
+
+            # Debug settings
+            backend_kwargs["debug"] = config.realtime.debug
+            backend_kwargs["debug_output_dir"] = config.realtime.debug_output_dir
 
         # Retranscribe
         result_path = retranscribe_session(
@@ -208,43 +230,62 @@ def remove_incomplete_command(config: RemoveIncompleteConfig) -> None:
 
 def cli_main() -> None:
     """Entry point for the CLI (called by pyproject.toml console_scripts)."""
+    # Import FieldWrapper to access class variables used by add_arguments()
+    from simple_parsing.wrappers.field_wrapper import FieldWrapper
+
+    # Create main parser with NESTED mode to force full dotted paths
     parser = ArgumentParser(
         prog="transcribe-session",
         description="Session replay and management utility for transcribe-demo",
+        add_option_string_dash_variants=DashVariant.AUTO,
+        argument_generation_mode=ArgumentGenerationMode.NESTED,
+        nested_mode=NestedMode.WITHOUT_ROOT,  # Remove "config" prefix but keep full nested paths
     )
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    # Add subparsers for each command
+    subparsers = parser.add_subparsers(dest="command", help="Subcommand to execute")
 
-    # List subcommand
-    list_parser = subparsers.add_parser("list", help="List sessions")
+    # List command
+    list_parser = subparsers.add_parser("list", help="List all logged sessions")
+    # Temporarily set FieldWrapper class variables for NESTED mode
+    FieldWrapper.argument_generation_mode = ArgumentGenerationMode.NESTED
+    FieldWrapper.nested_mode = NestedMode.WITHOUT_ROOT
     list_parser.add_arguments(ListConfig, dest="config")
+    list_parser.set_defaults(func=lambda args: list_command(args.config))
 
-    # Show subcommand
-    show_parser = subparsers.add_parser("show", help="Show session details")
+    # Show command
+    show_parser = subparsers.add_parser("show", help="Show details of a specific session")
+    FieldWrapper.argument_generation_mode = ArgumentGenerationMode.NESTED
+    FieldWrapper.nested_mode = NestedMode.WITHOUT_ROOT
     show_parser.add_arguments(ShowConfig, dest="config")
+    show_parser.set_defaults(func=lambda args: show_command(args.config))
 
-    # Retranscribe subcommand
-    retranscribe_parser = subparsers.add_parser("retranscribe", help="Retranscribe a session")
+    # Retranscribe command
+    retranscribe_parser = subparsers.add_parser("retranscribe", help="Retranscribe a session with different settings")
+    FieldWrapper.argument_generation_mode = ArgumentGenerationMode.NESTED
+    FieldWrapper.nested_mode = NestedMode.WITHOUT_ROOT
     retranscribe_parser.add_arguments(RetranscribeConfig, dest="config")
+    retranscribe_parser.set_defaults(func=lambda args: retranscribe_command(args.config))
 
-    # Remove-incomplete subcommand
-    remove_parser = subparsers.add_parser("remove-incomplete", help="Remove incomplete sessions")
+    # Remove-incomplete command
+    remove_parser = subparsers.add_parser(
+        "remove-incomplete", help="Remove incomplete sessions (missing .complete marker)"
+    )
+    FieldWrapper.argument_generation_mode = ArgumentGenerationMode.NESTED
+    FieldWrapper.nested_mode = NestedMode.WITHOUT_ROOT
     remove_parser.add_arguments(RemoveIncompleteConfig, dest="config")
+    remove_parser.set_defaults(func=lambda args: remove_incomplete_command(args.config))
 
+    # Parse arguments and dispatch to command handler
     args = parser.parse_args()
 
-    # Execute appropriate command
-    if args.command == "list":
-        list_command(args.config)
-    elif args.command == "show":
-        show_command(args.config)
-    elif args.command == "retranscribe":
-        retranscribe_command(args.config)
-    elif args.command == "remove-incomplete":
-        remove_incomplete_command(args.config)
-    else:
-        print(f"ERROR: Unknown command '{args.command}'", file=sys.stderr)
+    # If no command specified, print help
+    if not hasattr(args, "func"):
+        parser.print_help()
         sys.exit(1)
+
+    # Execute the command
+    args.func(args)
 
 
 if __name__ == "__main__":

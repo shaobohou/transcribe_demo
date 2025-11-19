@@ -8,7 +8,7 @@ dependencies = [
     "numpy",
     "openai-whisper",
     "setuptools>=80.9.0",
-    "simple-parsing>=0.1.6",
+    "simple-parsing>=0.1.5",
     "sounddevice",
     "soundfile>=0.12.0",
     "torch",
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-transcribe-demo = "transcribe_demo.cli:cli_main"
+transcribe-demo = "transcribe_demo.cli:run"
 transcribe-session = "transcribe_demo.session_replay_cli:cli_main"
 
 [build-system]

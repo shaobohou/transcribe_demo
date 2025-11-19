@@ -405,7 +405,7 @@ def retranscribe_session(
                     model_name=backend_kwargs.get("model", "turbo"),
                     sample_rate=loaded_session.sample_rate,
                     channels=loaded_session.metadata.channels,
-                    temp_file=None,
+                    temp_file=backend_kwargs.get("debug_output_dir"),
                     ca_cert=backend_kwargs.get("ca_cert"),
                     disable_ssl_verify=backend_kwargs.get("disable_ssl_verify", False),
                     device_preference=backend_kwargs.get("device", "auto"),
@@ -421,6 +421,10 @@ def retranscribe_session(
                     language=backend_kwargs.get("language", "en"),
                     session_logger=session_logger,
                     min_log_duration=0.0,  # Always save retranscription
+                    enable_partial_transcription=backend_kwargs.get("partial_enabled", False),
+                    partial_model=backend_kwargs.get("partial_model", "base.en"),
+                    partial_interval=backend_kwargs.get("partial_interval", 1.0),
+                    max_partial_buffer_seconds=backend_kwargs.get("partial_max_buffer_seconds", 10.0),
                 )
                 result_container.append(result)
                 chunk_queue.put(None)  # Sentinel
@@ -484,13 +488,13 @@ def retranscribe_session(
             def backend_worker():
                 result = run_realtime_transcriber(
                     api_key=api_key,
-                    endpoint=backend_kwargs.get("realtime_endpoint", "wss://api.openai.com/v1/realtime"),
-                    model=backend_kwargs.get("realtime_model", "gpt-realtime-mini"),
+                    endpoint=backend_kwargs.get("endpoint", "wss://api.openai.com/v1/realtime"),
+                    model=backend_kwargs.get("model", "gpt-realtime-mini"),
                     sample_rate=loaded_session.sample_rate,
                     channels=loaded_session.metadata.channels,
                     chunk_duration=2.0,  # Standard 2s chunks for realtime
                     instructions=backend_kwargs.get(
-                        "realtime_instructions",
+                        "instructions",
                         "You are a high-accuracy transcription service. "
                         "Return a concise verbatim transcript of the most recent audio buffer. "
                         "Do not add commentary or speaker labels.",
@@ -500,6 +504,9 @@ def retranscribe_session(
                     chunk_queue=chunk_queue,
                     compare_transcripts=backend_kwargs.get("compare_transcripts", False),
                     language=backend_kwargs.get("language", "en"),
+                    vad_threshold=backend_kwargs.get("turn_detection_threshold", 0.3),
+                    vad_silence_duration_ms=backend_kwargs.get("turn_detection_silence_duration_ms", 200),
+                    debug=backend_kwargs.get("debug", False),
                 )
                 result_container.append(result)
                 chunk_queue.put(None)  # Sentinel
