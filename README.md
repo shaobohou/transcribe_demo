@@ -293,21 +293,21 @@ List, inspect, and retranscribe previously logged sessions with different settin
 
 ```bash
 # List all logged sessions
-uv run transcribe-session --subcommand=list
+uv run transcribe-session list
 
 # Show details of a specific session
-uv run transcribe-session --subcommand=show --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper
+uv run transcribe-session show --session_path=session_logs/2025-11-07/session_143052_whisper
 
 # Retranscribe with different VAD settings
-uv run transcribe-session --subcommand=retranscribe \
-  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
-  --subcommand.whisper.model=small \
-  --subcommand.whisper.vad.aggressiveness=3
+uv run transcribe-session retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --whisper.model=small \
+  --whisper.vad.aggressiveness=3
 
 # Compare Whisper vs Realtime API
-uv run transcribe-session --subcommand=retranscribe \
-  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
-  --subcommand.retranscribe_backend=realtime
+uv run transcribe-session retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=realtime
 ```
 
 See **[SESSIONS.md](SESSIONS.md)** for complete documentation on listing, loading, and retranscribing sessions.

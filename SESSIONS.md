@@ -9,17 +9,17 @@ This document describes the complete session logging system in transcribe-demo. 
 uv run transcribe-demo                # Creates session log automatically
 
 # List all logged sessions
-uv run transcribe-session --subcommand=list
+uv run transcribe-session list
 
 # Show details of a specific session
-uv run transcribe-session --subcommand=show --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper
+uv run transcribe-session show --session_path=session_logs/2025-11-07/session_143052_whisper
 
 # Retranscribe with different settings
-uv run transcribe-session --subcommand=retranscribe \
-  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
-  --subcommand.retranscribe_backend=whisper \
-  --subcommand.whisper.model=small \
-  --subcommand.whisper.vad.aggressiveness=3
+uv run transcribe-session retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=whisper \
+  --whisper.model=small \
+  --whisper.vad.aggressiveness=3
 ```
 
 ---
@@ -342,34 +342,34 @@ List all available sessions with optional filtering.
 
 **Basic usage:**
 ```bash
-uv run transcribe-session --subcommand=list
+uv run transcribe-session list
 ```
 
 **Filter by backend:**
 ```bash
-uv run transcribe-session --subcommand=list --subcommand.backend=whisper
-uv run transcribe-session --subcommand=list --subcommand.backend=realtime
+uv run transcribe-session list --backend=whisper
+uv run transcribe-session list --backend=realtime
 ```
 
 **Filter by date range:**
 ```bash
-uv run transcribe-session --subcommand=list --subcommand.start_date=2025-11-01 --subcommand.end_date=2025-11-07
+uv run transcribe-session list --start_date=2025-11-01 --end_date=2025-11-07
 ```
 
 **Filter by minimum duration:**
 ```bash
-uv run transcribe-session --subcommand=list --subcommand.min_duration=60.0
+uv run transcribe-session list --min_duration=60.0
 ```
 
 **Show verbose details:**
 ```bash
-uv run transcribe-session --subcommand=list --subcommand.verbose=true
+uv run transcribe-session list --verbose=true
 ```
 
 **Include incomplete sessions:**
 ```bash
 # Show all sessions including those without completion marker
-uv run transcribe-session --subcommand=list --subcommand.include_incomplete=true
+uv run transcribe-session list --include_incomplete=true
 ```
 
 **Example output (compact):**
@@ -390,15 +390,15 @@ Display detailed information about a specific session.
 
 **Usage:**
 ```bash
-uv run transcribe-session --subcommand=show --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper
+uv run transcribe-session show --session_path=session_logs/2025-11-07/session_143052_whisper
 ```
 
 **Load incomplete session:**
 ```bash
 # Force loading session without completion marker
-uv run transcribe-session --subcommand=show \
-  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
-  --subcommand.allow_incomplete=true
+uv run transcribe-session show \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --allow_incomplete=true
 ```
 
 **Example output:**
@@ -439,45 +439,45 @@ Retranscribe a logged session with different backend or settings.
 
 **Basic usage (Whisper):**
 ```bash
-uv run transcribe-session --subcommand=retranscribe \
-  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
-  --subcommand.retranscribe_backend=whisper
+uv run transcribe-session retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=whisper
 ```
 
 **Use different Whisper model:**
 ```bash
-uv run transcribe-session --subcommand=retranscribe \
-  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
-  --subcommand.retranscribe_backend=whisper \
-  --subcommand.whisper.model=small \
-  --subcommand.whisper.device=cuda
+uv run transcribe-session retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=whisper \
+  --whisper.model=small \
+  --whisper.device=cuda
 ```
 
 **Adjust VAD settings:**
 ```bash
-uv run transcribe-session --subcommand=retranscribe \
-  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
-  --subcommand.retranscribe_backend=whisper \
-  --subcommand.whisper.vad.aggressiveness=3 \
-  --subcommand.whisper.vad.min_silence_duration=0.3
+uv run transcribe-session retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=whisper \
+  --whisper.vad.aggressiveness=3 \
+  --whisper.vad.min_silence_duration=0.3
 ```
 
 **Retranscribe with Realtime backend:**
 ```bash
 export OPENAI_API_KEY=your_api_key_here
-uv run transcribe-session --subcommand=retranscribe \
-  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
-  --subcommand.retranscribe_backend=realtime \
-  --subcommand.realtime.model=gpt-realtime-mini
+uv run transcribe-session retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=realtime \
+  --realtime.model=gpt-realtime-mini
 ```
 
 **Custom output directory:**
 ```bash
-uv run transcribe-session --subcommand=retranscribe \
-  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
-  --subcommand.output_dir=./retranscriptions \
-  --subcommand.retranscribe_backend=whisper \
-  --subcommand.whisper.model=turbo
+uv run transcribe-session retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --output_dir=./retranscriptions \
+  --retranscribe_backend=whisper \
+  --whisper.model=turbo
 ```
 
 ### Command-Line Flags Reference
@@ -656,13 +656,13 @@ print(f"Audio duration: {loaded.metadata.capture_duration:.2f}s")
 # Load incomplete session (use with caution)
 incomplete_loaded = load_session(
     "session_logs/2025-11-07/session_incomplete",
-    allow_incomplete=True,
+    --allow_incomplete=True,
 )
 
 # Retranscribe with different settings
 result_path = retranscribe_session(
     loaded_session=loaded,
-    output_dir="./retranscriptions",
+    --output_dir="./retranscriptions",
     backend="whisper",
     backend_kwargs={
         "model": "small",
