@@ -6,8 +6,7 @@ import dataclasses
 import sys
 from typing import Literal
 
-from simple_parsing import ArgumentGenerationMode, ArgumentParser, DashVariant, subgroups
-from simple_parsing.wrappers.field_wrapper import NestedMode
+from simple_parsing import ArgumentGenerationMode, ArgumentParser, DashVariant
 
 from transcribe_demo import backend_config
 from transcribe_demo.session_replay import (
@@ -112,21 +111,6 @@ class RemoveIncompleteConfig(CommonConfig):
     """Dry run mode - show what would be removed without actually removing."""
 
 
-@dataclasses.dataclass
-class SubcommandConfig:
-    """Subcommand selection for transcribe-session CLI."""
-
-    subcommand: ListConfig | ShowConfig | RetranscribeConfig | RemoveIncompleteConfig = subgroups(
-        {  # type: ignore
-            "list": ListConfig,
-            "show": ShowConfig,
-            "retranscribe": RetranscribeConfig,
-            "remove-incomplete": RemoveIncompleteConfig,
-        },
-        default="list",
-    )
-
-
 def list_command(config: ListConfig) -> None:
     """Execute list command."""
     sessions = list_sessions(
@@ -212,30 +196,49 @@ def remove_incomplete_command(config: RemoveIncompleteConfig) -> None:
 
 def cli_main() -> None:
     """Entry point for the CLI (called by pyproject.toml console_scripts)."""
+    # Create main parser
     parser = ArgumentParser(
         prog="transcribe-session",
         description="Session replay and management utility for transcribe-demo",
         add_option_string_dash_variants=DashVariant.AUTO,  # Preserve underscores, no dash variants
         argument_generation_mode=ArgumentGenerationMode.NESTED,  # Always use full dotted paths
-        nested_mode=NestedMode.WITHOUT_ROOT,  # Remove dest prefix from flags
     )
-    parser.add_arguments(SubcommandConfig, dest="config")
+
+    # Add subparsers for each command
+    subparsers = parser.add_subparsers(dest="command", help="Subcommand to execute")
+
+    # List command
+    list_parser = subparsers.add_parser("list", help="List all logged sessions")
+    list_parser.add_arguments(ListConfig, dest="config")
+    list_parser.set_defaults(func=lambda args: list_command(args.config))
+
+    # Show command
+    show_parser = subparsers.add_parser("show", help="Show details of a specific session")
+    show_parser.add_arguments(ShowConfig, dest="config")
+    show_parser.set_defaults(func=lambda args: show_command(args.config))
+
+    # Retranscribe command
+    retranscribe_parser = subparsers.add_parser("retranscribe", help="Retranscribe a session with different settings")
+    retranscribe_parser.add_arguments(RetranscribeConfig, dest="config")
+    retranscribe_parser.set_defaults(func=lambda args: retranscribe_command(args.config))
+
+    # Remove-incomplete command
+    remove_parser = subparsers.add_parser(
+        "remove-incomplete", help="Remove incomplete sessions (missing .complete marker)"
+    )
+    remove_parser.add_arguments(RemoveIncompleteConfig, dest="config")
+    remove_parser.set_defaults(func=lambda args: remove_incomplete_command(args.config))
+
+    # Parse arguments and dispatch to command handler
     args = parser.parse_args()
 
-    config = args.config.subcommand
-
-    # Dispatch to appropriate command handler
-    if isinstance(config, ListConfig):
-        list_command(config)
-    elif isinstance(config, ShowConfig):
-        show_command(config)
-    elif isinstance(config, RetranscribeConfig):
-        retranscribe_command(config)
-    elif isinstance(config, RemoveIncompleteConfig):
-        remove_incomplete_command(config)
-    else:
-        print(f"ERROR: Unknown command type: {type(config)}", file=sys.stderr)
+    # If no command specified, print help
+    if not hasattr(args, "func"):
+        parser.print_help()
         sys.exit(1)
+
+    # Execute the command
+    args.func(args)
 
 
 if __name__ == "__main__":
