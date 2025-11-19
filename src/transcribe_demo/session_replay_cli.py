@@ -6,8 +6,9 @@ import dataclasses
 import sys
 from typing import Literal
 
-from simple_parsing import ArgumentParser, subgroups
+from simple_parsing import ArgumentGenerationMode, ArgumentParser, DashVariant, subgroups
 
+from transcribe_demo import backend_config
 from transcribe_demo.session_replay import (
     list_sessions,
     load_session,
@@ -76,31 +77,18 @@ class RetranscribeConfig(CommonConfig):
     output_dir: str = "./session_logs"
     """Output directory for retranscription results."""
 
-    # Whisper-specific
-    model: str = "turbo"
-    """Whisper model to use for retranscription."""
-
-    device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
-    """Device to use for Whisper retranscription."""
-
     language: str = "en"
     """Language for retranscription."""
 
-    vad_aggressiveness: int = 2
-    """VAD aggressiveness level (0-3) for Whisper retranscription."""
-
-    vad_min_silence_duration: float = 0.2
-    """Minimum silence duration (seconds) for VAD."""
-
-    # Realtime-specific
-    api_key: str | None = None
-    """OpenAI API key for realtime backend (defaults to OPENAI_API_KEY env var)."""
-
-    realtime_model: str = "gpt-realtime-mini"
-    """Realtime model to use."""
-
     audio_format: Literal["wav", "flac"] = "flac"
     """Audio format for saved files."""
+
+    # Reuse backend configs from main CLI
+    whisper: backend_config.WhisperConfig = dataclasses.field(default_factory=backend_config.WhisperConfig)
+    """Whisper backend configuration (used when retranscribe_backend='whisper')."""
+
+    realtime: backend_config.RealtimeConfig = dataclasses.field(default_factory=backend_config.RealtimeConfig)
+    """Realtime API configuration (used when retranscribe_backend='realtime')."""
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -175,20 +163,20 @@ def retranscribe_command(config: RetranscribeConfig) -> None:
         # Load session
         loaded = load_session(config.session_path, allow_incomplete=config.allow_incomplete)
 
-        # Build backend kwargs
+        # Build backend kwargs from nested configs
         backend_kwargs: dict[str, str | int | float | None] = {
             "audio_format": config.audio_format,
             "language": config.language,
         }
 
         if config.retranscribe_backend == "whisper":
-            backend_kwargs["model"] = config.model
-            backend_kwargs["device"] = config.device
-            backend_kwargs["vad_aggressiveness"] = config.vad_aggressiveness
-            backend_kwargs["vad_min_silence_duration"] = config.vad_min_silence_duration
+            backend_kwargs["model"] = config.whisper.model
+            backend_kwargs["device"] = config.whisper.device
+            backend_kwargs["vad_aggressiveness"] = config.whisper.vad.aggressiveness
+            backend_kwargs["vad_min_silence_duration"] = config.whisper.vad.min_silence_duration
         elif config.retranscribe_backend == "realtime":
-            backend_kwargs["api_key"] = config.api_key
-            backend_kwargs["realtime_model"] = config.realtime_model
+            backend_kwargs["api_key"] = config.realtime.api_key
+            backend_kwargs["realtime_model"] = config.realtime.model
 
         # Retranscribe
         result_path = retranscribe_session(
@@ -226,6 +214,8 @@ def cli_main() -> None:
     parser = ArgumentParser(
         prog="transcribe-session",
         description="Session replay and management utility for transcribe-demo",
+        add_option_string_dash_variants=DashVariant.AUTO,  # Preserve underscores, no dash variants
+        argument_generation_mode=ArgumentGenerationMode.NESTED,  # Always use full dotted paths
     )
     parser.add_arguments(Commands, dest="commands")
     args = parser.parse_args()
