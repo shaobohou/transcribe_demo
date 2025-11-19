@@ -7,6 +7,7 @@ import sys
 from typing import Literal
 
 from simple_parsing import ArgumentGenerationMode, ArgumentParser, DashVariant
+from simple_parsing.wrappers.field_wrapper import NestedMode
 
 from transcribe_demo import backend_config
 from transcribe_demo.session_replay import (
@@ -196,12 +197,16 @@ def remove_incomplete_command(config: RemoveIncompleteConfig) -> None:
 
 def cli_main() -> None:
     """Entry point for the CLI (called by pyproject.toml console_scripts)."""
-    # Create main parser
+    # Import FieldWrapper to access class variables used by add_arguments()
+    from simple_parsing.wrappers.field_wrapper import FieldWrapper
+
+    # Create main parser with NESTED mode to force full dotted paths
     parser = ArgumentParser(
         prog="transcribe-session",
         description="Session replay and management utility for transcribe-demo",
-        add_option_string_dash_variants=DashVariant.AUTO,  # Preserve underscores, no dash variants
-        argument_generation_mode=ArgumentGenerationMode.NESTED,  # Always use full dotted paths
+        add_option_string_dash_variants=DashVariant.AUTO,
+        argument_generation_mode=ArgumentGenerationMode.NESTED,
+        nested_mode=NestedMode.WITHOUT_ROOT,  # Remove "config" prefix but keep full nested paths
     )
 
     # Add subparsers for each command
@@ -209,16 +214,23 @@ def cli_main() -> None:
 
     # List command
     list_parser = subparsers.add_parser("list", help="List all logged sessions")
+    # Temporarily set FieldWrapper class variables for NESTED mode
+    FieldWrapper.argument_generation_mode = ArgumentGenerationMode.NESTED
+    FieldWrapper.nested_mode = NestedMode.WITHOUT_ROOT
     list_parser.add_arguments(ListConfig, dest="config")
     list_parser.set_defaults(func=lambda args: list_command(args.config))
 
     # Show command
     show_parser = subparsers.add_parser("show", help="Show details of a specific session")
+    FieldWrapper.argument_generation_mode = ArgumentGenerationMode.NESTED
+    FieldWrapper.nested_mode = NestedMode.WITHOUT_ROOT
     show_parser.add_arguments(ShowConfig, dest="config")
     show_parser.set_defaults(func=lambda args: show_command(args.config))
 
     # Retranscribe command
     retranscribe_parser = subparsers.add_parser("retranscribe", help="Retranscribe a session with different settings")
+    FieldWrapper.argument_generation_mode = ArgumentGenerationMode.NESTED
+    FieldWrapper.nested_mode = NestedMode.WITHOUT_ROOT
     retranscribe_parser.add_arguments(RetranscribeConfig, dest="config")
     retranscribe_parser.set_defaults(func=lambda args: retranscribe_command(args.config))
 
@@ -226,6 +238,8 @@ def cli_main() -> None:
     remove_parser = subparsers.add_parser(
         "remove-incomplete", help="Remove incomplete sessions (missing .complete marker)"
     )
+    FieldWrapper.argument_generation_mode = ArgumentGenerationMode.NESTED
+    FieldWrapper.nested_mode = NestedMode.WITHOUT_ROOT
     remove_parser.add_arguments(RemoveIncompleteConfig, dest="config")
     remove_parser.set_defaults(func=lambda args: remove_incomplete_command(args.config))
 
