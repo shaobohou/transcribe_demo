@@ -301,7 +301,7 @@ def test_main_realtime_flow_without_comparison(monkeypatch, temp_session_dir):
 def test_cli_main_reads_api_key_from_environment(monkeypatch):
     """Test that run() reads API key from OPENAI_API_KEY environment variable."""
     monkeypatch.setenv("OPENAI_API_KEY", "env-test-key")
-    monkeypatch.setattr("sys.argv", ["transcribe-demo", "--backend=realtime"])
+    monkeypatch.setattr("sys.argv", ["transcribe-demo", "--config.backend=realtime"])
 
     # Mock main to capture the config
     captured_config = []
@@ -321,9 +321,11 @@ def test_cli_main_reads_api_key_from_environment(monkeypatch):
 
 
 def test_cli_main_prefers_explicit_api_key_over_env(monkeypatch):
-    """Test that explicit --api-key takes precedence over environment."""
+    """Test that explicit --config.realtime.api_key takes precedence over environment."""
     monkeypatch.setenv("OPENAI_API_KEY", "env-test-key")
-    monkeypatch.setattr("sys.argv", ["transcribe-demo", "--backend=realtime", "--api-key=explicit-key"])
+    monkeypatch.setattr(
+        "sys.argv", ["transcribe-demo", "--config.backend=realtime", "--config.realtime.api_key=explicit-key"]
+    )
 
     # Mock main to capture the config
     captured_config = []

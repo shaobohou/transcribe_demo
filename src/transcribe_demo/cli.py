@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from simple_parsing import ArgumentParser, DashVariant
+from simple_parsing import ArgumentGenerationMode, ArgumentParser, DashVariant
 
 from transcribe_demo import (
     audio_capture,
@@ -235,7 +235,8 @@ def run():
     parser = ArgumentParser(
         prog="transcribe-demo",
         description="Real-time speech transcription with Whisper and OpenAI Realtime API",
-        add_option_string_dash_variants=DashVariant.DASH,  # Only dash-style flags (no underscore aliases)
+        add_option_string_dash_variants=DashVariant.AUTO,  # Preserve underscores, no dash variants
+        argument_generation_mode=ArgumentGenerationMode.NESTED,  # Always use full dotted paths
     )
     parser.add_arguments(backend_config.CLIConfig, dest="config")
     args = parser.parse_args()
