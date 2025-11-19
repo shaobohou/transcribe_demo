@@ -33,7 +33,7 @@ class ListConfig(CommonConfig):
     """Configuration for list command."""
 
     backend: Literal["whisper", "realtime"] | None = None
-    """Filter sessions by backend."""
+    """Filter sessions by backend ('whisper' or 'realtime'). If None, shows all backends."""
 
     start_date: str | None = None
     """Filter sessions on or after this date (YYYY-MM-DD format)."""
@@ -100,7 +100,7 @@ class RemoveIncompleteConfig(CommonConfig):
     """Configuration for remove-incomplete command."""
 
     backend: Literal["whisper", "realtime"] | None = None
-    """Filter sessions by backend."""
+    """Filter sessions by backend ('whisper' or 'realtime'). If None, removes from all backends."""
 
     start_date: str | None = None
     """Filter sessions on or after this date (YYYY-MM-DD format)."""

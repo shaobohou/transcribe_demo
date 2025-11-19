@@ -116,22 +116,17 @@ class WhisperConfig:
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class TurnDetectionConfig:
-    """
-    Server-side turn detection configuration for Realtime API.
-
-    Note: This is fundamentally different from the local WebRTC VAD used
-    in Whisper backend. This configures server-side turn detection parameters.
+    """Server-side turn detection configuration for Realtime API.
+    Note: This is fundamentally different from the local WebRTC VAD used in Whisper backend.
     """
 
     threshold: float = 0.2
-    """
-    Server turn detection threshold (0.0-1.0).
-    Lower = more sensitive. Default 0.2 works well for continuous speech.
+    """Server turn detection threshold (0.0-1.0). Lower = more sensitive.
+    Default 0.2 works well for continuous speech.
     """
 
     silence_duration_ms: int = 100
-    """
-    Silence duration (milliseconds) required to detect turn boundary.
+    """Silence duration (milliseconds) required to detect turn boundary.
     Lower values = more frequent chunks. Default 100ms works for fast-paced content.
     """
 
@@ -145,11 +140,8 @@ class TurnDetectionConfig:
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class RealtimeConfig:
-    """
-    Configuration for Realtime API backend (cloud transcription).
-
-    Contains all settings for API credentials, endpoints, server-side VAD,
-    and session management.
+    """Configuration for Realtime API backend (cloud transcription).
+    Contains all settings for API credentials, endpoints, server-side turn detection, and session management.
     """
 
     # API settings
@@ -167,12 +159,11 @@ class RealtimeConfig:
         "Return a concise verbatim transcript of the most recent audio buffer. "
         "Do not add commentary or speaker labels."
     )
-    """Instruction prompt sent to the realtime model."""
+    """System instruction prompt sent to the realtime model to guide transcription behavior."""
 
     # Chunking (fixed for Realtime API)
     chunk_duration: float = 2.0
-    """
-    Fixed chunk duration for Realtime API (seconds).
+    """Fixed chunk duration for Realtime API (seconds).
     Note: This is NOT configurable like Whisper's VAD-based chunking.
     """
 
@@ -200,8 +191,8 @@ class AudioConfig:
 
     audio_file: str | None = None
     """Path or URL to audio file for simulating live transcription (MP3, WAV, FLAC, etc.).
-    Supports local files and HTTP/HTTPS URLs. If provided, audio will be read from
-    file/URL instead of microphone."""
+    Supports local files and HTTP/HTTPS URLs. If provided, audio will be read from file/URL instead of microphone.
+    """
 
     playback_speed: float = 1.0
     """Playback speed multiplier when using audio_file (1.0 = real-time, 2.0 = 2x speed)."""
@@ -221,20 +212,18 @@ class SessionConfig:
     """Session logging and comparison configuration."""
 
     session_log_dir: str = "./session_logs"
-    """Directory to save session logs. All sessions are logged with full audio,
-    chunk audio, and metadata."""
+    """Directory to save session logs. All sessions are logged with full audio, chunk audio, and metadata."""
 
     audio_format: Literal["wav", "flac"] = "flac"
-    """Audio format for saved session files. 'flac' provides lossless compression
-    (~50-60% smaller), 'wav' is uncompressed."""
+    """Audio format for saved session files ('flac' = lossless compression, 'wav' = uncompressed)."""
 
     min_log_duration: float = 10.0
-    """Minimum session duration (seconds) required to save logs. Sessions shorter
-    than this are discarded."""
+    """Minimum session duration (seconds) required to save logs. Sessions shorter than this are discarded."""
 
     compare_transcripts: bool = True
     """Compare chunked transcription with full-audio transcription at session end.
-    Note: For Realtime API, this doubles API usage cost."""
+    For Realtime API, this doubles API usage cost.
+    """
 
     def __post_init__(self) -> None:
         """Validate session configuration."""
@@ -246,9 +235,7 @@ class SessionConfig:
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class CLIConfig:
-    """
-    Complete CLI configuration for transcribe-demo.
-
+    """Complete CLI configuration for transcribe-demo.
     This is the top-level configuration that combines all settings and is used
     with simple-parsing to auto-generate command-line arguments.
     """
@@ -257,12 +244,14 @@ class CLIConfig:
     """Transcription backend to use."""
 
     language: str = "en"
-    """Preferred language code for transcription (e.g., en, es). Use 'auto' to let
-    the model detect. WARNING: 'auto' can cause hallucinations on silence."""
+    """Preferred language code for transcription (e.g., en, es).
+    Use 'auto' to let the model detect. WARNING: 'auto' can cause hallucinations on silence.
+    """
 
     max_capture_duration: float = 120.0
-    """Maximum duration (seconds) to run the transcription session. Program will
-    gracefully stop after this duration. Set to 0 for unlimited duration."""
+    """Maximum duration (seconds) to run the transcription session.
+    Program will gracefully stop after this duration. Set to 0 for unlimited duration.
+    """
 
     # Nested configurations
     audio: AudioConfig = dataclasses.field(default_factory=AudioConfig)
@@ -286,8 +275,9 @@ class CLIConfig:
     """Custom certificate bundle to trust when downloading models or connecting to APIs."""
 
     disable_ssl_verify: bool = False
-    """Disable SSL certificate verification for all network operations. WARNING: This is
-    insecure and not recommended for production use."""
+    """Disable SSL certificate verification for all network operations.
+    WARNING: This is insecure and not recommended for production use.
+    """
 
     def __post_init__(self) -> None:
         """Validate CLI configuration."""
