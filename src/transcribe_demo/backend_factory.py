@@ -88,7 +88,7 @@ def create_realtime_backend(
     if not config.api_key:
         raise ValueError(
             "OpenAI API key required for realtime transcription. "
-            "Provide --config.realtime.api_key or set OPENAI_API_KEY environment variable."
+            "Provide --realtime.api_key or set OPENAI_API_KEY environment variable."
         )
 
     return realtime_backend.RealtimeBackend(

@@ -698,13 +698,13 @@ print(f"Audio duration: {loaded.metadata.capture_duration:.2f}s")
 # Load incomplete session (use with caution)
 incomplete_loaded = load_session(
     "session_logs/2025-11-07/session_incomplete",
-    --allow_incomplete=True,
+    allow_incomplete=True,
 )
 
 # Retranscribe with different settings
 result_path = retranscribe_session(
     loaded_session=loaded,
-    --output_dir="./retranscriptions",
+    output_dir="./retranscriptions",
     backend="whisper",
     backend_kwargs={
         "model": "small",
