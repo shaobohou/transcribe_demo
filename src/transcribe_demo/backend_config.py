@@ -3,14 +3,16 @@
 This module provides structured configuration for Whisper and Realtime backends,
 replacing the previous pattern of passing 20+ individual arguments.
 
-All configuration dataclasses are used with absl.flags and ml_collections for CLI generation.
+All configuration dataclasses are used with simple-parsing for CLI generation.
 """
 
+from __future__ import annotations
+
 import dataclasses
-from typing import Union
+from typing import Literal
 
 
-@dataclasses.dataclass(kw_only=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class VADConfig:
     """
     Voice Activity Detection configuration.
@@ -48,7 +50,7 @@ class VADConfig:
             raise ValueError(f"max_chunk_duration must be positive, got {self.max_chunk_duration}")
 
 
-@dataclasses.dataclass(kw_only=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class PartialTranscriptionConfig:
     """
     Configuration for partial (progressive) transcription.
@@ -77,7 +79,7 @@ class PartialTranscriptionConfig:
             raise ValueError(f"max_buffer_seconds must be 1.0-60.0, got {self.max_buffer_seconds}")
 
 
-@dataclasses.dataclass(kw_only=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class WhisperConfig:
     """
     Configuration for Whisper backend (local transcription).
@@ -90,7 +92,7 @@ class WhisperConfig:
     model: str = "turbo"
     """Whisper model name (e.g., 'turbo', 'base.en', 'small')."""
 
-    device: str = "auto"
+    device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
     """Device to run on: 'auto', 'cpu', 'cuda', or 'mps'."""
 
     require_gpu: bool = False
@@ -105,11 +107,11 @@ class WhisperConfig:
     """Partial transcription configuration."""
 
     # Debugging
-    temp_file: str = ""
+    temp_file: str | None = None
     """Optional path to persist audio chunks for inspection."""
 
 
-@dataclasses.dataclass(kw_only=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class RealtimeVADConfig:
     """
     Voice Activity Detection configuration for Realtime API.
@@ -138,7 +140,7 @@ class RealtimeVADConfig:
             raise ValueError(f"silence_duration_ms must be 100-2000, got {self.silence_duration_ms}")
 
 
-@dataclasses.dataclass(kw_only=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class RealtimeConfig:
     """
     Configuration for Realtime API backend (cloud transcription).
@@ -148,8 +150,8 @@ class RealtimeConfig:
     """
 
     # API settings
-    api_key: str = ""
-    """OpenAI API key. If empty, reads from OPENAI_API_KEY env var."""
+    api_key: str | None = None
+    """OpenAI API key. If None, reads from OPENAI_API_KEY env var."""
 
     model: str = "gpt-realtime-mini"
     """Realtime model to use."""
@@ -180,7 +182,7 @@ class RealtimeConfig:
     """Enable debug logging for realtime transcription events."""
 
 
-@dataclasses.dataclass(kw_only=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class AudioConfig:
     """Audio capture and playback configuration."""
 
@@ -190,7 +192,7 @@ class AudioConfig:
     channels: int = 1
     """Number of microphone input channels."""
 
-    audio_file: str = ""
+    audio_file: str | None = None
     """Path or URL to audio file for simulating live transcription (MP3, WAV, FLAC, etc.).
     Supports local files and HTTP/HTTPS URLs. If provided, audio will be read from
     file/URL instead of microphone."""
@@ -208,7 +210,7 @@ class AudioConfig:
             raise ValueError(f"playback_speed must be 0.1-10.0, got {self.playback_speed}")
 
 
-@dataclasses.dataclass(kw_only=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class SessionConfig:
     """Session logging and comparison configuration."""
 
@@ -216,7 +218,7 @@ class SessionConfig:
     """Directory to save session logs. All sessions are logged with full audio,
     chunk audio, and metadata."""
 
-    audio_format: str = "flac"
+    audio_format: Literal["wav", "flac"] = "flac"
     """Audio format for saved session files. 'flac' provides lossless compression
     (~50-60% smaller), 'wav' is uncompressed."""
 
@@ -242,16 +244,16 @@ class SessionConfig:
             raise ValueError(f"max_capture_duration must be non-negative, got {self.max_capture_duration}")
 
 
-@dataclasses.dataclass(kw_only=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class CLIConfig:
     """
     Complete CLI configuration for transcribe-demo.
 
     This is the top-level configuration that combines all settings and is used
-    with absl.flags and ml_collections to auto-generate command-line arguments.
+    with simple-parsing to auto-generate command-line arguments.
     """
 
-    backend: str = "whisper"
+    backend: Literal["whisper", "realtime"] = "whisper"
     """Transcription backend to use."""
 
     language: str = "en"
@@ -276,19 +278,14 @@ class CLIConfig:
     """[NOT YET IMPLEMENTED] Use 3-chunk sliding window to refine middle chunk transcription."""
 
     # SSL/Certificate settings (global)
-    ca_cert: str = ""
+    ca_cert: str | None = None
     """Custom certificate bundle to trust when downloading models or connecting to APIs."""
 
     disable_ssl_verify: bool = False
     """Disable SSL certificate verification for all network operations. WARNING: This is
     insecure and not recommended for production use."""
 
-    def __post_init__(self) -> None:
-        """Validate CLI configuration."""
-        if self.backend not in ("whisper", "realtime"):
-            raise ValueError(f"backend must be 'whisper' or 'realtime', got {self.backend}")
-
-    def get_backend_config(self) -> Union[WhisperConfig, RealtimeConfig]:
+    def get_backend_config(self) -> WhisperConfig | RealtimeConfig:
         """
         Get the appropriate backend configuration based on the selected backend.
 

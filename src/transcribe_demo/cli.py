@@ -5,8 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from absl import app, flags
-from ml_collections import config_flags
+from simple_parsing import ArgumentParser
 
 from transcribe_demo import (
     audio_capture,
@@ -19,139 +18,6 @@ from transcribe_demo import (
     transcribe,
     transcript_diff,
 )
-
-# =============================================================================
-# Flag Definitions
-# =============================================================================
-
-FLAGS = flags.FLAGS
-
-# Define the configuration using DEFINE_config_dataclass
-# This automatically creates nested flags like --config.backend, --config.vad.aggressiveness, etc.
-# For testing compatibility, we pre-register common override flags by including them in sys_argv
-_COMMON_OVERRIDES = [
-    "--config.backend=dummy",
-    "--config.realtime.api_key=dummy",
-    "--config.whisper.partial.enabled=false",
-    "--config.whisper.vad.aggressiveness=2",
-]
-_sys_argv_for_registration = list(sys.argv) if sys.argv else ["prog"]
-# Add common overrides if not already present
-for override in _COMMON_OVERRIDES:
-    flag_name = override.split("=")[0]
-    if not any(arg.startswith(flag_name) for arg in _sys_argv_for_registration):
-        _sys_argv_for_registration.append(override)
-
-config_flags.DEFINE_config_dataclass(
-    "config",
-    backend_config.CLIConfig(),
-    "Configuration object for transcribe-demo CLI.",
-    sys_argv=_sys_argv_for_registration,
-)
-
-
-# =============================================================================
-# Custom Help System
-# =============================================================================
-
-
-def _print_help() -> None:
-    """Print user-friendly help message."""
-    help_text = """
-transcribe-demo - Real-time speech transcription with Whisper and OpenAI Realtime API
-
-USAGE:
-    transcribe-demo [OPTIONS]
-
-EXAMPLES:
-    # Transcribe from microphone (default: Whisper turbo model with VAD)
-    transcribe-demo
-
-    # Transcribe an audio file at 2x speed
-    transcribe-demo --config.audio.audio_file=audio.mp3 --config.audio.playback_speed=2.0
-
-    # Use OpenAI Realtime API (requires OPENAI_API_KEY env var)
-    transcribe-demo --config.backend=realtime
-
-    # Use CPU-only Whisper model
-    transcribe-demo --config.whisper.model=base.en --config.whisper.device=cpu
-
-    # Custom session duration and disable transcript comparison
-    transcribe-demo --config.session.max_capture_duration=60 --config.session.compare_transcripts=false
-
-COMMON OPTIONS:
-    --config.backend=<whisper|realtime>
-        Transcription backend (default: whisper)
-
-    --config.language=<code>
-        Language code (default: en). Use ISO 639-1 codes (en, es, fr, etc.)
-
-    --config.audio.audio_file=<path|url>
-        Audio file or URL to transcribe instead of microphone
-
-    --config.audio.playback_speed=<float>
-        Playback speed multiplier for audio files (default: 1.0, range: 0.5-10.0)
-
-    --config.session.max_capture_duration=<seconds>
-        Maximum capture duration in seconds (default: 120, 0=unlimited)
-
-    --config.session.compare_transcripts=<true|false>
-        Compare chunk-based vs full transcription (default: true)
-
-WHISPER OPTIONS:
-    --config.whisper.model=<model>
-        Model: turbo (default), large-v3, medium, small, base, base.en, tiny, tiny.en
-
-    --config.whisper.device=<auto|cpu|cuda|mps>
-        Device to run on (default: auto - uses GPU if available)
-
-    --config.whisper.require_gpu=<true|false>
-        Exit if GPU unavailable instead of falling back to CPU (default: false)
-
-    --config.whisper.vad.aggressiveness=<0-3>
-        VAD aggressiveness level (default: 2, higher = more aggressive filtering)
-
-    --config.whisper.vad.min_silence_duration=<seconds>
-        Minimum silence duration to split chunks (default: 0.2)
-
-    --config.whisper.vad.max_chunk_duration=<seconds>
-        Maximum chunk duration to prevent buffer overflow (default: 60.0)
-
-    --config.whisper.partial.enabled=<true|false>
-        Enable partial transcription updates (default: false)
-
-REALTIME API OPTIONS:
-    --config.realtime.api_key=<key>
-        OpenAI API key (or set OPENAI_API_KEY env var)
-
-    --config.realtime.model=<model>
-        Realtime model (default: gpt-realtime-mini)
-
-    --config.realtime.vad.threshold=<0.0-1.0>
-        Server-side VAD threshold (default: 0.2)
-
-SSL/CERTIFICATE OPTIONS:
-    --config.ca_cert=<path>
-        Custom certificate bundle for HTTPS connections
-
-    --config.disable_ssl_verify=<true|false>
-        Disable SSL verification (insecure, not for production, default: false)
-
-SESSION LOGGING:
-    --config.session.session_log_dir=<path>
-        Directory for session logs (default: ./session_logs)
-
-    --config.session.audio_format=<wav|flac>
-        Audio format for saved sessions (default: flac)
-
-    --config.session.min_log_duration=<seconds>
-        Minimum duration to save session logs (default: 10.0)
-
-For complete flag list, use: transcribe-demo --helpfull
-For documentation, visit: https://github.com/shaobohou/transcribe_demo
-"""
-    print(help_text)
-    sys.exit(0)
 
 
 def _finalize_transcription_session(
@@ -363,17 +229,21 @@ def main(*, config: backend_config.CLIConfig) -> None:
         )
 
 
-def cli_main(argv):
-    """Entry point for the CLI (called by absl.app.run)."""
-    # Parse flags
-    FLAGS(argv)  # This parses the command-line flags
-
-    # Get config from FLAGS
-    config = FLAGS.config
+def run():
+    """Main entry point for the CLI."""
+    # Parse arguments using simple-parsing
+    parser = ArgumentParser(
+        prog="transcribe-demo",
+        description="Real-time speech transcription with Whisper and OpenAI Realtime API",
+        add_option_string_dash_variants=False,  # Avoid aliases - only use dot notation
+    )
+    parser.add_arguments(backend_config.CLIConfig, dest="config")
+    args = parser.parse_args()
+    config: backend_config.CLIConfig = args.config
 
     # Handle environment variable fallback for API key
-    # If api_key is empty, try to read from OPENAI_API_KEY env var
-    if not config.realtime.api_key:
+    # If api_key is None, try to read from OPENAI_API_KEY env var
+    if config.realtime.api_key is None:
         env_api_key = os.getenv("OPENAI_API_KEY")
         if env_api_key:
             # Create updated realtime config with env API key
@@ -385,16 +255,5 @@ def cli_main(argv):
     main(config=config)
 
 
-def run():
-    """Wrapper for console_scripts entry point."""
-    # Intercept --help and -h before absl processes them
-    if any(arg in ("--help", "-h") for arg in sys.argv):
-        _print_help()
-    app.run(cli_main)
-
-
 if __name__ == "__main__":
-    # Intercept --help and -h before absl processes them
-    if any(arg in ("--help", "-h") for arg in sys.argv):
-        _print_help()
-    app.run(cli_main)
+    run()

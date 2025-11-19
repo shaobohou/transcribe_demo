@@ -17,7 +17,7 @@ def create_whisper_backend(
     language: str,
     compare_transcripts: bool,
     min_log_duration: float,
-    ca_cert: str,
+    ca_cert: str | None,
     disable_ssl_verify: bool,
     session_logger: session_logger.SessionLogger | None,
 ) -> whisper_backend.WhisperBackend:
@@ -29,7 +29,7 @@ def create_whisper_backend(
         language: Language code for transcription
         compare_transcripts: Whether to compare chunked vs full audio transcription
         min_log_duration: Minimum session duration for logging
-        ca_cert: Custom certificate bundle path (empty string for none)
+        ca_cert: Custom certificate bundle path (None for system default)
         disable_ssl_verify: Whether to disable SSL verification
         session_logger: Session logger for persistence
 
@@ -53,9 +53,9 @@ def create_whisper_backend(
         compare_transcripts=compare_transcripts,
         session_logger=session_logger,
         min_log_duration=min_log_duration,
-        ca_cert=Path(ca_cert) if ca_cert and ca_cert.strip() else None,
+        ca_cert=Path(ca_cert) if ca_cert else None,
         disable_ssl_verify=disable_ssl_verify,
-        temp_file=Path(config.temp_file) if config.temp_file and config.temp_file.strip() else None,
+        temp_file=Path(config.temp_file) if config.temp_file else None,
     )
 
 

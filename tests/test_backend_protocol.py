@@ -387,7 +387,7 @@ class TestRealtimeConfig:
 
         # Config should NOT automatically read from environment
         config = RealtimeConfig()
-        assert config.api_key == ""  # Empty string, not None
+        assert config.api_key is None  # None by default
 
     def test_realtime_config_missing_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test Realtime config allows missing API key (validation happens in factory)."""
@@ -395,7 +395,7 @@ class TestRealtimeConfig:
 
         # Config creation should succeed - validation happens in factory
         config = RealtimeConfig()
-        assert config.api_key == ""  # Empty string, not None
+        assert config.api_key is None  # None by default
 
     def test_custom_realtime_config(self) -> None:
         """Test custom Realtime configuration."""
