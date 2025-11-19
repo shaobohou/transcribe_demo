@@ -308,6 +308,11 @@ uv run transcribe-session retranscribe \
 uv run transcribe-session retranscribe \
   --session_path=session_logs/2025-11-07/session_143052_whisper \
   --retranscribe_backend=realtime
+
+# Enable transcript comparison (validates accuracy, doubles API cost for Realtime)
+uv run transcribe-session retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --compare_transcripts=true
 ```
 
 See **[SESSIONS.md](SESSIONS.md)** for complete documentation on listing, loading, and retranscribing sessions.

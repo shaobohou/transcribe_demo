@@ -482,12 +482,13 @@ uv run transcribe-session retranscribe \
 
 ### Command-Line Flags Reference
 
-#### Common Flags
+#### Common Flags (all subcommands)
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--command` | (required) | Command to execute: `list`, `show`, or `retranscribe` |
 | `--session_log_dir` | `./session_logs` | Directory containing session logs |
+
+**Note:** The session CLI uses positional subcommands (`list`, `show`, `retranscribe`, `remove-incomplete`) instead of `--command=`.
 
 #### List Command Flags
 
@@ -509,18 +510,47 @@ uv run transcribe-session retranscribe \
 
 #### Retranscribe Command Flags
 
+**Common flags:**
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--retranscribe_backend` | `whisper` | Backend to use (`whisper` or `realtime`) |
 | `--output_dir` | `./session_logs` | Output directory for results |
-| `--model` | `turbo` | Whisper model (turbo, small, base, etc.) |
-| `--device` | `auto` | Device (`auto`, `cpu`, `cuda`, `mps`) |
 | `--language` | `en` | Language code |
-| `--vad_aggressiveness` | 2 | VAD aggressiveness (0-3) |
-| `--vad_min_silence_duration` | 0.2 | Min silence duration (seconds) |
-| `--api_key` | $OPENAI_API_KEY | OpenAI API key (for realtime backend) |
-| `--realtime_model` | `gpt-realtime-mini` | Realtime model name |
 | `--audio_format` | `flac` | Audio format (`wav` or `flac`) |
+| `--compare_transcripts` | `false` | Compare chunked vs full-audio transcription (doubles API cost for Realtime) |
+
+**Whisper backend flags (when `--retranscribe_backend=whisper`):**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--whisper.model` | `turbo` | Whisper model (turbo, small, base, etc.) |
+| `--whisper.device` | `auto` | Device (`auto`, `cpu`, `cuda`, `mps`) |
+| `--whisper.require_gpu` | `false` | Exit if GPU unavailable |
+| `--whisper.vad.aggressiveness` | 2 | VAD aggressiveness (0-3) |
+| `--whisper.vad.min_silence_duration` | 0.2 | Min silence duration (seconds) |
+| `--whisper.vad.min_speech_duration` | 0.25 | Min speech duration (seconds) |
+| `--whisper.vad.speech_pad_duration` | 0.2 | Padding before speech (seconds) |
+| `--whisper.vad.max_chunk_duration` | 60.0 | Max chunk duration (seconds) |
+| `--whisper.partial.enabled` | `false` | Enable partial transcription |
+| `--whisper.partial.model` | `base.en` | Model for partial transcription |
+| `--whisper.partial.interval` | 1.0 | Partial update interval (seconds) |
+| `--whisper.partial.max_buffer_seconds` | 10.0 | Partial buffer duration (seconds) |
+| `--whisper.debug` | `false` | Enable debug logging |
+| `--whisper.debug_output_dir` | None | Directory to save debug files |
+
+**Realtime backend flags (when `--retranscribe_backend=realtime`):**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--realtime.api_key` | $OPENAI_API_KEY | OpenAI API key |
+| `--realtime.model` | `gpt-realtime-mini` | Realtime model name |
+| `--realtime.endpoint` | `wss://api.openai.com/v1/realtime` | WebSocket endpoint |
+| `--realtime.instructions` | (default prompt) | System instruction prompt |
+| `--realtime.turn_detection.threshold` | 0.2 | Turn detection threshold (0.0-1.0) |
+| `--realtime.turn_detection.silence_duration_ms` | 100 | Silence duration for turn detection (ms) |
+| `--realtime.debug` | `false` | Enable debug logging |
+| `--realtime.debug_output_dir` | None | Directory to save debug files |
 
 ### Use Cases
 
@@ -530,13 +560,13 @@ Test how different VAD settings affect chunking:
 
 ```bash
 # Original session with VAD aggressiveness 2
-uv run transcribe-demo --backend whisper --aggressiveness 2
+uv run transcribe-demo --backend whisper --whisper.vad.aggressiveness=2
 
 # Retranscribe with more aggressive VAD
-uv run transcribe-session --command=retranscribe \
+uv run transcribe-session retranscribe \
   --session_path=session_logs/2025-11-07/session_143052_whisper \
-  --vad_aggressiveness=3 \
-  --vad_min_silence_duration=0.1
+  --whisper.vad.aggressiveness=3 \
+  --whisper.vad.min_silence_duration=0.1
 ```
 
 #### Test Different Models
@@ -548,13 +578,13 @@ Compare transcription quality across different Whisper models:
 SESSION=session_logs/2025-11-07/session_143052_whisper
 
 # Try turbo (fastest)
-uv run transcribe-session --command=retranscribe --session_path=$SESSION --model=turbo
+uv run transcribe-session retranscribe --session_path=$SESSION --whisper.model=turbo
 
 # Try small (more accurate)
-uv run transcribe-session --command=retranscribe --session_path=$SESSION --model=small
+uv run transcribe-session retranscribe --session_path=$SESSION --whisper.model=small
 
 # Try base (balanced)
-uv run transcribe-session --command=retranscribe --session_path=$SESSION --model=base
+uv run transcribe-session retranscribe --session_path=$SESSION --whisper.model=base
 ```
 
 #### Compare Backends
@@ -565,14 +595,26 @@ Compare Whisper vs Realtime API:
 SESSION=session_logs/2025-11-07/session_143052_whisper
 
 # Retranscribe with Whisper
-uv run transcribe-session --command=retranscribe \
+uv run transcribe-session retranscribe \
   --session_path=$SESSION \
   --retranscribe_backend=whisper
 
 # Retranscribe with Realtime API
-uv run transcribe-session --command=retranscribe \
+uv run transcribe-session retranscribe \
   --session_path=$SESSION \
   --retranscribe_backend=realtime
+```
+
+#### Enable Transcript Comparison
+
+Compare chunked transcription against full-audio transcription for accuracy validation:
+
+```bash
+# Enable comparison (note: doubles API cost for Realtime backend)
+uv run transcribe-session retranscribe \
+  --session_path=session_logs/2025-11-07/session_143052_whisper \
+  --retranscribe_backend=whisper \
+  --compare_transcripts=true
 ```
 
 #### Batch Processing
@@ -585,9 +627,9 @@ Process multiple sessions with a script:
 
 for session_dir in session_logs/*/session_*_whisper; do
   echo "Processing $session_dir..."
-  uv run transcribe-session --command=retranscribe \
+  uv run transcribe-session retranscribe \
     --session_path="$session_dir" \
-    --model=small \
+    --whisper.model=small \
     --output_dir=./retranscriptions_small
 done
 ```
