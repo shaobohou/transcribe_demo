@@ -108,18 +108,18 @@ def main(*, config: backend_config.CLIConfig) -> None:
         sys.exit(1)
 
     # Warn about memory usage with unlimited duration and comparison enabled
-    if config.session.compare_transcripts and config.session.max_capture_duration == 0:
+    if config.session.compare_transcripts and config.max_capture_duration == 0:
         print(
             "WARNING: Running with unlimited duration and comparison enabled will "
             "continuously accumulate audio in memory.\n"
-            "Consider setting --session.max_capture_duration or use --session.compare_transcripts=false "
+            "Consider setting --max_capture_duration or use --session.compare_transcripts=false "
             "to reduce memory usage.\n",
             file=sys.stderr,
         )
 
     # Confirm long capture durations with comparison enabled
-    if config.session.compare_transcripts and config.session.max_capture_duration > 300:  # > 5 minutes
-        duration_minutes = config.session.max_capture_duration / 60.0
+    if config.session.compare_transcripts and config.max_capture_duration > 300:  # > 5 minutes
+        duration_minutes = config.max_capture_duration / 60.0
         print(
             f"You have set a capture duration of {duration_minutes:.1f} minutes with comparison enabled.\n"
             f"This will keep audio in memory for the entire session.",
@@ -164,7 +164,7 @@ def main(*, config: backend_config.CLIConfig) -> None:
             audio_file=config.audio.audio_file,
             sample_rate=config.audio.sample_rate,
             channels=config.audio.channels,
-            max_capture_duration=config.session.max_capture_duration,
+            max_capture_duration=config.max_capture_duration,
             collect_full_audio=config.session.compare_transcripts or (session_logger_obj is not None),
             playback_speed=config.audio.playback_speed,
         )
@@ -172,7 +172,7 @@ def main(*, config: backend_config.CLIConfig) -> None:
         audio_source = audio_capture.AudioCaptureManager(
             sample_rate=config.audio.sample_rate,
             channels=config.audio.channels,
-            max_capture_duration=config.session.max_capture_duration,
+            max_capture_duration=config.max_capture_duration,
             collect_full_audio=config.session.compare_transcripts or (session_logger_obj is not None),
         )
 

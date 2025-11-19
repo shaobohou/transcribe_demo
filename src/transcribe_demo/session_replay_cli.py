@@ -113,10 +113,10 @@ class RemoveIncompleteConfig(CommonConfig):
 
 
 @dataclasses.dataclass
-class Commands:
-    """Subcommand selection."""
+class SubcommandConfig:
+    """Subcommand selection for transcribe-session CLI."""
 
-    command: ListConfig | ShowConfig | RetranscribeConfig | RemoveIncompleteConfig = subgroups(
+    subcommand: ListConfig | ShowConfig | RetranscribeConfig | RemoveIncompleteConfig = subgroups(
         {  # type: ignore
             "list": ListConfig,
             "show": ShowConfig,
@@ -217,12 +217,12 @@ def cli_main() -> None:
         description="Session replay and management utility for transcribe-demo",
         add_option_string_dash_variants=DashVariant.AUTO,  # Preserve underscores, no dash variants
         argument_generation_mode=ArgumentGenerationMode.NESTED,  # Always use full dotted paths
-        nested_mode=NestedMode.WITHOUT_ROOT,  # Remove "command." prefix from flags
+        nested_mode=NestedMode.WITHOUT_ROOT,  # Remove dest prefix from flags
     )
-    parser.add_arguments(Commands, dest="commands")
+    parser.add_arguments(SubcommandConfig, dest="config")
     args = parser.parse_args()
 
-    config = args.commands.command
+    config = args.config.subcommand
 
     # Dispatch to appropriate command handler
     if isinstance(config, ListConfig):

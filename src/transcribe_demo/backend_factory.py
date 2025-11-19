@@ -55,7 +55,7 @@ def create_whisper_backend(
         min_log_duration=min_log_duration,
         ca_cert=Path(ca_cert) if ca_cert else None,
         disable_ssl_verify=disable_ssl_verify,
-        temp_file=Path(config.temp_file) if config.temp_file else None,
+        temp_file=Path(config.debug_output_dir) if config.debug_output_dir else None,
     )
 
 
@@ -96,8 +96,8 @@ def create_realtime_backend(
         endpoint=config.endpoint,
         model=config.model,
         instructions=config.instructions,
-        vad_threshold=config.vad.threshold,
-        vad_silence_duration_ms=config.vad.silence_duration_ms,
+        vad_threshold=config.turn_detection.threshold,
+        vad_silence_duration_ms=config.turn_detection.silence_duration_ms,
         debug=config.debug,
         language=language,
         compare_transcripts=compare_transcripts,
