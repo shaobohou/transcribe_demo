@@ -321,9 +321,9 @@ def test_cli_main_reads_api_key_from_environment(monkeypatch):
 
 
 def test_cli_main_prefers_explicit_api_key_over_env(monkeypatch):
-    """Test that explicit --api_key takes precedence over environment."""
+    """Test that explicit --api-key takes precedence over environment."""
     monkeypatch.setenv("OPENAI_API_KEY", "env-test-key")
-    monkeypatch.setattr("sys.argv", ["transcribe-demo", "--backend=realtime", "--api_key=explicit-key"])
+    monkeypatch.setattr("sys.argv", ["transcribe-demo", "--backend=realtime", "--api-key=explicit-key"])
 
     # Mock main to capture the config
     captured_config = []
