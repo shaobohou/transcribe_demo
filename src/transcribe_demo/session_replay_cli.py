@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import argparse
 import dataclasses
 import sys
 from typing import Literal
+
+from simple_parsing import ArgumentParser, subgroups
 
 from transcribe_demo.session_replay import (
     list_sessions,
@@ -122,6 +123,21 @@ class RemoveIncompleteConfig(CommonConfig):
     """Dry run mode - show what would be removed without actually removing."""
 
 
+@dataclasses.dataclass
+class Commands:
+    """Subcommand selection."""
+
+    command: ListConfig | ShowConfig | RetranscribeConfig | RemoveIncompleteConfig = subgroups(
+        {  # type: ignore
+            "list": ListConfig,
+            "show": ShowConfig,
+            "retranscribe": RetranscribeConfig,
+            "remove-incomplete": RemoveIncompleteConfig,
+        },
+        default="list",
+    )
+
+
 def list_command(config: ListConfig) -> None:
     """Execute list command."""
     sessions = list_sessions(
@@ -207,112 +223,26 @@ def remove_incomplete_command(config: RemoveIncompleteConfig) -> None:
 
 def cli_main() -> None:
     """Entry point for the CLI (called by pyproject.toml console_scripts)."""
-    parser = argparse.ArgumentParser(
+    parser = ArgumentParser(
         prog="transcribe-session",
         description="Session replay and management utility for transcribe-demo",
     )
-
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # List subcommand
-    list_parser = subparsers.add_parser("list", help="List sessions")
-    list_parser.add_argument("--session_log_dir", default="./session_logs", help="Directory containing session logs")
-    list_parser.add_argument("--backend", choices=["whisper", "realtime"], help="Filter sessions by backend")
-    list_parser.add_argument("--start_date", help="Filter sessions on or after this date (YYYY-MM-DD)")
-    list_parser.add_argument("--end_date", help="Filter sessions on or before this date (YYYY-MM-DD)")
-    list_parser.add_argument("--min_duration", type=float, help="Filter sessions with duration >= this value (seconds)")
-    list_parser.add_argument("--verbose", action="store_true", help="Show detailed information")
-    list_parser.add_argument("--include_incomplete", action="store_true", help="Include incomplete sessions")
-
-    # Show subcommand
-    show_parser = subparsers.add_parser("show", help="Show session details")
-    show_parser.add_argument("--session_log_dir", default="./session_logs", help="Directory containing session logs")
-    show_parser.add_argument("--session_path", required=True, help="Path to session directory")
-    show_parser.add_argument("--allow_incomplete", action="store_true", help="Allow loading incomplete sessions")
-
-    # Retranscribe subcommand
-    retranscribe_parser = subparsers.add_parser("retranscribe", help="Retranscribe a session")
-    retranscribe_parser.add_argument(
-        "--session_log_dir", default="./session_logs", help="Directory containing session logs"
-    )
-    retranscribe_parser.add_argument("--session_path", required=True, help="Path to session directory")
-    retranscribe_parser.add_argument(
-        "--allow_incomplete", action="store_true", help="Allow loading incomplete sessions"
-    )
-    retranscribe_parser.add_argument(
-        "--retranscribe_backend", choices=["whisper", "realtime"], default="whisper", help="Backend to use"
-    )
-    retranscribe_parser.add_argument("--output_dir", default="./session_logs", help="Output directory for results")
-    retranscribe_parser.add_argument("--model", default="turbo", help="Whisper model to use")
-    retranscribe_parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps"], help="Device")
-    retranscribe_parser.add_argument("--language", default="en", help="Language for retranscription")
-    retranscribe_parser.add_argument("--vad_aggressiveness", type=int, default=2, help="VAD aggressiveness (0-3)")
-    retranscribe_parser.add_argument("--vad_min_silence_duration", type=float, default=0.2, help="Min silence duration")
-    retranscribe_parser.add_argument("--api_key", help="OpenAI API key (defaults to OPENAI_API_KEY env var)")
-    retranscribe_parser.add_argument("--realtime_model", default="gpt-realtime-mini", help="Realtime model to use")
-    retranscribe_parser.add_argument("--audio_format", choices=["wav", "flac"], default="flac", help="Audio format")
-
-    # Remove-incomplete subcommand
-    remove_parser = subparsers.add_parser("remove-incomplete", help="Remove incomplete sessions")
-    remove_parser.add_argument("--session_log_dir", default="./session_logs", help="Directory containing session logs")
-    remove_parser.add_argument("--backend", choices=["whisper", "realtime"], help="Filter sessions by backend")
-    remove_parser.add_argument("--start_date", help="Filter sessions on or after this date (YYYY-MM-DD)")
-    remove_parser.add_argument("--end_date", help="Filter sessions on or before this date (YYYY-MM-DD)")
-    remove_parser.add_argument(
-        "--min_duration", type=float, help="Filter sessions with duration >= this value (seconds)"
-    )
-    remove_parser.add_argument("--dry_run", action="store_true", help="Dry run - show what would be removed")
-
+    parser.add_arguments(Commands, dest="commands")
     args = parser.parse_args()
 
-    # Build config objects from args
-    if args.command == "list":
-        config = ListConfig(
-            session_log_dir=args.session_log_dir,
-            backend=args.backend,  # type: ignore[arg-type]
-            start_date=args.start_date,
-            end_date=args.end_date,
-            min_duration=args.min_duration,
-            verbose=args.verbose,
-            include_incomplete=args.include_incomplete,
-        )
+    config = args.commands.command
+
+    # Dispatch to appropriate command handler
+    if isinstance(config, ListConfig):
         list_command(config)
-    elif args.command == "show":
-        config = ShowConfig(
-            session_log_dir=args.session_log_dir,
-            session_path=args.session_path,
-            allow_incomplete=args.allow_incomplete,
-        )
+    elif isinstance(config, ShowConfig):
         show_command(config)
-    elif args.command == "retranscribe":
-        config = RetranscribeConfig(
-            session_log_dir=args.session_log_dir,
-            session_path=args.session_path,
-            allow_incomplete=args.allow_incomplete,
-            retranscribe_backend=args.retranscribe_backend,  # type: ignore[arg-type]
-            output_dir=args.output_dir,
-            model=args.model,
-            device=args.device,  # type: ignore[arg-type]
-            language=args.language,
-            vad_aggressiveness=args.vad_aggressiveness,
-            vad_min_silence_duration=args.vad_min_silence_duration,
-            api_key=args.api_key,
-            realtime_model=args.realtime_model,
-            audio_format=args.audio_format,  # type: ignore[arg-type]
-        )
+    elif isinstance(config, RetranscribeConfig):
         retranscribe_command(config)
-    elif args.command == "remove-incomplete":
-        config = RemoveIncompleteConfig(
-            session_log_dir=args.session_log_dir,
-            backend=args.backend,  # type: ignore[arg-type]
-            start_date=args.start_date,
-            end_date=args.end_date,
-            min_duration=args.min_duration,
-            dry_run=args.dry_run,
-        )
+    elif isinstance(config, RemoveIncompleteConfig):
         remove_incomplete_command(config)
     else:
-        print(f"ERROR: Unknown command '{args.command}'", file=sys.stderr)
+        print(f"ERROR: Unknown command type: {type(config)}", file=sys.stderr)
         sys.exit(1)
 
 
