@@ -7,6 +7,7 @@ import sys
 from typing import Literal
 
 from simple_parsing import ArgumentGenerationMode, ArgumentParser, DashVariant, subgroups
+from simple_parsing.wrappers.field_wrapper import NestedMode
 
 from transcribe_demo import backend_config
 from transcribe_demo.session_replay import (
@@ -216,6 +217,7 @@ def cli_main() -> None:
         description="Session replay and management utility for transcribe-demo",
         add_option_string_dash_variants=DashVariant.AUTO,  # Preserve underscores, no dash variants
         argument_generation_mode=ArgumentGenerationMode.NESTED,  # Always use full dotted paths
+        nested_mode=NestedMode.WITHOUT_ROOT,  # Remove "command." prefix from flags
     )
     parser.add_arguments(Commands, dest="commands")
     args = parser.parse_args()

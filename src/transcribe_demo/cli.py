@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from simple_parsing import ArgumentGenerationMode, ArgumentParser, DashVariant
+from simple_parsing.wrappers.field_wrapper import NestedMode
 
 from transcribe_demo import (
     audio_capture,
@@ -237,6 +238,7 @@ def run():
         description="Real-time speech transcription with Whisper and OpenAI Realtime API",
         add_option_string_dash_variants=DashVariant.AUTO,  # Preserve underscores, no dash variants
         argument_generation_mode=ArgumentGenerationMode.NESTED,  # Always use full dotted paths
+        nested_mode=NestedMode.WITHOUT_ROOT,  # Remove "config." prefix from flags
     )
     parser.add_arguments(backend_config.CLIConfig, dest="config")
     args = parser.parse_args()
