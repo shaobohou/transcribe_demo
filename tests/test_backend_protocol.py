@@ -315,8 +315,6 @@ class TestWhisperConfig:
         assert config.model == "turbo"
         assert config.device == "auto"
         assert config.require_gpu is False
-        assert config.language == "en"
-        assert config.compare_transcripts is True
         assert config.vad.aggressiveness == 2
         assert config.partial.enabled is False
 
@@ -326,7 +324,6 @@ class TestWhisperConfig:
             model="small",
             device="cuda",
             require_gpu=True,
-            language="es",
             vad=VADConfig(aggressiveness=3),
             partial=PartialTranscriptionConfig(enabled=True, model="tiny.en"),
         )
@@ -334,7 +331,6 @@ class TestWhisperConfig:
         assert config.model == "small"
         assert config.device == "cuda"
         assert config.require_gpu is True
-        assert config.language == "es"
         assert config.vad.aggressiveness == 3
         assert config.partial.enabled is True
 

@@ -212,11 +212,20 @@ def main(*, config: backend_config.CLIConfig) -> None:
     if config.backend == "whisper":
         backend: backend_protocol.TranscriptionBackend = backend_factory.create_whisper_backend(
             config=backend_cfg,  # type: ignore[arg-type]
+            language=config.language,
+            compare_transcripts=config.session.compare_transcripts,
+            min_log_duration=config.session.min_log_duration,
+            ca_cert=config.ca_cert,
+            disable_ssl_verify=config.disable_ssl_verify,
             session_logger=session_logger_obj,
         )
     elif config.backend == "realtime":
         backend = backend_factory.create_realtime_backend(
             config=backend_cfg,  # type: ignore[arg-type]
+            language=config.language,
+            compare_transcripts=config.session.compare_transcripts,
+            min_log_duration=config.session.min_log_duration,
+            disable_ssl_verify=config.disable_ssl_verify,
             session_logger=session_logger_obj,
         )
     else:

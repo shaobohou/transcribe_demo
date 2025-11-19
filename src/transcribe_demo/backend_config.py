@@ -104,23 +104,6 @@ class WhisperConfig:
     partial: PartialTranscriptionConfig = dataclasses.field(default_factory=PartialTranscriptionConfig)
     """Partial transcription configuration."""
 
-    # Language and comparison
-    language: str = "en"
-    """Language code for transcription."""
-
-    compare_transcripts: bool = True
-    """Whether to compare chunked vs full audio transcription."""
-
-    min_log_duration: float = 10.0
-    """Minimum session duration for logging."""
-
-    # SSL/Certificate settings (for model downloads)
-    ca_cert: str = ""
-    """Custom certificate bundle to trust when downloading models."""
-
-    disable_ssl_verify: bool = False
-    """Disable SSL verification (insecure)."""
-
     # Debugging
     temp_file: str = ""
     """Optional path to persist audio chunks for inspection."""
@@ -191,20 +174,6 @@ class RealtimeConfig:
     # Server-side VAD
     vad: RealtimeVADConfig = dataclasses.field(default_factory=RealtimeVADConfig)
     """Server-side Voice Activity Detection configuration."""
-
-    # Language and comparison
-    language: str = "en"
-    """Language code for transcription."""
-
-    compare_transcripts: bool = True
-    """Whether to compare chunked vs full audio transcription."""
-
-    min_log_duration: float = 10.0
-    """Minimum session duration for logging."""
-
-    # SSL/Security
-    disable_ssl_verify: bool = False
-    """Disable SSL verification (insecure)."""
 
     # Debugging
     debug: bool = False
@@ -327,21 +296,6 @@ class CLIConfig:
             WhisperConfig if backend='whisper', RealtimeConfig if backend='realtime'
         """
         if self.backend == "whisper":
-            # Update WhisperConfig with global SSL settings
-            return dataclasses.replace(
-                self.whisper,
-                language=self.language,
-                compare_transcripts=self.session.compare_transcripts,
-                min_log_duration=self.session.min_log_duration,
-                ca_cert=self.ca_cert,
-                disable_ssl_verify=self.disable_ssl_verify,
-            )
+            return self.whisper
         else:  # realtime
-            # Update RealtimeConfig with global settings
-            return dataclasses.replace(
-                self.realtime,
-                language=self.language,
-                compare_transcripts=self.session.compare_transcripts,
-                min_log_duration=self.session.min_log_duration,
-                disable_ssl_verify=self.disable_ssl_verify,
-            )
+            return self.realtime
