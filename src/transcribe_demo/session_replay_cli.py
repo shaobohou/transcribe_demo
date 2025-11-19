@@ -84,6 +84,9 @@ class RetranscribeConfig(CommonConfig):
     audio_format: Literal["wav", "flac"] = "flac"
     """Audio format for saved files."""
 
+    compare_transcripts: bool = False
+    """Compare chunked transcription with full-audio transcription. For Realtime API, this doubles API usage cost."""
+
     # Reuse backend configs from main CLI
     whisper: backend_config.WhisperConfig = dataclasses.field(default_factory=backend_config.WhisperConfig)
     """Whisper backend configuration (used when retranscribe_backend='whisper')."""
@@ -150,19 +153,49 @@ def retranscribe_command(config: RetranscribeConfig) -> None:
         loaded = load_session(config.session_path, allow_incomplete=config.allow_incomplete)
 
         # Build backend kwargs from nested configs
-        backend_kwargs: dict[str, str | int | float | None] = {
+        backend_kwargs: dict[str, str | int | float | bool | None] = {
             "audio_format": config.audio_format,
             "language": config.language,
+            "compare_transcripts": config.compare_transcripts,
         }
 
         if config.retranscribe_backend == "whisper":
+            # Whisper model and device settings
             backend_kwargs["model"] = config.whisper.model
             backend_kwargs["device"] = config.whisper.device
+            backend_kwargs["require_gpu"] = config.whisper.require_gpu
+
+            # VAD settings
             backend_kwargs["vad_aggressiveness"] = config.whisper.vad.aggressiveness
             backend_kwargs["vad_min_silence_duration"] = config.whisper.vad.min_silence_duration
+            backend_kwargs["vad_min_speech_duration"] = config.whisper.vad.min_speech_duration
+            backend_kwargs["vad_speech_pad_duration"] = config.whisper.vad.speech_pad_duration
+            backend_kwargs["max_chunk_duration"] = config.whisper.vad.max_chunk_duration
+
+            # Partial transcription settings
+            backend_kwargs["partial_enabled"] = config.whisper.partial.enabled
+            backend_kwargs["partial_model"] = config.whisper.partial.model
+            backend_kwargs["partial_interval"] = config.whisper.partial.interval
+            backend_kwargs["partial_max_buffer_seconds"] = config.whisper.partial.max_buffer_seconds
+
+            # Debug settings
+            backend_kwargs["debug"] = config.whisper.debug
+            backend_kwargs["debug_output_dir"] = config.whisper.debug_output_dir
+
         elif config.retranscribe_backend == "realtime":
+            # Realtime API settings (use cleaner names, will fix in retranscribe_session)
             backend_kwargs["api_key"] = config.realtime.api_key
-            backend_kwargs["realtime_model"] = config.realtime.model
+            backend_kwargs["model"] = config.realtime.model
+            backend_kwargs["endpoint"] = config.realtime.endpoint
+            backend_kwargs["instructions"] = config.realtime.instructions
+
+            # Turn detection settings
+            backend_kwargs["turn_detection_threshold"] = config.realtime.turn_detection.threshold
+            backend_kwargs["turn_detection_silence_duration_ms"] = config.realtime.turn_detection.silence_duration_ms
+
+            # Debug settings
+            backend_kwargs["debug"] = config.realtime.debug
+            backend_kwargs["debug_output_dir"] = config.realtime.debug_output_dir
 
         # Retranscribe
         result_path = retranscribe_session(
