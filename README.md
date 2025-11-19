@@ -32,7 +32,7 @@ artifacts by using the dedicated CPU workspace found in `ci/pyproject.toml`:
 ```bash
 uv sync --project ci --refresh
 # Run transcribe-demo in CPU-only mode
-uv --project ci run transcribe-demo --audio_file audio.mp3
+uv --project ci run transcribe-demo --audio.audio_file audio.mp3
 # Run tooling/tests against the CPU env
 uv --project ci run ruff check
 uv --project ci run python -m pytest
@@ -95,34 +95,34 @@ Fine-tune voice activity detection for your environment:
 **For responsive transcription with faster results:**
 ```bash
 # Get 2-3x faster first results with minimal accuracy loss
-uv run transcribe-demo --max_chunk_duration 20 --min_silence_duration 0.6
+uv run transcribe-demo --whisper.vad.max_chunk_duration 20 --whisper.vad.min_silence_duration 0.6
 ```
 
 **Standard VAD tuning options:**
 ```bash
 # More aggressive pause detection (higher = more aggressive, 0-3)
-uv run transcribe-demo --aggressiveness 3
+uv run transcribe-demo --whisper.vad.aggressiveness 3
 
 # Minimum silence duration to split chunks (default: 0.2s)
 # Increase for slower chunking, decrease for faster response
-uv run transcribe-demo --min_silence_duration 0.5
+uv run transcribe-demo --whisper.vad.min_silence_duration 0.5
 
 # Minimum speech duration before transcribing (default: 0.25s)
-uv run transcribe-demo --min_speech_duration 0.5
+uv run transcribe-demo --whisper.vad.min_speech_duration 0.5
 
 # Padding before speech to avoid cutting words (default: 0.2s)
-uv run transcribe-demo --speech_pad_duration 0.3
+uv run transcribe-demo --whisper.vad.speech_pad_duration 0.3
 
 # Maximum chunk duration (default: 60s)
 # Increase if seeing duration warnings during long speech
-uv run transcribe-demo --max_chunk_duration 90
+uv run transcribe-demo --whisper.vad.max_chunk_duration 90
 ```
 
 **Tuning guide:**
-- Increase `--aggressiveness` if missing speech
-- Decrease `--aggressiveness` if capturing background noise
-- Increase `--min_silence_duration` for slower, more deliberate chunking
-- Decrease `--max_chunk_duration` for more responsive transcription
+- Increase `--whisper.vad.aggressiveness` if missing speech
+- Decrease `--whisper.vad.aggressiveness` if capturing background noise
+- Increase `--whisper.vad.min_silence_duration` for slower, more deliberate chunking
+- Decrease `--whisper.vad.max_chunk_duration` for more responsive transcription
 
 ### Realtime API Backend
 
@@ -142,7 +142,7 @@ Customize the realtime backend:
 ```bash
 uv run transcribe-demo --backend realtime \
   --realtime.model gpt-realtime-mini \
-  --instructions "Your custom transcription instructions"
+  --realtime.instructions "Your custom transcription instructions"
 ```
 
 ### GPU Support
@@ -151,12 +151,12 @@ The tool automatically detects and prefers GPU acceleration:
 
 ```bash
 # Force specific device
-uv run transcribe-demo --device cuda   # NVIDIA CUDA GPU
-uv run transcribe-demo --device mps    # Apple Metal (Apple Silicon)
-uv run transcribe-demo --device cpu    # CPU only
+uv run transcribe-demo --whisper.device cuda   # NVIDIA CUDA GPU
+uv run transcribe-demo --whisper.device mps    # Apple Metal (Apple Silicon)
+uv run transcribe-demo --whisper.device cpu    # CPU only
 
 # Abort if no GPU available (don't fall back to CPU)
-uv run transcribe-demo --require_gpu
+uv run transcribe-demo --whisper.require_gpu true
 ```
 
 ### SSL/Certificate Handling
@@ -198,21 +198,21 @@ Instead of capturing from a microphone, you can simulate live transcription from
 
 ```bash
 # Transcribe from local audio file
-uv run transcribe-demo --audio_file path/to/audio.mp3
+uv run transcribe-demo --audio.audio_file path/to/audio.mp3
 
 # Transcribe from URL (supports HTTP/HTTPS)
-uv run transcribe-demo --audio_file http://example.com/audio.mp3
+uv run transcribe-demo --audio.audio_file http://example.com/audio.mp3
 
 # Example: NPR newscast
-uv run transcribe-demo --audio_file http://public.npr.org/anon.npr-mp3/npr/news/newscast.mp3
+uv run transcribe-demo --audio.audio_file http://public.npr.org/anon.npr-mp3/npr/news/newscast.mp3
 
 # Control playback speed (default: 1.0 = real-time)
-uv run transcribe-demo --audio_file audio.wav --playback_speed 2.0    # 2x faster
-uv run transcribe-demo --audio_file audio.mp3 --playback_speed 0.5    # 2x slower
+uv run transcribe-demo --audio.audio_file audio.wav --audio.playback_speed 2.0    # 2x faster
+uv run transcribe-demo --audio.audio_file audio.mp3 --audio.playback_speed 0.5    # 2x slower
 
 # Works with all backends and configuration options
-uv run transcribe-demo --audio_file audio.flac --backend realtime
-uv run transcribe-demo --audio_file audio.wav --max_chunk_duration 30
+uv run transcribe-demo --audio.audio_file audio.flac --backend realtime
+uv run transcribe-demo --audio.audio_file audio.wav --whisper.vad.max_chunk_duration 30
 ```
 
 **Supported formats**: WAV, FLAC, MP3, OGG, and any format supported by `libsndfile`.
@@ -293,21 +293,21 @@ List, inspect, and retranscribe previously logged sessions with different settin
 
 ```bash
 # List all logged sessions
-uv run transcribe-session --command=list
+uv run transcribe-session --subcommand=list
 
 # Show details of a specific session
-uv run transcribe-session --command=show --session_path=session_logs/2025-11-07/session_143052_whisper
+uv run transcribe-session --subcommand=show --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper
 
 # Retranscribe with different VAD settings
-uv run transcribe-session --command=retranscribe \
-  --session_path=session_logs/2025-11-07/session_143052_whisper \
-  --model=small \
-  --vad_aggressiveness=3
+uv run transcribe-session --subcommand=retranscribe \
+  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
+  --subcommand.whisper.model=small \
+  --subcommand.whisper.vad.aggressiveness=3
 
 # Compare Whisper vs Realtime API
-uv run transcribe-session --command=retranscribe \
-  --session_path=session_logs/2025-11-07/session_143052_whisper \
-  --retranscribe_backend=realtime
+uv run transcribe-session --subcommand=retranscribe \
+  --subcommand.session_path=session_logs/2025-11-07/session_143052_whisper \
+  --subcommand.retranscribe_backend=realtime
 ```
 
 See **[SESSIONS.md](SESSIONS.md)** for complete documentation on listing, loading, and retranscribing sessions.
